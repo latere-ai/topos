@@ -218,7 +218,7 @@ func requestable(s session.Session, http bool) []session.Connection {
 // connect a service the installation offers (spec 069). It is a harness
 // tool, as question is: the harness adds it to the registry of the
 // session's own thread while the session has a connection the person may
-// be asked to connect, and no thread a spawn starts holds it.
+// be asked to connect, and no thread the agent tool starts holds it.
 const ToolRequestConnection = session.ToolRequestConnection
 
 // RequestConnectionSchema is the input schema of request_connection, its

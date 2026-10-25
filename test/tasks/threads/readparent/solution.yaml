@@ -1,13 +1,13 @@
-# The parent writes colors.txt and spawns the reader; the subagent's
+# The parent writes colors.txt and starts the reader; the subagent's
 # requests come next in the script, then the parent's last one.
 steps:
   - tool_calls:
       - name: write
         input: {path: colors.txt, content: "red\ngreen\nblue\n"}
   - tool_calls:
-      - name: spawn
+      - name: agent
         input:
-          agent: reader
+          subagent: reader
           task: Read colors.txt in the working directory and write the number of lines it holds, as a bare number, to count.txt.
   - tool_calls:
       - name: read

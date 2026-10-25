@@ -225,7 +225,7 @@ func TestAThreadCountsItsOwnRepeats(t *testing.T) {
 	e.echo.run = func(tools.Call) (tools.Result, error) { return tools.Text(tools.OutcomeError, "refused: nope"), nil }
 	e.stub.Script(model,
 		reply(ir.StopToolUse, call("toolu_p1", "echo", `{"text":"nope"}`)),
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t"}`)),
 		reply(ir.StopToolUse, call("toolu_p2", "echo", `{"text":"nope"}`)),
 		reply(ir.StopEndTurn, text("The reviewer got stuck.")),
 	)

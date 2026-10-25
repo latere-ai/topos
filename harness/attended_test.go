@@ -97,7 +97,7 @@ func TestEveryDecisionRecordsWhetherItWasAttended(t *testing.T) {
 	e.stub.Script(model,
 		reply(ir.StopToolUse, call("toolu_p", "echo", `{"text":"a"}`)),
 		reply(ir.StopEndTurn, text("Done.")),
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)),
 		reply(ir.StopEndTurn, text("Reviewed.")),
 	)
 	e.stub.Script(reviewerModel,

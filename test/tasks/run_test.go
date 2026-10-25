@@ -283,17 +283,21 @@ func TestTheDevicePrompt(t *testing.T) {
 	}
 
 	rep, err := Run(t.Context(), Options{Dir: synthetic, Work: t.TempDir(), Script: FileSolution, Filter: "coding/echo", Runs: 1, Device: true})
-	if err != nil || rep.Prompt != prompts.HarnessVersion(prompts.HarnessDevice) || !rep.Device || !strings.Contains(rep.Markdown(), "prompt harness/2 as on a person's own computer") {
+	if err != nil || rep.Prompt != prompts.HarnessVersion(prompts.HarnessDevice) || !rep.Device || !strings.Contains(rep.Markdown(), "prompt harness/4 as on a person's own computer") {
 		t.Fatalf("a device run's report %+v, %v", rep, err)
 	}
-	if rep, err := Run(t.Context(), Options{Dir: synthetic, Work: t.TempDir(), Script: FileSolution, Filter: "coding/echo", Runs: 1}); err != nil || rep.Prompt != "harness/1" || rep.Device {
+	if rep, err := Run(t.Context(), Options{Dir: synthetic, Work: t.TempDir(), Script: FileSolution, Filter: "coding/echo", Runs: 1}); err != nil || rep.Prompt != "harness/3" || rep.Device {
 		t.Fatalf("a run's report %+v, %v", rep, err)
 	}
-	for _, o := range []Options{{PromptVersion: 99}, {PromptVersion: 1, Device: true}} {
+	for _, o := range []Options{{PromptVersion: 99}, {PromptVersion: 1, Device: true}, {PromptVersion: 3, Device: true}} {
 		o.Dir, o.Work, o.Script = synthetic, t.TempDir(), FileSolution
 		if _, err := Run(t.Context(), o); err == nil {
 			t.Errorf("version %d, device %v ran", o.PromptVersion, o.Device)
 		}
+	}
+	// Version 2 holds the device section version 4 holds.
+	if err := (Options{PromptVersion: 2, Device: true}).checkPrompt(); err != nil {
+		t.Errorf("version 2 on a device: %v", err)
 	}
 }
 

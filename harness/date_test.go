@@ -76,7 +76,7 @@ func TestEveryRequestStatesTheDateItsTurnOpenedOn(t *testing.T) {
 	})
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)),
 		reply(ir.StopEndTurn, text("The latest is from October.")),
 		reply(ir.StopEndTurn, text("Still October.")),
 	)

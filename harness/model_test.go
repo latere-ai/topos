@@ -175,7 +175,7 @@ func TestASessionsEffortReachesItsRequests(t *testing.T) {
 	}
 	e.stub.Script(model,
 		at("medium", reply(ir.StopEndTurn, text("One."))),
-		at("high", reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`))),
+		at("high", reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review."}`))),
 		at("high", reply(ir.StopEndTurn, text("Two."))),
 		at("medium", reply(ir.StopEndTurn, text("Three."))),
 	)

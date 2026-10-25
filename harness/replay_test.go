@@ -66,7 +66,7 @@ func TestReplayReproducesRequestHash(t *testing.T) {
 	ctx := t.Context()
 	e.stub.Script(model,
 		reply(ir.StopToolUse, ir.Block{Type: ir.BlockThinking, Text: "plan", Signature: "sig-1"}, call("toolu_1", "echo", `{"text":"a"}`)),
-		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)}, StopReason: ir.StopToolUse}, Respond: func(*ir.Request, *ir.Response) {
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)}, StopReason: ir.StopToolUse}, Respond: func(*ir.Request, *ir.Response) {
 			e.foreign(ctx, "Also check go.mod.")
 		}},
 		reply(ir.StopToolUse, call("toolu_a", ToolAdvisor, `{"question":"Enough?"}`)),
@@ -122,7 +122,7 @@ func TestReplayReportsWhatItDoesNotCompare(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review."}`)),
 		reply(ir.StopEndTurn, text("Done.")),
 	)
 	e.stub.Script(reviewerModel, reply(ir.StopEndTurn, text("Fine.")))

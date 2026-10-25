@@ -705,7 +705,7 @@ func (t *turn) run(ctx context.Context) (Outcome, error) {
 // the person's message that stood in for one, and a call no rule can
 // repeat is closed as unknown_effect. Then the confirmed calls that no
 // earlier runner could have started run, with the repeatable built-ins,
-// and the threads the open spawn, message and advisor calls drove
+// and the threads the open agent, send_message and advisor calls drove
 // continue. Only then does the session go idle on what still waits: an
 // ask nobody answered, a question nothing closed, a client's call, a
 // thread's pause.
@@ -789,7 +789,7 @@ func (t *turn) resume(ctx context.Context) error {
 			default:
 				run = append(run, c)
 			}
-		case c.use.Name == ToolSpawn || c.use.Name == ToolMessage || c.use.Name == ToolAdvisor:
+		case t.threadCall(c.use.Name):
 			threads = append(threads, c)
 		case c.use.Repeatable:
 			run = append(run, c)
@@ -801,7 +801,10 @@ func (t *turn) resume(ctx context.Context) error {
 	}
 	calls := make([]plannedCall, 0, len(run))
 	for _, c := range run {
-		tool, ok := t.reg.Get(c.use.Name)
+		// A call recorded under a name a thread tool had before runs the
+		// tool, read in its inputs now.
+		name, input := t.resolve(c.use.Name, c.use.Input)
+		tool, ok := t.reg.Get(name)
 		if !ok {
 			if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeUnknownTool, prompts.Render(prompts.CallUnknownTool, prompts.Data{"Name": c.use.Name})), 0); err != nil {
 				return err
@@ -822,7 +825,7 @@ func (t *turn) resume(ctx context.Context) error {
 		if held != nil {
 			continue
 		}
-		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})
+		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: input})
 	}
 	if err := t.runCalls(ctx, calls, &w); err != nil {
 		if _, spent := models.SpendRefused(err); spent {
@@ -1681,10 +1684,14 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		if b.Type != ir.BlockToolUse || b.ToolUse == nil {
 			continue
 		}
-		id, name, input := b.ToolUse.ID, b.ToolUse.Name, []byte(b.ToolUse.Args)
+		// A call of a thread tool by the name it had before runs the tool,
+		// read in its inputs now; its agent.tool_use records the call as the
+		// model wrote it (spec 013).
+		id, wrote, written := b.ToolUse.ID, b.ToolUse.Name, []byte(b.ToolUse.Args)
 		if raw, broken := res.InvalidArgs[id]; broken {
-			input = []byte(raw)
+			written = []byte(raw)
 		}
+		name, input := t.resolve(wrote, written)
 		t.repeats.made(id, name, input)
 		if cut := cutCall(res); cut != nil && cut.ID == id {
 			answered = append(answered, answeredCall{id, tools.CutInput(name, input, limit)})
@@ -1767,7 +1774,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		review := d.ReviewProbability
 		use := session.AgentToolUse{
-			ToolUseID: id, Name: name, Input: input, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
+			ToolUseID: id, Name: wrote, Input: written, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
 			Mode: string(mode), Client: props.Client, Repeatable: props.Repeatable,
 			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion, Attended: &attended,
 		}

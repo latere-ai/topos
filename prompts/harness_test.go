@@ -13,14 +13,14 @@ func TestRenderIncludesOnlyTheSectionsThatApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(plain, "{{") || !strings.Contains(plain, "disposable sandbox") || strings.Contains(plain, "# Threads") || strings.Contains(plain, "# Git") {
+	if strings.Contains(plain, "{{") || !strings.Contains(plain, "disposable sandbox") || strings.Contains(plain, "# Subagents") || strings.Contains(plain, "# Git") {
 		t.Fatalf("a plain sandbox prompt:\n%s", plain)
 	}
 	full, err := Harness(HarnessCurrent, HarnessOptions{Host: true, Threads: true, Memory: true, Git: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"person's own computer", "# Threads", "`spawn`", "# Memory", "# Git", "unknown_effect", "is an answer, not an obstacle"} {
+	for _, want := range []string{"person's own computer", "# Subagents", "`agent`", "`send_message`", "# Memory", "# Git", "unknown_effect", "is an answer, not an obstacle"} {
 		if !strings.Contains(full, want) {
 			t.Fatalf("the full prompt lacks %q", want)
 		}
@@ -31,8 +31,32 @@ func TestRenderIncludesOnlyTheSectionsThatApply(t *testing.T) {
 	if _, err := Harness(99, HarnessOptions{}); err == nil {
 		t.Fatal("rendered a version that does not exist")
 	}
-	if HarnessVersion(HarnessCurrent) != "harness/1" {
+	if HarnessVersion(HarnessCurrent) != "harness/3" {
 		t.Fatalf("version %s", HarnessVersion(HarnessCurrent))
+	}
+}
+
+// TestTheSubagentsSectionNamesTheRenamedTools: version 3 of the harness
+// prompt names the agent and send_message tools where version 1 names
+// spawn and message, and renders every agent without subagents byte for
+// byte as version 1 does; version 4 is version 2 the same way (spec 013).
+func TestTheSubagentsSectionNamesTheRenamedTools(t *testing.T) {
+	for _, pair := range [][2]int{{1, HarnessCurrent}, {2, HarnessDevice}} {
+		before, now := pair[0], pair[1]
+		for _, o := range []HarnessOptions{{}, {Host: true}, {Device: true}, {Host: true, Memory: true, Git: true}, {Device: true, Git: true}} {
+			old, err1 := Harness(before, o)
+			cur, err2 := Harness(now, o)
+			if err1 != nil || err2 != nil || old != cur {
+				t.Fatalf("version %d renders %+v otherwise than version %d: %v %v\n%s\n---\n%s", now, o, before, err1, err2, old, cur)
+			}
+		}
+		cur, err := Harness(now, HarnessOptions{Threads: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(cur, "# Subagents") || !strings.Contains(cur, "`agent` starts one of your subagents") || !strings.Contains(cur, "`send_message`") || strings.Contains(cur, "spawn") || strings.Contains(cur, "`message`") {
+			t.Fatalf("version %d with subagents:\n%s", now, cur)
+		}
 	}
 }
 

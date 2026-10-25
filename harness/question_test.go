@@ -121,7 +121,7 @@ func TestQuestionIsOfferedWhenNamed(t *testing.T) {
 		e := asking(t, false, withReviewer(func(s *Subagent) { s.Tools = []string{"echo", ToolQuestion} }))
 		ctx := t.Context()
 		e.stub.Script(model,
-			luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"agent":"reviewer","task":"Review it.","tools":["echo","question"]}`)}, StopReason: ir.StopToolUse}, Expect: func(r *ir.Request) error {
+			luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review it.","tools":["echo","question"]}`)}, StopReason: ir.StopToolUse}, Expect: func(r *ir.Request) error {
 				if names := offered(r); !slices.Contains(names, ToolQuestion) {
 					return fmt.Errorf("the session's own thread is offered %v", names)
 				}

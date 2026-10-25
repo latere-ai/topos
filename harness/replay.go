@@ -25,10 +25,10 @@ import (
 // again as its step built it, the fold of the log through the request's
 // fold_seq, on the thread it ran on, with the prompt version, the
 // model, the dialect and the max_tokens it recorded. A thread's
-// configuration is its parent's narrowed by its thread.started, as spawn
-// and the advisor built it, and a compaction's summary request is built
-// from the range it summarized. blobs reads the instruction files the
-// fold names.
+// configuration is its parent's narrowed by its thread.started, as the
+// agent tool and the advisor built it, and a compaction's summary
+// request is built from the range it summarized. blobs reads the
+// instruction files the fold names.
 //
 // A step whose log was redacted after it was sent, and one on a thread
 // whose subagent the configuration no longer names, cannot be built
@@ -160,9 +160,9 @@ func (t *turn) replayRequest(ctx context.Context, log, prefix []session.Event, s
 	return req, err
 }
 
-// replayThread is the turn of thread id under t, built as spawn and the
-// advisor built it: its parent's, then the configuration and the tools
-// its thread.started names.
+// replayThread is the turn of thread id under t, built as the agent tool
+// and the advisor built it: its parent's, then the configuration and the
+// tools its thread.started names.
 func (t *turn) replayThread(log []session.Event, id string) (*turn, error) {
 	if id == t.thread {
 		return t, nil

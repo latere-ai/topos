@@ -42,7 +42,7 @@ func TestTheAdvisorReadsTheTranscriptAsText(t *testing.T) {
 }
 
 // TestSpawnRefusesAnUnknownSubagentAndTheDepthLimit pins the error results
-// a spawn gives the model before it starts a thread.
+// the agent tool gives the model before it starts a thread.
 func TestSpawnRefusesAnUnknownSubagentAndTheDepthLimit(t *testing.T) {
 	top := &turn{h: &Harness{c: Config{Subagents: map[string]Subagent{"reviewer": {}}}}, sh: &shared{}}
 	res, err := top.spawn(t.Context(), "toolu_1", "nobody", "Review.", "", nil)
@@ -51,7 +51,7 @@ func TestSpawnRefusesAnUnknownSubagentAndTheDepthLimit(t *testing.T) {
 	}
 	deep := &turn{h: top.h, sh: top.sh, depth: DefaultMaxDepth}
 	res, err = deep.spawn(t.Context(), "toolu_2", "reviewer", "Review.", "", nil)
-	if want := CodeDepthExceeded + ": " + fmt.Sprintf("a thread at depth %d may not spawn", DefaultMaxDepth); err != nil || res.Outcome != tools.OutcomeError || res.Content[0].Text != want {
+	if want := CodeDepthExceeded + ": " + fmt.Sprintf("at depth %d, you may not start another subagent", DefaultMaxDepth); err != nil || res.Outcome != tools.OutcomeError || res.Content[0].Text != want {
 		t.Fatalf("past the depth limit: %+v, %v; want %q", res, err, want)
 	}
 }

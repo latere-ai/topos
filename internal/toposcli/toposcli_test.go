@@ -557,7 +557,7 @@ spec:
   tools: [read]
 `)
 	f.stub.Script(model,
-		luxstub.Reply{Response: reply(toolUse("toolu_s", "spawn", `{"agent":"tester","task":"Run the tests."}`)).Response, Expect: expectAgent("You lead.", "read,glob,spawn,message")},
+		luxstub.Reply{Response: reply(toolUse("toolu_s", "agent", `{"subagent":"tester","task":"Run the tests."}`)).Response, Expect: expectAgent("You lead.", "read,glob,agent,send_message")},
 		luxstub.Reply{Response: reply(text("All green.")).Response, Expect: expectAgent("You test.", "read")},
 		luxstub.Reply{Response: reply(text("The tests pass.")).Response, Expect: func(r *ir.Request) error {
 			last := r.Messages[len(r.Messages)-1]
@@ -571,7 +571,7 @@ spec:
 		}},
 	)
 	code, out, errOut := f.run("run", "--agent", path, "Check the tests.")
-	if code != ExitOK || out != "The tests pass.\n" || !strings.Contains(errOut, "spawn") {
+	if code != ExitOK || out != "The tests pass.\n" || !strings.Contains(errOut, "agent  [allow]") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

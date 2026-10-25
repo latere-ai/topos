@@ -71,7 +71,7 @@ func TestASpawnedThreadHoldsNoPublish(t *testing.T) {
 	})
 	ctx := t.Context()
 	e.stub.Script(model,
-		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"agent":"reviewer","task":"Publish it.","tools":["echo","publish"]}`)}, StopReason: ir.StopToolUse}, Expect: func(r *ir.Request) error {
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"subagent":"reviewer","task":"Publish it.","tools":["echo","publish"]}`)}, StopReason: ir.StopToolUse}, Expect: func(r *ir.Request) error {
 			if names := offered(r); !slices.Contains(names, session.ToolPublish) {
 				return fmt.Errorf("the session's own thread is offered %v", names)
 			}

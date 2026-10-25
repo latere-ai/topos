@@ -9,8 +9,11 @@ import (
 )
 
 // HarnessCurrent is the harness prompt version new requests use (spec
-// 011).
-const HarnessCurrent = 1
+// 011). Version 3 is version 1 with the section on subagents that names
+// the agent and send_message tools (spec 013), harness/threads-v2 in place
+// of harness/threads-v1, which names spawn and message; for an agent with
+// no subagents it renders byte for byte as version 1.
+const HarnessCurrent = 3
 
 // HarnessDevice is the harness prompt version a session on a person's own
 // computer uses (spec 080): the first with a machine section for one.
@@ -19,8 +22,10 @@ const HarnessCurrent = 1
 // instruction tasks per version: version 1 passed 179 of 195 runs and
 // version 2, rendered for a device, 190 of 195, for 0.52 USD in all (spec
 // 080's Outcome). Every other session stays on HarnessCurrent; version 2
-// renders byte for byte as version 1 on any machine but a device.
-const HarnessDevice = 2
+// renders byte for byte as version 1 on any machine but a device. Version
+// 4 is version 2 with the section on subagents of version 3, and renders
+// byte for byte as version 3 on any machine but a device.
+const HarnessDevice = 4
 
 // HarnessVersion is the prompt_version a model.request records for
 // harness prompt version n.

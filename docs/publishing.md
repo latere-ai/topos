@@ -102,11 +102,11 @@ spec:
   machine: {kind: cella}
 ```
 
-The tool belongs to the session's own thread: a thread a spawn starts
-holds none. A thread publishes to its own app, created at its first such
-call, and to each app the installation attached to the session. `topos
-run` refuses an agent that names it, since a run on a person's machine
-has no app host and no sandbox.
+The tool belongs to the session's own conversation: a subagent the
+`agent` tool starts holds none. A session publishes to its own app,
+created at its first such call, and to each app the installation
+attached to the session. `topos run` refuses an agent that names it,
+since a run on a person's machine has no app host and no sandbox.
 
 ## Opening an app to others
 

@@ -63,9 +63,12 @@ const (
 	ToolGlob       Name = "tools/glob-v1"
 	ToolWebFetch   Name = "tools/web_fetch-v1"
 	ToolTodo       Name = "tools/todo-v1"
-	ToolSpawn      Name = "tools/spawn-v1"
-	ToolMessage    Name = "tools/message-v1"
-	ToolAdvisor    Name = "tools/advisor-v1"
+	// ToolAgent and ToolSendMessage describe the subagent tools under the
+	// names they took from spawn and message, whose descriptions,
+	// tools/spawn-v1 and tools/message-v1, stay for replay.
+	ToolAgent       Name = "tools/agent-v1"
+	ToolSendMessage Name = "tools/send_message-v1"
+	ToolAdvisor     Name = "tools/advisor-v1"
 	// ToolQuestion states the bounds of session's question constants in
 	// its text, which a test holds to them (spec 039).
 	ToolQuestion Name = "tools/question-v1"
@@ -279,13 +282,14 @@ const (
 // the values each kind names: message, answer, interrupt and title a
 // sender's Name and Subject; call, result and answer an ID; call and
 // result a Tool; result an Outcome; task and removed none. Every render
-// passes all six.
+// passes all six. Version 2 calls the agent that started a subagent by
+// what it is, where version 1 says thread.
 // HistoryEntry takes Seq, Time, Head and Body, empty for an entry with
 // none, and HistoryMatch Seq, Time, Head and Excerpt, the text around a
 // query's first match, with Before and After, whether the entry's text
 // goes on beyond it.
 const (
-	HistoryHead  Name = "results/history/head-v1"
+	HistoryHead  Name = "results/history/head-v2"
 	HistoryEntry Name = "results/history/entry-v1"
 	HistoryMatch Name = "results/history/match-v1"
 	// HistoryFiles takes Paths, the paths of a message's files, joined.
@@ -473,21 +477,22 @@ const (
 )
 
 // The results of the thread tools (spec 013). Each takes the values its
-// file names.
+// file names. Version 2 of a result names the agent and send_message
+// tools and calls a thread the agent it runs.
 const (
-	ThreadIdle            Name = "results/threads/idle-v1"
-	ThreadStopped         Name = "results/threads/stopped-v1"
+	ThreadIdle            Name = "results/threads/idle-v2"
+	ThreadStopped         Name = "results/threads/stopped-v2"
 	AdvisorStopped        Name = "results/threads/advisor-stopped-v1"
 	ThreadBranch          Name = "results/threads/branch-v1"
-	ThreadUncommitted     Name = "results/threads/uncommitted-v1"
-	ThreadCommitFailed    Name = "results/threads/commit-failed-v1"
+	ThreadUncommitted     Name = "results/threads/uncommitted-v2"
+	ThreadCommitFailed    Name = "results/threads/commit-failed-v2"
 	ThreadUnknownSubagent Name = "results/threads/unknown-subagent-v1"
-	ThreadDepthExceeded   Name = "results/threads/depth-exceeded-v1"
-	ThreadNoWorktrees     Name = "results/threads/no-worktrees-v1"
-	ThreadTooMany         Name = "results/threads/too-many-v1"
-	ThreadNotSpawned      Name = "results/threads/not-spawned-v1"
-	ThreadEnded           Name = "results/threads/ended-v1"
-	ThreadSubagentGone    Name = "results/threads/subagent-gone-v1"
+	ThreadDepthExceeded   Name = "results/threads/depth-exceeded-v2"
+	ThreadNoWorktrees     Name = "results/threads/no-worktrees-v2"
+	ThreadTooMany         Name = "results/threads/too-many-v2"
+	ThreadNotSpawned      Name = "results/threads/not-spawned-v2"
+	ThreadEnded           Name = "results/threads/ended-v2"
+	ThreadSubagentGone    Name = "results/threads/subagent-gone-v2"
 )
 
 // The registry's answers to a call it refuses (spec 008), and the line

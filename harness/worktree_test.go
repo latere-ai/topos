@@ -91,10 +91,10 @@ func TestAnIsolatedThreadWorksOnItsOwnBranch(t *testing.T) {
 	}
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Add notes.txt.","isolation":"worktree"}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Add notes.txt.","isolation":"worktree"}`)),
 		luxstub.Reply{Response: ir.Response{Model: model}, Respond: func(_ *ir.Request, r *ir.Response) {
 			id, _ := e.thread(e.all())
-			r.Blocks = []ir.Block{call("toolu_m", ToolMessage, `{"thread":"`+id+`","content":"Add more.txt too."}`)}
+			r.Blocks = []ir.Block{call("toolu_m", ToolSendMessage, `{"to":"`+id+`","message":"Add more.txt too."}`)}
 			r.StopReason = ir.StopToolUse
 		}},
 		reply(ir.StopEndTurn, text("I will merge both.")),
@@ -146,7 +146,7 @@ func TestAnIsolatedThreadWorksOnItsOwnBranch(t *testing.T) {
 func TestWorktreeIsolationNeedsAMachineThatKeepsThem(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t","isolation":"worktree"}`)), reply(ir.StopEndTurn, text("ok")))
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t","isolation":"worktree"}`)), reply(ir.StopEndTurn, text("ok")))
 	e.send(ctx, "Go.")
 	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
 		t.Fatalf("outcome %+v", out)

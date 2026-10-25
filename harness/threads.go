@@ -49,12 +49,91 @@ const (
 	DefaultMaxConcurrent = 8
 )
 
-// Names of the thread tools.
+// Names of the thread tools: agent starts a subagent and send_message
+// continues one (spec 013).
+const (
+	ToolAgent       = "agent"
+	ToolSendMessage = "send_message"
+	ToolAdvisor     = "advisor"
+)
+
+// The names the agent and send_message tools had before, which a call a
+// model makes, a call the log recorded and a permission pattern may still
+// name. ToolName reads each as the tool's name now, and a call's input is
+// read in the tool's inputs now: spawn's agent is subagent, and message's
+// thread and content are to and message.
 const (
 	ToolSpawn   = "spawn"
 	ToolMessage = "message"
-	ToolAdvisor = "advisor"
 )
+
+// renamedInputs are the inputs of each name a thread tool had before,
+// keyed by the input's name now.
+var renamedInputs = map[string]map[string]string{
+	ToolSpawn:   {"agent": "subagent"},
+	ToolMessage: {"thread": "to", "content": "message"},
+}
+
+// ToolName is the name a thread tool has now for name, one of the names
+// it had before, and name itself for every other name.
+func ToolName(name string) string {
+	switch name {
+	case ToolSpawn:
+		return ToolAgent
+	case ToolMessage:
+		return ToolSendMessage
+	}
+	return name
+}
+
+// resolve is the tool a call of name runs, and its input in that tool's
+// inputs: a thread tool called by the name it had before runs as the tool,
+// with each input under its name now, when this thread holds the tool and
+// no tool of the old name, which would be a client's. Every other call,
+// and an input that is not a JSON object, is returned as it is.
+func (t *turn) resolve(name string, input []byte) (string, []byte) {
+	now := ToolName(name)
+	if now == name {
+		return name, input
+	}
+	if _, held := t.reg.Get(name); held {
+		return name, input
+	}
+	if _, held := t.reg.Get(now); !held {
+		return name, input
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(input, &fields) != nil || fields == nil {
+		return now, input
+	}
+	for before, after := range renamedInputs[name] {
+		v, ok := fields[before]
+		if _, taken := fields[after]; !ok || taken {
+			continue
+		}
+		delete(fields, before)
+		fields[after] = v
+	}
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return now, input
+	}
+	return now, out
+}
+
+// threadCall reports whether a recorded call is of a thread tool: by its
+// name now, or by the name it had before, which a call recorded before
+// the rename holds, unless this thread holds a tool of that name, a
+// client's.
+func (t *turn) threadCall(name string) bool {
+	if now := ToolName(name); now != name {
+		if _, held := t.reg.Get(name); held {
+			return false
+		}
+		name = now
+	}
+	return name == ToolAgent || name == ToolSendMessage || name == ToolAdvisor
+}
 
 // advisorAgent is the agent name of an advisor thread.
 const advisorAgent = "advisor"
@@ -63,8 +142,8 @@ const advisorAgent = "advisor"
 const (
 	CodeUnknownSubagent      = "unknown_subagent"
 	CodeDepthExceeded        = "depth_exceeded"
-	CodeTooManyThreads       = "too_many_threads"
-	CodeThreadNotFound       = "thread_not_found"
+	CodeTooManySubagents     = "too_many_subagents"
+	CodeSubagentNotFound     = "subagent_not_found"
 	CodeIsolationUnavailable = "isolation_unavailable"
 )
 
@@ -151,13 +230,13 @@ func stricterMode(a, b Mode) Mode {
 }
 
 // registry builds a thread's registry: the root registry's tools that
-// the thread holds, spawn and message when the thread has subagents and
-// is below the depth limit, the advisor when the agent has one, the
+// the thread holds, agent and send_message when the thread has subagents
+// and is below the depth limit, the advisor when the agent has one, the
 // question tool for the session's own thread when the agent names it,
 // request_connection for the session's own thread when the session has a
 // service the person may be asked to connect, and history when the agent
 // names it, for the session's own thread and a spawned thread that holds
-// it. A thread a spawn started holds neither the question tool nor
+// it. A thread the agent tool started holds neither the question tool nor
 // request_connection: it ends its turn saying what it needs decided or
 // connected, and its parent, which holds the conversation with the
 // person, asks (specs 039 and 069).
@@ -165,7 +244,13 @@ func (t *turn) registry(names []string) (*tools.Registry, error) {
 	r := t.root.Subset(names)
 	var extra []tools.Tool
 	if len(t.h.c.Subagents) > 0 && t.depth < t.h.maxDepth() {
-		extra = append(extra, spawnTool{t}, messageTool{t})
+		// An agent stored before the names were reserved may hold a client
+		// tool of either name, which is that client's.
+		for _, tool := range []tools.Tool{agentTool{t}, sendMessageTool{t}} {
+			if _, held := r.Get(tool.Definition().Name); !held {
+				extra = append(extra, tool)
+			}
+		}
 	}
 	if t.h.c.Advisor != nil {
 		extra = append(extra, advisorTool{t})
@@ -337,9 +422,11 @@ func renderTranscript(tr session.Transcript) string {
 	return prompts.Render(prompts.AdvisorTranscript, prompts.Data{"Entries": entries})
 }
 
-type spawnTool struct{ t *turn }
+// agentTool starts a thread of one of the agent's subagents and returns
+// its answer.
+type agentTool struct{ t *turn }
 
-func (s spawnTool) Definition() tools.Definition {
+func (s agentTool) Definition() tools.Definition {
 	names := make([]string, 0, len(s.t.h.c.Subagents))
 	for n := range s.t.h.c.Subagents {
 		names = append(names, n)
@@ -350,19 +437,19 @@ func (s spawnTool) Definition() tools.Definition {
 		enum = []byte("[]")
 	}
 	return tools.Definition{
-		Name:        ToolSpawn,
-		Description: prompts.Text(prompts.ToolSpawn),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"agent":{"type":"string","enum":` + string(enum) + `},"task":{"type":"string","minLength":1},"isolation":{"type":"string","enum":["shared","worktree"]},"tools":{"type":"array","items":{"type":"string"}},"budget":{"type":"number","minimum":0}},"required":["agent","task"],"additionalProperties":false}`),
+		Name:        ToolAgent,
+		Description: prompts.Text(prompts.ToolAgent),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"subagent":{"type":"string","enum":` + string(enum) + `},"task":{"type":"string","minLength":1},"isolation":{"type":"string","enum":["shared","worktree"]},"tools":{"type":"array","items":{"type":"string"}},"budget":{"type":"number","minimum":0}},"required":["subagent","task"],"additionalProperties":false}`),
 	}
 }
 
-func (s spawnTool) Properties() tools.Properties {
+func (s agentTool) Properties() tools.Properties {
 	return tools.Properties{Parallel: true, Effect: tools.EffectNone}
 }
 
-func (s spawnTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
+func (s agentTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	var in struct {
-		Agent     string   `json:"agent"`
+		Subagent  string   `json:"subagent"`
 		Task      string   `json:"task"`
 		Isolation string   `json:"isolation"`
 		Tools     []string `json:"tools"`
@@ -370,33 +457,35 @@ func (s spawnTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) 
 	if err := json.Unmarshal(c.Input, &in); err != nil {
 		return tools.Result{}, err
 	}
-	return s.t.spawn(ctx, c.ID, in.Agent, in.Task, in.Isolation, in.Tools)
+	return s.t.spawn(ctx, c.ID, in.Subagent, in.Task, in.Isolation, in.Tools)
 }
 
-type messageTool struct{ t *turn }
+// sendMessageTool sends a thread this thread started more work and
+// returns its answer.
+type sendMessageTool struct{ t *turn }
 
-func (m messageTool) Definition() tools.Definition {
+func (m sendMessageTool) Definition() tools.Definition {
 	return tools.Definition{
-		Name:        ToolMessage,
-		Description: prompts.Text(prompts.ToolMessage),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"thread":{"type":"string","minLength":1},"content":{"type":"string","minLength":1},"end":{"type":"boolean"}},"required":["thread","content"],"additionalProperties":false}`),
+		Name:        ToolSendMessage,
+		Description: prompts.Text(prompts.ToolSendMessage),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"to":{"type":"string","minLength":1},"message":{"type":"string","minLength":1},"end":{"type":"boolean"}},"required":["to","message"],"additionalProperties":false}`),
 	}
 }
 
-func (m messageTool) Properties() tools.Properties {
+func (m sendMessageTool) Properties() tools.Properties {
 	return tools.Properties{Parallel: true, Effect: tools.EffectNone}
 }
 
-func (m messageTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
+func (m sendMessageTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	var in struct {
-		Thread  string `json:"thread"`
-		Content string `json:"content"`
+		To      string `json:"to"`
+		Message string `json:"message"`
 		End     bool   `json:"end"`
 	}
 	if err := json.Unmarshal(c.Input, &in); err != nil {
 		return tools.Result{}, err
 	}
-	return m.t.message(ctx, c.ID, in.Thread, in.Content, in.End)
+	return m.t.message(ctx, c.ID, in.To, in.Message, in.End)
 }
 
 func errorResult(code, text string) tools.Result {
@@ -427,7 +516,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 		// the conversation with the person asks, a session has one app, and
 		// standing work, the session's wake and its notices are the
 		// conversation's (specs 039, 069, 043 and 086).
-		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish || n == session.ToolTrigger || n == session.ToolWake || n == session.ToolNotify {
+		if n == ToolAgent || n == ToolSendMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish || n == session.ToolTrigger || n == session.ToolWake || n == session.ToolNotify {
 			continue
 		}
 		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {
@@ -464,7 +553,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	}
 	e.ID, e.Thread = id, id
 	if !t.sh.claim(t.h.maxConcurrent()) {
-		return errorResult(CodeTooManyThreads, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
+		return errorResult(CodeTooManySubagents, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
 	if err := t.commit(ctx, e); err != nil {
@@ -535,10 +624,10 @@ func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''
 func (t *turn) message(ctx context.Context, callID, thread, content string, end bool) (tools.Result, error) {
 	started, ok := t.spawned(thread)
 	if !ok {
-		return errorResult(CodeThreadNotFound, prompts.Render(prompts.ThreadNotSpawned, prompts.Data{"Thread": thread})), nil
+		return errorResult(CodeSubagentNotFound, prompts.Render(prompts.ThreadNotSpawned, prompts.Data{"Thread": thread})), nil
 	}
 	if t.ended(thread) {
-		return errorResult(CodeThreadNotFound, prompts.Render(prompts.ThreadEnded, prompts.Data{"Thread": thread})), nil
+		return errorResult(CodeSubagentNotFound, prompts.Render(prompts.ThreadEnded, prompts.Data{"Thread": thread})), nil
 	}
 	sub, ok := t.h.c.Subagents[started.Agent.Name]
 	if !ok {
@@ -553,7 +642,7 @@ func (t *turn) message(ctx context.Context, callID, thread, content string, end 
 	}
 	e.Thread = thread
 	if !t.sh.claim(t.h.maxConcurrent()) {
-		return errorResult(CodeTooManyThreads, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
+		return errorResult(CodeTooManySubagents, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
 	if err := t.commit(ctx, e); err != nil {
@@ -739,7 +828,7 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 		return errorResult(CodeUnknownSubagent, prompts.Render(prompts.ThreadSubagentGone, prompts.Data{"Thread": thread, "Agent": started.Agent.Name})), nil
 	}
 	if !t.sh.claim(t.h.maxConcurrent()) {
-		return errorResult(CodeTooManyThreads, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
+		return errorResult(CodeTooManySubagents, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
 	cfg := t.childConfig(sub)

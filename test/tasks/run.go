@@ -252,15 +252,24 @@ func (o Options) promptVersion() int {
 }
 
 // checkPrompt refuses a harness prompt version this build does not hold,
-// and a device on a version with no machine section for one.
+// and a device on a version with no machine section for one: a version
+// that renders a device as it renders any other machine.
 func (o Options) checkPrompt() error {
 	n := o.promptVersion()
-	if o.Device && n < prompts.HarnessDevice {
-		return fmt.Errorf("tasks: %s has no machine section for a person's own computer; %s is the first that does",
-			prompts.HarnessVersion(n), prompts.HarnessVersion(prompts.HarnessDevice))
-	}
-	if _, err := prompts.Harness(n, prompts.HarnessOptions{Device: o.Device}); err != nil {
+	text, err := prompts.Harness(n, prompts.HarnessOptions{Device: o.Device})
+	if err != nil {
 		return fmt.Errorf("tasks: %w", err)
+	}
+	if !o.Device {
+		return nil
+	}
+	other, err := prompts.Harness(n, prompts.HarnessOptions{})
+	if err != nil {
+		return fmt.Errorf("tasks: %w", err)
+	}
+	if text == other {
+		return fmt.Errorf("tasks: %s has no machine section for a person's own computer; %s has one",
+			prompts.HarnessVersion(n), prompts.HarnessVersion(prompts.HarnessDevice))
 	}
 	return nil
 }

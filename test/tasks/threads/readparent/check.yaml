@@ -1,6 +1,6 @@
 - file: {path: colors.txt, equals: "red\ngreen\nblue"}
 - file: {path: count.txt, equals: "3"}
-- call: {tool: spawn, thread: root, outcome: ok}
+- call: {tool: agent, thread: root, outcome: ok}
 - call:
     tool: read
     thread: sub

@@ -218,7 +218,7 @@ func TestEveryThreadOfTheAgentHoldsHistory(t *testing.T) {
 	})
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)),
 		reply(ir.StopEndTurn, text("Reviewed.")),
 	)
 	e.stub.Script(reviewerModel,
@@ -242,7 +242,7 @@ func TestEveryThreadOfTheAgentHoldsHistory(t *testing.T) {
 		t.Fatalf("the thread was started with %v", started.Tools)
 	}
 	got := resultOf(t, evs, "toolu_rh").Content[0].Text
-	if !strings.Contains(got, "The thread that started you gave you this task:\nReview main.go.") || strings.Contains(got, "quartz") {
+	if !strings.Contains(got, "The agent that started you as its subagent gave you this task:\nReview main.go.") || strings.Contains(got, "quartz") {
 		t.Fatalf("the thread read:\n%s", got)
 	}
 
@@ -594,7 +594,7 @@ func TestRebuildRendersTheHistoryTexts(t *testing.T) {
 	ctx := t.Context()
 	e.history(ctx, 12000, 12000, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40)
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)),
 		reply(ir.StopToolUse, call("toolu_h", tools.NameHistory, `{"tool_use_id":"toolu_h00"}`)),
 		reply(ir.StopEndTurn, text("Done.")),
 	)

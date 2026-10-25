@@ -108,7 +108,7 @@ func TestTwoAsksConfirmedApart(t *testing.T) {
 		})
 		ctx := t.Context()
 		e.stub.Script(model,
-			reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Run the tests."}`), call("toolu_root", "bash", `{"command":"make"}`)),
+			reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Run the tests."}`), call("toolu_root", "bash", `{"command":"make"}`)),
 			reply(ir.StopEndTurn, text("done")),
 		)
 		e.stub.Script(reviewerModel,
@@ -259,7 +259,7 @@ func TestAMessageDeniesTheCallsThatWait(t *testing.T) {
 		})
 		ctx := t.Context()
 		e.stub.Script(model,
-			reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Run the tests."}`)),
+			reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Run the tests."}`)),
 			reply(ir.StopEndTurn, text("Left untested.")),
 		)
 		e.stub.Script(reviewerModel,

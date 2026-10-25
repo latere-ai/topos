@@ -287,7 +287,7 @@ func TestATurnRunsToolsAndEnds(t *testing.T) {
 	if err := reqs[0].Decode(&mr); err != nil {
 		t.Fatal(err)
 	}
-	if mr.Outcome != "ok" || mr.PromptVersion != "harness/1" || mr.RequestSHA256 == "" || mr.ResponseBlob == "" || mr.CostUSDMicro == nil || *mr.CostUSDMicro != 150 || mr.CostSource != models.CostCatalog {
+	if mr.Outcome != "ok" || mr.PromptVersion != "harness/3" || mr.RequestSHA256 == "" || mr.ResponseBlob == "" || mr.CostUSDMicro == nil || *mr.CostUSDMicro != 150 || mr.CostSource != models.CostCatalog {
 		t.Fatalf("model.request %+v", mr)
 	}
 	if rc, err := e.store.Blob(ctx, e.s.ID, mr.ResponseBlob); err != nil {

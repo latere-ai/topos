@@ -117,7 +117,7 @@ func TestHistoryReadsOneThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"The thread that started you gave you this task:\nReview the diff.", "You wrote:\nReviewing.", "builder wrote:\nCheck go.mod too."}
+	want := []string{"The agent that started you as its subagent gave you this task:\nReview the diff.", "You wrote:\nReviewing.", "builder wrote:\nCheck go.mod too."}
 	if h := heads(sub); !slices.Equal(h, want) {
 		t.Fatalf("the thread's entries %q", h)
 	}

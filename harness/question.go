@@ -16,9 +16,10 @@ import (
 )
 
 // ToolQuestion is the name of the tool that puts a decision to a person
-// (spec 039). It is a harness tool, as spawn, message and advisor are:
-// the harness adds it to the registry of the session's own thread when
-// Config.Question is set, and no thread a spawn starts holds it.
+// (spec 039). It is a harness tool, as agent, send_message and advisor
+// are: the harness adds it to the registry of the session's own thread
+// when Config.Question is set, and no thread the agent tool starts holds
+// it.
 const ToolQuestion = session.ToolQuestion
 
 // QuestionSchema is the input schema of the question tool, with every

@@ -72,6 +72,11 @@ var retired = map[string]bool{
 	// The refusal of a call with access beside a folder or a release: such
 	// a call now publishes and then changes who can open the app.
 	"results/publish/access-alone-v1": true,
+	// The descriptions of the subagent tools under the names they had
+	// before, spawn and message: tools/agent-v1 and tools/send_message-v1
+	// describe them now.
+	"tools/spawn-v1":   true,
+	"tools/message-v1": true,
 }
 
 // TestEveryCallNamesAText reads every Go file of the module outside this

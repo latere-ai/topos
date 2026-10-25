@@ -10,7 +10,7 @@ agent:
       tools: [read, write]
 prompt: |
   Write the three primary colors of light to colors.txt, one per line, in
-  lower case, in the order red, green, blue. Then spawn the reader
+  lower case, in the order red, green, blue. Then start the reader
   subagent with a task that tells it to read colors.txt in the working
   directory and write the number of lines colors.txt holds, as a bare
   number, to count.txt. Do not write count.txt yourself.

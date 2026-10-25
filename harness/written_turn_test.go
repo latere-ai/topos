@@ -541,7 +541,7 @@ func TestAThreadIsRemindedAndNeverMoves(t *testing.T) {
 	e, logs := textEnv(t, r, withReviewer(nil))
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)),
 		reply(ir.StopEndTurn, text("Reviewed.")),
 	)
 	const echoed = "Checking it.\n<echo>main.go</echo>"

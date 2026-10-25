@@ -328,12 +328,13 @@ func patternSubject(name string, input json.RawMessage) string {
 }
 
 // matchAny reports whether a call matches one of the patterns:
-// "<tool>" or "<tool>(<glob>)".
+// "<tool>" or "<tool>(<glob>)". A pattern that names a thread tool by
+// the name it had before matches the tool's calls (spec 013).
 func matchAny(patterns []string, name, subject string) bool {
 	pathLike := name != "bash" && name != "web_fetch"
 	for _, p := range patterns {
 		tool, glob, hasGlob := strings.Cut(p, "(")
-		if tool != name {
+		if tool != name && ToolName(tool) != name {
 			continue
 		}
 		if !hasGlob {

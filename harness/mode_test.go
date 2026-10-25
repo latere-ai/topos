@@ -132,7 +132,7 @@ func TestAThreadKeepsItsAgentsStricterMode(t *testing.T) {
 			e.h = h
 			ctx := t.Context()
 			e.stub.Script(model,
-				reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Build it."}`)),
+				reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Build it."}`)),
 				reply(ir.StopToolUse, call("toolu_p", "bash", `{"command":"make"}`)),
 				reply(ir.StopEndTurn, text("Built.")),
 			)

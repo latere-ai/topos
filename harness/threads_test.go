@@ -37,7 +37,7 @@ func withReviewer(mut func(*Subagent)) func(*Config) {
 	}
 }
 
-func spawnCall(id, args string) ir.Block { return call(id, ToolSpawn, args) }
+func spawnCall(id, args string) ir.Block { return call(id, ToolAgent, args) }
 
 func (e *env) thread(ctxEvents []session.Event) (string, session.ThreadStarted) {
 	e.t.Helper()
@@ -70,17 +70,17 @@ func TestSpawnRunsASubagentAndMessageContinuesIt(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.stub.Script(model,
-		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"agent":"reviewer","task":"Review main.go."}`)}, StopReason: ir.StopToolUse}, Expect: func(r *ir.Request) error {
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review main.go."}`)}, StopReason: ir.StopToolUse}, Expect: func(r *ir.Request) error {
 			for _, tool := range r.Tools {
-				if tool.Name == ToolSpawn {
+				if tool.Name == ToolAgent {
 					return nil
 				}
 			}
-			return errors.New("the parent was not offered spawn")
+			return errors.New("the parent was not offered agent")
 		}},
-		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{call("toolu_m", ToolMessage, `{}`)}, StopReason: ir.StopToolUse}, Respond: func(_ *ir.Request, r *ir.Response) {
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{call("toolu_m", ToolSendMessage, `{}`)}, StopReason: ir.StopToolUse}, Respond: func(_ *ir.Request, r *ir.Response) {
 			id, _ := e.thread(e.all())
-			r.Blocks = []ir.Block{call("toolu_m", ToolMessage, `{"thread":"`+id+`","content":"Check line 9 too.","end":true}`)}
+			r.Blocks = []ir.Block{call("toolu_m", ToolSendMessage, `{"to":"`+id+`","message":"Check line 9 too.","end":true}`)}
 		}},
 		reply(ir.StopEndTurn, text("Reviewed.")),
 	)
@@ -129,7 +129,7 @@ func TestSpawnRunsASubagentAndMessageContinuesIt(t *testing.T) {
 			results = append(results, p)
 		}
 	}
-	if len(results) != 2 || !strings.Contains(results[0].Content[0].Text, "Line 3 leaks a file.") || !strings.Contains(results[0].Content[0].Text, "Thread "+id+" is idle") || !strings.Contains(results[1].Content[0].Text, "Line 9 is fine.") {
+	if len(results) != 2 || !strings.Contains(results[0].Content[0].Text, "Line 3 leaks a file.") || !strings.Contains(results[0].Content[0].Text, "Subagent "+id+" is idle") || !strings.Contains(results[1].Content[0].Text, "Line 9 is fine.") {
 		t.Fatalf("parent results %+v", results)
 	}
 	childEvents := 0
@@ -184,10 +184,10 @@ func TestThreadToolErrors(t *testing.T) {
 	ctx := t.Context()
 	e.stub.Script(model,
 		reply(ir.StopToolUse,
-			spawnCall("toolu_1", `{"agent":"reviewer","task":"x","isolation":"worktree"}`),
-			call("toolu_2", ToolMessage, `{"thread":"evt_nope","content":"hi"}`),
+			spawnCall("toolu_1", `{"subagent":"reviewer","task":"x","isolation":"worktree"}`),
+			call("toolu_2", ToolSendMessage, `{"to":"evt_nope","message":"hi"}`),
 		),
-		reply(ir.StopToolUse, spawnCall("toolu_3", `{"agent":"ghost","task":"x"}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_3", `{"subagent":"ghost","task":"x"}`)),
 		reply(ir.StopEndTurn, text("ok")),
 	)
 	e.send(ctx, "Go.")
@@ -198,7 +198,7 @@ func TestThreadToolErrors(t *testing.T) {
 	for _, r := range e.parentResults(t) {
 		byID[r.ToolUseID] = r
 	}
-	if len(byID) != 3 || !strings.HasPrefix(byID["toolu_1"].Content[0].Text, CodeIsolationUnavailable) || !strings.HasPrefix(byID["toolu_2"].Content[0].Text, CodeThreadNotFound) || byID["toolu_3"].Outcome != tools.OutcomeInvalidInput {
+	if len(byID) != 3 || !strings.HasPrefix(byID["toolu_1"].Content[0].Text, CodeIsolationUnavailable) || !strings.HasPrefix(byID["toolu_2"].Content[0].Text, CodeSubagentNotFound) || byID["toolu_3"].Outcome != tools.OutcomeInvalidInput {
 		t.Fatalf("results %+v", byID)
 	}
 }
@@ -216,10 +216,10 @@ func TestTheDepthLimitWithholdsSpawn(t *testing.T) {
 	}
 	e.h = h
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Go deeper.","tools":["echo","bash"]}`)), reply(ir.StopEndTurn, text("done")))
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Go deeper.","tools":["echo","bash"]}`)), reply(ir.StopEndTurn, text("done")))
 	e.stub.Script(reviewerModel, luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("at the limit")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
 		for _, tool := range r.Tools {
-			if tool.Name == ToolSpawn || tool.Name == ToolMessage {
+			if tool.Name == ToolAgent || tool.Name == ToolSendMessage {
 				return errors.New("a thread at the depth limit was offered " + tool.Name)
 			}
 		}
@@ -244,7 +244,7 @@ func TestAPausedThreadPausesTheSessionAndResumes(t *testing.T) {
 	})
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Run the tests."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Run the tests."}`)),
 		reply(ir.StopEndTurn, text("All good.")),
 	)
 	e.stub.Script(reviewerModel,
@@ -280,11 +280,11 @@ func TestAThreadThatFinishedBeforeACrashIsNotRunAgain(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.send(ctx, "Go.")
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: ToolSpawn, Args: json.RawMessage(`{"agent":"reviewer","task":"t"}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: ToolAgent, Args: json.RawMessage(`{"subagent":"reviewer","task":"t"}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_s", Name: ToolSpawn, Input: json.RawMessage(`{"agent":"reviewer","task":"t"}`), Verdict: "allow"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_s", Name: ToolAgent, Input: json.RawMessage(`{"subagent":"reviewer","task":"t"}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestAThreadThatFinishedBeforeACrashIsNotRunAgain(t *testing.T) {
 
 	lost := setup(t, withReviewer(nil))
 	lost.send(ctx, "Go.")
-	use2, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_x", Name: ToolSpawn, Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
+	use2, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_x", Name: ToolAgent, Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestParallelSpawnsAndTheConcurrencyCap(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_a", `{"agent":"reviewer","task":"A"}`), spawnCall("toolu_b", `{"agent":"reviewer","task":"B"}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_a", `{"subagent":"reviewer","task":"A"}`), spawnCall("toolu_b", `{"subagent":"reviewer","task":"B"}`)),
 		reply(ir.StopEndTurn, text("both done")),
 	)
 	e.stub.Script(reviewerModel, reply(ir.StopEndTurn, text("one")), reply(ir.StopEndTurn, text("two")))
@@ -354,7 +354,7 @@ func TestParallelSpawnsAndTheConcurrencyCap(t *testing.T) {
 	}
 	c.h = h
 	c.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_a", `{"agent":"reviewer","task":"A"}`), spawnCall("toolu_b", `{"agent":"reviewer","task":"B"}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_a", `{"subagent":"reviewer","task":"A"}`), spawnCall("toolu_b", `{"subagent":"reviewer","task":"B"}`)),
 		reply(ir.StopEndTurn, text("done")),
 	)
 	c.stub.Script(reviewerModel, luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("one")}, StopReason: ir.StopEndTurn}, Expect: func(*ir.Request) error {
@@ -369,7 +369,7 @@ func TestParallelSpawnsAndTheConcurrencyCap(t *testing.T) {
 		switch {
 		case r.Outcome == tools.OutcomeOK:
 			ok++
-		case strings.HasPrefix(r.Content[0].Text, CodeTooManyThreads):
+		case strings.HasPrefix(r.Content[0].Text, CodeTooManySubagents):
 			capped++
 		}
 	}
@@ -399,7 +399,7 @@ func TestStricterMode(t *testing.T) {
 func TestAThreadThatStopsOtherwiseIsAnErrorResult(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("noted")))
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("noted")))
 	for range MaxContinuations + 2 {
 		e.stub.Script(reviewerModel, reply(ir.StopMaxTokens, text("more")))
 	}
@@ -417,15 +417,15 @@ func TestMessagingAnEndedThread(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t"}`)),
 		luxstub.Reply{Response: ir.Response{Model: model}, Respond: func(_ *ir.Request, r *ir.Response) {
 			id, _ := e.thread(e.all())
-			r.Blocks = []ir.Block{call("toolu_e", ToolMessage, `{"thread":"`+id+`","content":"bye","end":true}`)}
+			r.Blocks = []ir.Block{call("toolu_e", ToolSendMessage, `{"to":"`+id+`","message":"bye","end":true}`)}
 			r.StopReason = ir.StopToolUse
 		}},
 		luxstub.Reply{Response: ir.Response{Model: model}, Respond: func(_ *ir.Request, r *ir.Response) {
 			id, _ := e.thread(e.all())
-			r.Blocks = []ir.Block{call("toolu_f", ToolMessage, `{"thread":"`+id+`","content":"again"}`)}
+			r.Blocks = []ir.Block{call("toolu_f", ToolSendMessage, `{"to":"`+id+`","message":"again"}`)}
 			r.StopReason = ir.StopToolUse
 		}},
 		reply(ir.StopEndTurn, text("done")),
@@ -436,7 +436,7 @@ func TestMessagingAnEndedThread(t *testing.T) {
 		t.Fatalf("outcome %+v", out)
 	}
 	res := e.parentResults(t)
-	if len(res) != 3 || !strings.HasPrefix(res[2].Content[0].Text, CodeThreadNotFound) || !strings.Contains(res[2].Content[0].Text, "has ended") {
+	if len(res) != 3 || !strings.HasPrefix(res[2].Content[0].Text, CodeSubagentNotFound) || !strings.Contains(res[2].Content[0].Text, "has ended") {
 		t.Fatalf("results %+v", res)
 	}
 }
@@ -482,10 +482,10 @@ func TestAPausedMessageResumes(t *testing.T) {
 	})
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Get ready."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Get ready."}`)),
 		luxstub.Reply{Response: ir.Response{Model: model}, Respond: func(_ *ir.Request, r *ir.Response) {
 			id, _ := e.thread(e.all())
-			r.Blocks = []ir.Block{call("toolu_m", ToolMessage, `{"thread":"`+id+`","content":"Run the tests."}`)}
+			r.Blocks = []ir.Block{call("toolu_m", ToolSendMessage, `{"to":"`+id+`","message":"Run the tests."}`)}
 			r.StopReason = ir.StopToolUse
 		}},
 		reply(ir.StopEndTurn, text("Done.")),
@@ -520,7 +520,7 @@ func TestResumingAThreadWhoseSubagentIsGone(t *testing.T) {
 		c.Machine = fakeMachine{kind: machine.KindHost}
 	})
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
 	e.stub.Script(reviewerModel, reply(ir.StopToolUse, call("toolu_b", "bash", `{"command":"make"}`)))
 	e.send(ctx, "Go.")
 	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
@@ -548,7 +548,7 @@ func TestAThreadCanPauseAgainAfterResuming(t *testing.T) {
 		c.Machine = fakeMachine{kind: machine.KindHost}
 	})
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
 	e.stub.Script(reviewerModel,
 		reply(ir.StopToolUse, call("toolu_b1", "bash", `{"command":"make"}`)),
 		reply(ir.StopToolUse, call("toolu_b2", "bash", `{"command":"make install"}`)),
@@ -758,7 +758,7 @@ func TestSubagentsDoNotInheritTheAdvisor(t *testing.T) {
 		withAdvisor(c)
 	})
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
 	e.stub.Script(reviewerModel, luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("done")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
 		for _, tool := range r.Tools {
 			if tool.Name == ToolAdvisor {
@@ -784,7 +784,7 @@ func TestASubagentsEffortReachesItsRequests(t *testing.T) {
 		})
 		ctx := t.Context()
 		e.stub.Script(model,
-			luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`)}, StopReason: ir.StopToolUse}},
+			luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review."}`)}, StopReason: ir.StopToolUse}},
 			reply(ir.StopEndTurn, text("done")),
 		)
 		e.stub.Script(reviewerModel, luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("fine")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
@@ -807,7 +807,7 @@ func TestASubagentActsWithTheSessionsCredentials(t *testing.T) {
 	e := setup(t, withReviewer(func(s *Subagent) { s.Ignored = []string{"identity", "permissions"} }))
 	ctx := t.Context()
 	e.stub.Script(model,
-		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`)),
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"subagent":"reviewer","task":"Review."}`)),
 		reply(ir.StopEndTurn, text("done")),
 	)
 	e.stub.Script(reviewerModel, reply(ir.StopEndTurn, text("Fine.")))
