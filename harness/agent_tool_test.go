@@ -4,7 +4,9 @@
 package harness
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,6 +16,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/luxstub"
@@ -284,5 +288,157 @@ func TestAConfirmedCallOfAnOldNameRuns(t *testing.T) {
 	}
 	if res := e.parentResults(t); len(res) != 1 || res[0].Outcome != tools.OutcomeOK || !strings.Contains(res[0].Content[0].Text, "Line 3 leaks a file.") {
 		t.Fatalf("results %+v", res)
+	}
+}
+
+// helperSub is a subagent that names no model, connection, figures or
+// effort: its thread runs its parent's.
+func helperSub(c *Config) {
+	c.Name = "lead"
+	c.Subagents = map[string]Subagent{"helper": {Name: "helper", Instructions: "You help.", Tools: []string{"echo"}}}
+}
+
+// TestASubagentWithoutAModelRunsItsCallers: a subagent that names no
+// model runs the model its parent stands on when it is started, here the
+// model the authorizer routed the session's routed name to, at the
+// parent's effort and priced by that model's figures, which the session's
+// meter counts; the routed name itself is never connected. The thread
+// keeps that model after the session moves to another: a message to it
+// runs on the model it started on, connected again, and a model that can
+// no longer be connected stops it with the reason.
+func TestASubagentWithoutAModelRunsItsCallers(t *testing.T) {
+	const asked, routed, other = "tier/quick", "routed-model", "other-model"
+	var connected []string
+	gone := false
+	e := setup(t, func(c *Config) {
+		helperSub(c)
+		c.Effort = "low"
+		c.Connect = func(_ context.Context, name string) (models.Model, models.Connection, models.Entry, error) {
+			connected = append(connected, name)
+			if gone && name == routed {
+				return nil, models.Connection{}, models.Entry{}, &models.Coded{Code: models.CodeUnavailable, Message: name + " is gone"}
+			}
+			return &dialect.Model{}, models.Connection{BaseURL: c.Connection.BaseURL, Model: name, Family: models.FamilyAnthropic},
+				models.Entry{Name: name, InputWindow: 30_000, MaxOutputTokens: 2_000, Pricing: &models.Pricing{Input: price("2"), Output: price("10")}}, nil
+		}
+	})
+	ctx := t.Context()
+	on := func(name string, r luxstub.Reply) luxstub.Reply {
+		r.Response.Model = name
+		r.Response.Usage = ir.Usage{InputTokens: 100, OutputTokens: 10}
+		return r
+	}
+	child := func(answer string) luxstub.Reply {
+		return luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{text(answer)}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+			if names := toolNames(r); !slices.Equal(names, []string{"echo"}) {
+				return fmt.Errorf("the helper holds %v, want only echo", names)
+			}
+			if !strings.Contains(r.System[1].Text, "You help.") {
+				return errors.New("the helper's instructions are missing")
+			}
+			if r.Reasoning == nil || r.Reasoning.Effort != "low" {
+				return fmt.Errorf("the helper's effort is %+v, want its parent's low", r.Reasoning)
+			}
+			return nil
+		}}
+	}
+	e.stub.Script(model, reply(ir.StopEndTurn, text("One.")))
+	e.send(ctx, "One.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	by := session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}
+	changed, err := session.NewEvent(session.TypeModelChanged, session.ModelChanged{By: by,
+		Old: session.ModelRef{Name: model, Via: asked, Effort: "low"}, New: session.ModelRef{Name: routed, Via: asked, Effort: "low"}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.appendEvents(ctx, changed)
+
+	e.stub.Script(routed,
+		on(routed, luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{call("toolu_a", ToolAgent, `{"subagent":"helper","task":"Count the files."}`)}, StopReason: ir.StopToolUse}}),
+		on(routed, child("Three files.")),
+		on(routed, luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{text("Two.")}, StopReason: ir.StopEndTurn}}),
+		on(routed, child("Still three.")),
+	)
+	e.send(ctx, "Two.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	id, started := e.thread(e.all())
+	if started.Model != routed || started.Agent.Name != "helper" {
+		t.Fatalf("thread.started %+v, want the helper on %s", started, routed)
+	}
+	var childCost int64
+	for _, ev := range e.events(ctx, session.TypeModelRequest) {
+		var p session.ModelRequest
+		if err := ev.Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		if ev.Thread != id {
+			continue
+		}
+		if p.Model != routed || p.CostUSDMicro == nil || *p.CostUSDMicro != 300 {
+			t.Fatalf("the helper's model.request %+v, want %s priced at 300 micro-USD", p, routed)
+		}
+		childCost += *p.CostUSDMicro
+	}
+	if childCost != 300 {
+		t.Fatalf("the helper cost %d", childCost)
+	}
+	evs := e.all()
+	// The session's meter counts the helper's request beside its parent's
+	// three: one on the agent's own model, priced at 1 and 5 per million,
+	// and two on the routed model.
+	if spent := session.Spent(evs); spent != 150+300+300+300 {
+		t.Fatalf("the session spent %d", spent)
+	}
+	if slices.Contains(connected, asked) {
+		t.Fatalf("the routed name was connected: %v", connected)
+	}
+
+	// The person moves the session to another model; the helper keeps the
+	// model it started on.
+	e.switchTo(ctx, other)
+	e.stub.Script(other,
+		on(other, luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{call("toolu_m", ToolSendMessage, `{"to":"`+id+`","message":"Count again."}`)}, StopReason: ir.StopToolUse}}),
+		on(other, luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{text("Three.")}, StopReason: ir.StopEndTurn}}),
+	)
+	e.send(ctx, "Three.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	res := e.parentResults(t)
+	if len(res) != 2 || !strings.Contains(res[1].Content[0].Text, "Still three.") {
+		t.Fatalf("results %+v", res)
+	}
+	var ran []string
+	for _, ev := range e.events(ctx, session.TypeModelRequest) {
+		var p session.ModelRequest
+		if err := ev.Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		if ev.Thread == id {
+			ran = append(ran, p.Model)
+		}
+	}
+	if !slices.Equal(ran, []string{routed, routed}) {
+		t.Fatalf("the helper ran %v, want %s both times", ran, routed)
+	}
+
+	// The model the helper started on can no longer be connected: the
+	// message stops it, and the result says why.
+	gone = true
+	e.stub.Script(other,
+		on(other, luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{call("toolu_n", ToolSendMessage, `{"to":"`+id+`","message":"Once more."}`)}, StopReason: ir.StopToolUse}}),
+		on(other, luxstub.Reply{Response: ir.Response{Blocks: []ir.Block{text("Stopped.")}, StopReason: ir.StopEndTurn}}),
+	)
+	e.send(ctx, "Four.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	res = e.parentResults(t)
+	if want := "Subagent " + id + " stopped: error " + models.CodeUnavailable; len(res) != 3 || res[2].Outcome != tools.OutcomeError || res[2].Content[0].Text != want {
+		t.Fatalf("results %+v, want %q", res, want)
 	}
 }

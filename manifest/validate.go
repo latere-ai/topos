@@ -77,7 +77,7 @@ func (v *validator) object(o *object) {
 	v.meta(*o.meta())
 	switch {
 	case o.agent != nil:
-		v.agent("spec", o.agent.Spec)
+		v.agent("spec", o.agent.Spec, false)
 	case o.trig != nil:
 		// The hold over every trigger (spec 086) and the read of an
 		// owner's runs (spec 088) are routes of the trigger's own path, so
@@ -223,8 +223,17 @@ func (v *validator) httpURL(at, s string) {
 	}
 }
 
-func (v *validator) agent(at string, s v1.AgentSpec) {
-	v.model(at+".model", s.Model)
+// agent checks an agent's spec, or an inline subagent's when inline is
+// set. An inline subagent may leave its model out and run the model of
+// the agent that starts it (spec 091); every other spec names one.
+func (v *validator) agent(at string, s v1.AgentSpec, inline bool) {
+	switch {
+	case inline && s.Model == (v1.AgentModel{}):
+	case inline && strings.TrimSpace(s.Model.Name) == "":
+		v.add(at+".model.name", "required when model is given; leave model out to run the model of the agent that starts the subagent")
+	default:
+		v.model(at+".model", s.Model)
+	}
 	v.text(at+".instructions", s.Instructions)
 	v.tools(at+".tools", s.Tools)
 	// An agent with subagents holds the agent and send_message tools
@@ -445,7 +454,7 @@ func (v *validator) subagents(at string, subs []v1.Subagent) {
 		case s.Agent != "":
 			v.ref(sp+".agent", s.Agent, session.PrefixAgent)
 		case s.Spec != nil:
-			v.agent(sp+".spec", *s.Spec)
+			v.agent(sp+".spec", *s.Spec, true)
 		default:
 			v.add(sp, "set agent, a reference, or spec, an inline agent")
 		}

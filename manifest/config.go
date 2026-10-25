@@ -227,28 +227,46 @@ func (b *builder) subagents(s v1.AgentSpec, level int) (map[string]harness.Subag
 			}
 			spec = &a.Spec
 		}
-		overlay, err := Overlay(spec.Model)
-		if err != nil {
-			return nil, fmt.Errorf("manifest: subagent %s: %w", sub.Name, err)
-		}
 		h := harness.Subagent{
-			Name: sub.Name, Instructions: spec.Instructions, Entry: &overlay, Effort: spec.Model.Level(),
+			Name: sub.Name, Instructions: spec.Instructions,
 			Tools: toolNames(spec.Tools), Mode: harness.Mode(spec.Approvals.Mode), Ignored: ignoredFields(*spec),
 		}
-		if b.connect != nil {
-			m, conn, entry, err := b.connect(spec.Model, overlay)
-			if err != nil {
+		// A subagent that leaves its model out has no model, connection,
+		// figures or effort of its own: its thread runs those of the thread
+		// that starts it, a routed name's model included, and nothing is
+		// connected for it here (spec 091).
+		if spec.Model.Name != "" {
+			if err := b.model(&h, spec.Model); err != nil {
 				return nil, fmt.Errorf("manifest: subagent %s: %w", sub.Name, err)
 			}
-			h.Model, h.Connection = m, conn
-			if entry != nil {
-				h.Entry = entry
-			}
 		}
+		var err error
 		if h.Subagents, err = b.subagents(*spec, level+1); err != nil {
 			return nil, err
 		}
 		out[sub.Name] = h
 	}
 	return out, nil
+}
+
+// model gives a subagent the model its spec names: its figures and
+// effort, and, with a Connect function, its model and connection.
+func (b *builder) model(h *harness.Subagent, m v1.AgentModel) error {
+	overlay, err := Overlay(m)
+	if err != nil {
+		return err
+	}
+	h.Entry, h.Effort = &overlay, m.Level()
+	if b.connect == nil {
+		return nil
+	}
+	model, conn, entry, err := b.connect(m, overlay)
+	if err != nil {
+		return err
+	}
+	h.Model, h.Connection = model, conn
+	if entry != nil {
+		h.Entry = entry
+	}
+	return nil
 }

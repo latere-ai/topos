@@ -63,8 +63,10 @@ const (
 // AgentSpec is everything an agent is: its model, instructions, tools,
 // permissions, subagents, attachments, machine defaults and limits.
 type AgentSpec struct {
-	Description string     `json:"description,omitempty"`
-	Model       AgentModel `json:"model"`
+	Description string `json:"description,omitempty"`
+	// Model is required but in an inline subagent's spec, which may leave
+	// it out to run the model of the agent that starts it (spec 091).
+	Model AgentModel `json:"model,omitzero"`
 	// Instructions are the agent's own instructions. A manifest may give
 	// InstructionsFile instead, a path relative to the manifest that the
 	// resolver reads and inlines here; a resolved spec has no

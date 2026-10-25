@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -648,7 +649,10 @@ func (t *turn) message(ctx context.Context, callID, thread, content string, end 
 	if err := t.commit(ctx, e); err != nil {
 		return tools.Result{}, err
 	}
-	cfg := t.childConfig(sub)
+	cfg, stopped := t.threadConfig(ctx, sub, started, thread)
+	if stopped != nil {
+		return *stopped, nil
+	}
 	if cfg.Machine, err = t.threadMachine(ctx, started, thread); err != nil {
 		return errorResult(CodeIsolationUnavailable, err.Error()), nil
 	}
@@ -671,8 +675,35 @@ func (t *turn) message(ctx context.Context, callID, thread, content string, end 
 	return res, t.commit(ctx, ended)
 }
 
+// threadConfig is the configuration a thread's later turn runs under:
+// its subagent's under this thread, on the model the thread started on.
+// A subagent that names no model runs the model its parent stood on when
+// it was started, pinned for the thread's life (spec 091): when the
+// parent has moved to another model since, the thread's own is connected
+// again as a session's switch connects one. A model that cannot be
+// connected stops the thread, and the result says why.
+func (t *turn) threadConfig(ctx context.Context, sub Subagent, started session.ThreadStarted, thread string) (Config, *tools.Result) {
+	cfg := t.childConfig(sub)
+	if sub.Connection != nil || started.Model == "" || started.Model == cfg.Connection.Model {
+		return cfg, nil
+	}
+	pinned := Harness{c: cfg, switched: &switchedModel{}}
+	if err := pinned.on(ctx, started.Model); err != nil {
+		code := models.CodeUnavailable
+		if mc, ok := errors.AsType[*models.Coded](err); ok {
+			code = mc.Code
+		}
+		res := tools.Text(tools.OutcomeError, prompts.Render(prompts.ThreadStopped, prompts.Data{"Thread": thread, "Reason": string(session.StopError), "Detail": code}))
+		return Config{}, &res
+	}
+	return pinned.c, nil
+}
+
 // childConfig is a subagent's configuration under this thread: its own
-// model and instructions, the stricter mode, and its own subagents.
+// model and instructions, the stricter mode, and its own subagents. A
+// subagent that names no model, connection or figures runs this thread's,
+// the model it stands on now, a routed name's model included, at its
+// effort (spec 091).
 func (t *turn) childConfig(sub Subagent) Config {
 	cfg := t.h.c
 	cfg.Name = sub.Name
@@ -831,7 +862,10 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 		return errorResult(CodeTooManySubagents, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
-	cfg := t.childConfig(sub)
+	cfg, stopped := t.threadConfig(ctx, sub, started, thread)
+	if stopped != nil {
+		return *stopped, nil
+	}
 	var err error
 	if cfg.Machine, err = t.threadMachine(ctx, started, thread); err != nil {
 		return errorResult(CodeIsolationUnavailable, err.Error()), nil
