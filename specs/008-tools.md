@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -148,8 +148,9 @@ machine that does not implement `Fetcher` has no web access, and the
 call's result says so.
 
 Memory sync is a built-in tool too, `memory_sync`, defined with its
-stores in [[020-memory-stores]]; threads use `spawn`, `message` and
-`advisor` from [[013-threads-and-subagents]].
+stores in [[020-memory-stores]]; subagents are started and continued
+with `agent` and `send_message`, built as `spawn` and `message`, and
+the advisor is `advisor`, all from [[013-threads-and-subagents]].
 
 ### Client-executed tools
 
@@ -229,6 +230,38 @@ with a unique `old_string`, a `grep` with `output_mode` `content`, a
 a real model in the task suite's instruction tier ([[025-task-suite]]);
 a change to a description ships with the tier's result for that tool.
 
+### Names a model reads
+
+A model chooses and calls a tool by its name, its inputs' names and its
+description, and reads names it already knows more reliably. A new
+tool, or a tool renamed, is named by these rules, in order:
+
+1. Where Claude Code has a tool for the same job, its name, in this
+   core's lowercase with words joined by `_`: `Agent` is `agent`,
+   `Bash` is `bash`, `Read`, `Edit`, `Write`, `Grep` and `Glob` are
+   `read`, `edit`, `write`, `grep` and `glob`, `WebFetch` and
+   `WebSearch` are `web_fetch` and `web_search`, and `SendMessage` is
+   `send_message`. Its input names are reused where they fit, as
+   `send_message` takes `to` and `message`.
+2. Otherwise, a plain verb for what the tool does (`publish`, `notify`,
+   `wake`).
+3. Never an operating-system word, in a name, an input or a
+   description: spawn, thread, kill, reap, daemon, lease, lock, mutex,
+   inbox, writer, fold, orchestrator, one-shot, a held call. Each names
+   how a machine works, not what the tool does for the agent. A tool
+   whose subject is the machine says what happened to a process in the
+   machine's words: `bash` kills a command's process group at its
+   timeout.
+
+`todo` (Claude Code's `TodoWrite`) and `question` (its
+`AskUserQuestion`) shipped before this rule and keep their names, as do
+`history`, `advisor` and `trigger`. A renamed tool's old name keeps
+working for one release, as [[013-threads-and-subagents]] keeps
+`spawn` and `message`. A word of the log or the API that stays (`thread.started`, a Session's
+`writer`) is explained where its spec names it, and no text a model
+reads uses it. The released descriptions of `read`, `write`, `edit`
+and `bash` say "this thread"; their next versions say "you" instead.
+
 ## Not in this spec
 
 Validation, grouping of parallel calls and cancellation
@@ -236,7 +269,7 @@ Validation, grouping of parallel calls and cancellation
 ([[012-permissions-and-approvals]]); the machine's file and exec
 routes, the credential deny-list and the environment
 ([[009-machines]]); `memory_sync` ([[020-memory-stores]]); MCP tools
-([[021-mcp-servers]]); `spawn`, `message` and `advisor`
+([[021-mcp-servers]]); `agent`, `send_message` and `advisor`
 ([[013-threads-and-subagents]]).
 
 ## Acceptance criteria
