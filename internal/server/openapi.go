@@ -482,7 +482,8 @@ var opDescriptions = map[string]string{
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running. A session's wake deleted here is recorded in that session as session.wake_cleared with reason canceled and the sender.",
 	"listFirings":   "List a trigger's firings, newest first.",
 	"listTriggerRuns": fmt.Sprintf("List the triggers the list would, each with its runs since since, the mean cost of its latest runs, and the times it fires up to until, so a client can forecast what they will cost. "+
-		"A run is a firing that started or continued a turn, with what the turn cost as a look is counted, or one skipped_budget or refused stopped, with no cost; ended says the turn closed and its cost is final. "+
+		"A run is a firing that started or continued a turn, with what the turn cost as a look is counted, or one skipped_budget, skipped_nothing_new or refused stopped, with no cost; ended says the turn closed and its cost is final. "+
+		"A firing of a trigger whose reach splits by scope is a run per scope it started or the authorizer refused, each naming its scope and costing what its own session's turn cost. "+
 		"A wake's runs are the wake runs of its session, each once its own trigger; any other trigger's are its own and the wake runs of the sessions it started, which count toward its allowance. "+
 		"runs holds at most %d, the newest, more_runs saying older ones were left out. per_run_usd_micro is the mean cost of the latest %d of its own runs that ran and ended, from every run kept, which is %s. "+
 		"fires_on is schedule, event, at for a one-shot, or times for a list of times. "+
@@ -580,14 +581,14 @@ var opDescriptions = map[string]string{
 		"session.create is asked with its name as model, and its level under both reasoning and effort when it names one, as a create that names its model is, and the session runs as it would on its agent's own model: "+
 		"on the model the allow names in its place, with the trigger's name as via, at the level the allow names when it names one. "+
 		"A firing that continues an open session sends its message and leaves the model that session runs, and a trigger under session.target ignores spec.session.model. "+
-		"A model that names neither member, a name with space around it, or another level is invalid_manifest. "+SpendRule,
+		"A model that names neither member, a name with space around it, or another level is invalid_manifest. "+SpendRule+" "+ReachRule,
 		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice, trigger.MaxTimes,
 		v1.OriginWake, spoken(trigger.MinWakeDelay), spoken(trigger.MaxWakeAhead), spoken(trigger.WakeMaxAge), strings.Join(v1.Efforts, ", ")),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
 		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+
-		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, skipped_ended, skipped_budget, refused or failed. "+
+		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, skipped_ended, skipped_budget, skipped_nothing_new, refused or failed. "+
 		"A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. "+
-		"A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner.", trigger.MaxEventID),
+		"A suspended trigger answers conflict. The firing's trigger.runs, session.create and session.send are asked as the trigger's owner.", trigger.MaxEventID),
 	"streamEvents": fmt.Sprintf("Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, "+
 		"each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every %d seconds, and the stream closes after the event that ends the session. "+
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+

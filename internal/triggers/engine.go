@@ -45,6 +45,9 @@ const LeaseTTL = 30 * time.Second
 const (
 	ReasonMessageTooLarge = "message_too_large"
 	ReasonInternal        = "internal"
+	// ReasonRunsInvalid refuses a firing whose answer of trigger.runs it
+	// cannot act on (spec 095).
+	ReasonRunsInvalid = "runs_invalid"
 )
 
 // ErrEnded is an Actor's Send to a session that has ended, which the
@@ -58,6 +61,12 @@ var ErrSuspended = errors.New("triggers: the trigger is suspended")
 // ErrHeld answers a fire of a trigger whose owner holds every trigger
 // they own (spec 086), which fires nothing and records nothing.
 var ErrHeld = errors.New("triggers: the trigger's owner holds every trigger")
+
+// ErrRunsInvalid is an answer of an Actor's Runs that names no runs the
+// engine can start (spec 095): limits that do not read, more than
+// trigger.MaxRunsPerFiring runs, a scope outside its pattern or one named
+// twice. Its firing is refused as ReasonRunsInvalid.
+var ErrRunsInvalid = errors.New("triggers: the answer of trigger.runs is invalid")
 
 // Start is a session a firing starts: the trigger, its spec, the firing,
 // the rendered message, title and repositories, and the key that fired
@@ -77,6 +86,37 @@ type Start struct {
 	// Spend is the week of the trigger the firing counts toward, which its
 	// message carries (spec 087); nil for a firing that counts toward none.
 	Spend *session.MessageSpend
+	// Reach is the trigger's reach as the session's create carries it
+	// (spec 095): its kind, and for a run of one scope of a trigger whose
+	// reach splits by scope, the scope and the time since which it reads;
+	// nil for a trigger with no reach.
+	Reach *StartReach
+}
+
+// StartReach is the reach a session a firing starts carries.
+type StartReach struct {
+	Kind  string
+	Scope string
+	Since *time.Time
+}
+
+// RunsAsk is what a firing of a trigger whose reach splits by scope asks
+// before it starts anything (spec 095): the trigger, its spec, the
+// firing, and the time of each scope's latest run of the trigger that
+// started a session.
+type RunsAsk struct {
+	Trigger store.Trigger
+	Spec    v1.TriggerSpec
+	Firing  store.Firing
+	Last    map[string]time.Time
+}
+
+// DueRun is one scope an answer to a RunsAsk names due, in the order the
+// firing starts them: the scope, which keys its session, and the time
+// since which its run reads, nil for none.
+type DueRun struct {
+	Scope string
+	Since *time.Time
 }
 
 // Send is a message a firing sends to the open session its key or its
@@ -101,6 +141,10 @@ type Actor interface {
 	// Send appends the message, and answers ErrEnded when the session
 	// has ended.
 	Send(ctx context.Context, s Send) error
+	// Runs asks which scopes are due at a firing of a trigger whose reach
+	// splits by scope (spec 095). An answer it cannot read wraps
+	// ErrRunsInvalid; a refusal is an error Refusal names.
+	Runs(ctx context.Context, a RunsAsk) ([]DueRun, error)
 	// Refusal names what an error of Start or Send was: the reason its
 	// firing records, when the limit that refused it resets for a deny
 	// that names it (nil otherwise), and whether it was transient, a
@@ -407,23 +451,34 @@ func spends(f store.Firing) bool {
 }
 
 // record records a decided firing whose stored outcome is from, and its
-// run when it is one (spec 088): a one-shot's that spends it deletes the
-// trigger with it, and tells the actor.
-func (e *Engine) record(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
+// runs when it is one (spec 088): the runs of its scopes when it has them
+// (spec 095), and otherwise the firing's own. A one-shot's that spends it
+// deletes the trigger with it, and tells the actor.
+func (e *Engine) record(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string, scoped []store.Run) error {
 	if err := e.recordFiring(ctx, t, spec, f, from); err != nil {
 		return err
 	}
-	e.keepRun(ctx, t, spec, f)
+	e.keepRun(ctx, t, spec, f, scoped)
 	return nil
 }
 
-// keepRun stores the run of a recorded firing of t, one that started or
+// keepRun stores the runs of a recorded firing of t, one that started or
 // continued a turn or that an allowance or the authorizer stopped (spec
-// 088). A run whose write fails is logged and the firing keeps its
-// answer: the read of an owner's runs records it again from the firing,
-// and only a wake's run, whose firing went with its trigger, is lost.
-func (e *Engine) keepRun(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) {
+// 088): the runs of its scopes when it has them, and otherwise its own. A
+// run whose write fails is logged and the firing keeps its answer: the
+// read of an owner's runs records a firing with no run again from the
+// firing, and only a wake's run, whose firing went with its trigger, is
+// lost.
+func (e *Engine) keepRun(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, scoped []store.Run) {
 	if !store.IsRun(f.Outcome) {
+		return
+	}
+	for _, r := range scoped {
+		if err := e.o.Store.PutRun(ctx, r); err != nil {
+			e.o.Log.ErrorContext(ctx, "keep a scope's run", "trigger", t.ID, "firing", f.ID, "scope", r.Scope, "err", err)
+		}
+	}
+	if len(scoped) > 0 {
 		return
 	}
 	r, err := e.runOf(ctx, t, spec, f)
@@ -575,11 +630,11 @@ func (e *Engine) run(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, 
 	if err != nil || !fresh {
 		return claimed, err
 	}
-	out, err := e.decide(ctx, t, spec, claimed, env)
+	out, scoped, err := e.decide(ctx, t, spec, claimed, env)
 	if err != nil {
 		return store.Firing{}, err
 	}
-	if err := e.record(ctx, t, spec, out, ""); err != nil {
+	if err := e.record(ctx, t, spec, out, "", scoped); err != nil {
 		return store.Firing{}, err
 	}
 	return out, nil
@@ -587,40 +642,184 @@ func (e *Engine) run(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, 
 
 // decide is a claimed firing's outcome: skipped when late, refused when
 // its message is past the cap, and otherwise what the session policy
-// does with it.
-func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope) (store.Firing, error) {
+// does with it, or, for a trigger whose reach splits by scope, what its
+// due scopes do, with the run of each (spec 095).
+func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope) (store.Firing, []store.Run, error) {
 	late, err := e.late(spec, f, env)
 	if err != nil {
-		return store.Firing{}, err
+		return store.Firing{}, nil, err
 	}
 	if late {
 		f.Outcome = store.OutcomeSkippedLate
-		return f, nil
+		return f, nil, nil
 	}
 	r, err := render(t, spec, f, env)
 	if err != nil {
-		return store.Firing{}, err
+		return store.Firing{}, nil, err
 	}
 	f.Key = r.key
 	if len(r.message) > trigger.MaxMessageBytes {
 		f.Outcome, f.Reason = store.OutcomeRefused, ReasonMessageTooLarge
-		return f, nil
+		return f, nil, nil
 	}
 	// A firing while the trigger it counts toward is at its allowance
 	// starts nothing (spec 087).
 	spend, over, err := e.allowance(ctx, t, spec)
 	if err != nil {
-		return store.Firing{}, err
+		return store.Firing{}, nil, err
 	}
 	if over {
 		f.Outcome = store.OutcomeSkippedBudget
-		return f, nil
+		return f, nil, nil
 	}
 	r.spend = spend
-	if trigger.Policy(spec) == v1.PolicyContinue {
-		return e.continueKey(ctx, t, spec, f, r, false)
+	var out store.Firing
+	switch {
+	case trigger.Split(spec):
+		return e.split(ctx, t, spec, f, r)
+	case trigger.Policy(spec) == v1.PolicyContinue:
+		out, err = e.continueKey(ctx, t, spec, f, r, false)
+	default:
+		out, err = e.startNew(ctx, t, spec, f, r)
 	}
-	return e.startNew(ctx, t, spec, f, r)
+	return out, nil, err
+}
+
+// split acts on a firing of a trigger whose reach splits by scope (spec
+// 095): it asks the actor which scopes are due, and records
+// skipped_nothing_new when none is, runs_invalid for an answer it cannot
+// act on, and a refusal's reason. Each due scope whose session is still
+// active is passed over when skipIfActive holds; each other starts a
+// session keyed by its scope, a run of its own. maxActive bounds no
+// scope: the answer, at most trigger.MaxRunsPerFiring, bounds the firing.
+// The firing is started with its first session; refused, with the first
+// refusal's reason, when no scope started; failed when every start that
+// was tried failed; and skipped_active when every scope was passed over.
+func (e *Engine) split(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered) (store.Firing, []store.Run, error) {
+	last, err := e.lastRuns(ctx, t)
+	if err != nil {
+		return store.Firing{}, nil, err
+	}
+	due, err := e.o.Actor.Runs(ctx, RunsAsk{Trigger: t, Spec: spec, Firing: f, Last: last})
+	if err == nil {
+		err = checkDue(due)
+	}
+	switch {
+	case errors.Is(err, ErrRunsInvalid):
+		e.o.Log.WarnContext(ctx, "a trigger's firing refused: the answer of trigger.runs is invalid", "trigger", t.ID, "firing", f.ID, "err", err)
+		f.Outcome, f.Reason = store.OutcomeRefused, ReasonRunsInvalid
+		return f, nil, nil
+	case err != nil:
+		return e.refused(f, err), nil, nil
+	case len(due) == 0:
+		f.Outcome = store.OutcomeSkippedNothingNew
+		return f, nil, nil
+	}
+	by, err := firedBy(f)
+	if err != nil {
+		return store.Firing{}, nil, err
+	}
+	// Each scope's run starts from the firing's before any session does.
+	base := RunOf(t, spec, f)
+	var runs []store.Run
+	var refusal store.Firing
+	failed := false
+	for _, d := range due {
+		if spec.SkipIfActive == nil || *spec.SkipIfActive {
+			s, open, err := e.keySession(ctx, t.ID, d.Scope)
+			if err != nil {
+				return store.Firing{}, nil, err
+			}
+			if open {
+				busy, err := active(ctx, e.o.Sessions, s)
+				if err != nil {
+					return store.Firing{}, nil, err
+				}
+				if busy {
+					continue
+				}
+			}
+		}
+		run := base
+		run.Scope = d.Scope
+		s, err := e.o.Actor.Start(ctx, Start{Trigger: t, Spec: spec, FiringID: f.ID, Message: r.message, Title: r.title, Resources: r.resources, FiredBy: by,
+			Spend: r.spend, Reach: &StartReach{Kind: spec.Reach.Kind, Scope: d.Scope, Since: d.Since}})
+		if err != nil {
+			reason, until, transient := e.o.Actor.Refusal(err)
+			if transient {
+				// The scope's last run does not move, so the next firing asks
+				// for it again.
+				failed = true
+				e.o.Log.WarnContext(ctx, "a scope's session did not start; the next firing asks again", "trigger", t.ID, "firing", f.ID, "scope", d.Scope, "err", err)
+				continue
+			}
+			if refusal.Outcome == "" {
+				refusal.Outcome, refusal.Reason, refusal.Until = store.OutcomeRefused, reason, until
+			}
+			run.Outcome, run.Reason, run.Ended = store.OutcomeRefused, reason, true
+			runs = append(runs, run)
+			continue
+		}
+		if err := e.o.Store.SetTriggerSession(ctx, t.ID, d.Scope, s.ID); err != nil {
+			return store.Firing{}, nil, err
+		}
+		run.Outcome, run.SessionID, run.Ended = store.OutcomeStarted, s.ID, false
+		runs = append(runs, run)
+		if f.SessionID == "" {
+			f.Outcome, f.SessionID, f.Open = store.OutcomeStarted, s.ID, true
+		}
+	}
+	switch {
+	case f.Outcome == store.OutcomeStarted:
+	case refusal.Outcome != "":
+		f.Outcome, f.Reason, f.Until = refusal.Outcome, refusal.Reason, refusal.Until
+	case failed:
+		f.Outcome = store.OutcomeFailed
+	default:
+		f.Outcome = store.OutcomeSkippedActive
+	}
+	return f, runs, nil
+}
+
+// checkDue holds an answer of trigger.runs to the shape a firing acts on,
+// wrapping ErrRunsInvalid when it is not.
+func checkDue(due []DueRun) error {
+	scopes := make([]string, len(due))
+	for i, d := range due {
+		scopes[i] = d.Scope
+	}
+	if err := trigger.CheckRuns(scopes); err != nil {
+		return fmt.Errorf("%w: %w", ErrRunsInvalid, err)
+	}
+	return nil
+}
+
+// lastRuns is the time of each scope's latest run of t that started a
+// session, among the runs the store keeps (spec 095).
+func (e *Engine) lastRuns(ctx context.Context, t store.Trigger) (map[string]time.Time, error) {
+	rs, err := e.o.Store.Runs(ctx, t.Owner, e.o.Now().UTC().Add(-trigger.RunsKept))
+	if err != nil {
+		return nil, err
+	}
+	last := map[string]time.Time{}
+	for _, r := range rs {
+		if r.TriggerID == t.ID && r.Scope != "" && r.Outcome == store.OutcomeStarted && r.At.After(last[r.Scope]) {
+			last[r.Scope] = r.At
+		}
+	}
+	return last, nil
+}
+
+// firedBy is a firing's FiredBy decoded, nil for none.
+func firedBy(f store.Firing) (map[string]any, error) {
+	if len(f.FiredBy) == 0 {
+		return nil, nil
+	}
+	var by map[string]any
+	if err := json.Unmarshal(f.FiredBy, &by); err != nil {
+		return nil, fmt.Errorf("triggers: firing %s's key: %w", f.ID, err)
+	}
+	return by, nil
 }
 
 // late reports whether the firing is more than maxAge after its event's
@@ -754,13 +953,16 @@ func (e *Engine) start(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		f.Outcome = store.OutcomeSkippedBusy
 		return f, nil
 	}
-	var by map[string]any
-	if len(f.FiredBy) > 0 {
-		if err := json.Unmarshal(f.FiredBy, &by); err != nil {
-			return store.Firing{}, fmt.Errorf("triggers: firing %s's key: %w", f.ID, err)
-		}
+	by, err := firedBy(f)
+	if err != nil {
+		return store.Firing{}, err
 	}
-	s, err := e.o.Actor.Start(ctx, Start{Trigger: t, Spec: spec, FiringID: f.ID, Message: r.message, Title: r.title, Resources: r.resources, FiredBy: by, Spend: r.spend})
+	var reach *StartReach
+	if spec.Reach != nil {
+		reach = &StartReach{Kind: spec.Reach.Kind}
+	}
+	s, err := e.o.Actor.Start(ctx, Start{Trigger: t, Spec: spec, FiringID: f.ID, Message: r.message, Title: r.title, Resources: r.resources, FiredBy: by,
+		Spend: r.spend, Reach: reach})
 	if err != nil {
 		return e.refused(f, err), nil
 	}
@@ -907,7 +1109,7 @@ func (e *Engine) flush(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		}
 		if over {
 			f.Outcome = store.OutcomeSkippedBudget
-			if err := e.record(ctx, t, spec, f, store.OutcomeHeld); err != nil {
+			if err := e.record(ctx, t, spec, f, store.OutcomeHeld, nil); err != nil {
 				return false, err
 			}
 			continue
@@ -920,7 +1122,7 @@ func (e *Engine) flush(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		if out.Outcome == store.OutcomeHeld {
 			return true, nil
 		}
-		if err := e.record(ctx, t, spec, out, store.OutcomeHeld); err != nil {
+		if err := e.record(ctx, t, spec, out, store.OutcomeHeld, nil); err != nil {
 			return false, err
 		}
 	}

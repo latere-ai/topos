@@ -41,13 +41,25 @@ type fakeActor struct {
 	spent     []store.Firing
 	// spends are the spends the firings' messages carried, in order.
 	spends []*session.MessageSpend
+	// reaches are the reaches the starts carried, in order, and refuse
+	// fails the start of each scope it names with its error (spec 095).
+	reaches []*StartReach
+	refuse  map[string]error
+	// due answers Runs and runsErr fails it; asks are what it was asked.
+	due     []DueRun
+	runsErr error
+	asks    []RunsAsk
 }
 
 func (a *fakeActor) Start(ctx context.Context, st Start) (session.Session, error) {
 	a.mu.Lock()
 	err, wait := a.startErr, a.startWait
+	if st.Reach != nil && a.refuse[st.Reach.Scope] != nil {
+		err = a.refuse[st.Reach.Scope]
+	}
 	a.starts++
 	a.spends = append(a.spends, st.Spend)
+	a.reaches = append(a.reaches, st.Reach)
 	a.mu.Unlock()
 	if wait != nil {
 		<-wait
@@ -102,6 +114,13 @@ func (a *fakeActor) Send(ctx context.Context, sd Send) error {
 		return err
 	}
 	return a.say(ctx, sd.SessionID, sd.Trigger, sd.FiringID, sd.Message)
+}
+
+func (a *fakeActor) Runs(_ context.Context, ask RunsAsk) ([]DueRun, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.asks = append(a.asks, ask)
+	return a.due, a.runsErr
 }
 
 func (a *fakeActor) Spent(_ context.Context, t store.Trigger, _ v1.TriggerSpec, f store.Firing) error {

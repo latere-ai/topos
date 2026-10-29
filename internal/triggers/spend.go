@@ -125,7 +125,7 @@ func (e *Engine) Spend(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		for _, l := range session.Looks(s, evs) {
 			// Every look the log holds gives its run its cost (spec 088),
 			// so the read of the runs need not read this log again.
-			costs = append(costs, store.RunCost{FiringID: l.FiringID, CostUSDMicro: l.CostUSDMicro, Ended: l.Ended})
+			costs = append(costs, store.RunCost{FiringID: l.FiringID, SessionID: id, CostUSDMicro: l.CostUSDMicro, Ended: l.Ended})
 			if !l.At.After(since) || l.At.After(now) {
 				continue
 			}
@@ -175,8 +175,10 @@ func (e *Engine) Spend(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 }
 
 // watched are the sessions whose logs hold t's looks in the window after
-// since: the sessions its firings started or continued since then, its
-// sessions still open, whose wakes may fire now, and its session.target.
+// since: the sessions its firings started or continued since then, those
+// its runs name, which hold every session of a firing that split by scope
+// (spec 095), its sessions still open, whose wakes may fire now, and its
+// session.target.
 func (e *Engine) watched(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, since time.Time) ([]string, error) {
 	var ids []string
 	add := func(id string) {
@@ -204,6 +206,18 @@ func (e *Engine) watched(ctx context.Context, t store.Trigger, spec v1.TriggerSp
 			break
 		}
 		cursor = next
+	}
+	// Every other trigger's sessions are each on a firing's row.
+	if trigger.Split(spec) {
+		runs, err := e.o.Store.Runs(ctx, t.Owner, since)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range runs {
+			if r.TriggerID == t.ID {
+				add(r.SessionID)
+			}
+		}
 	}
 	for _, st := range []session.Status{session.StatusIdle, session.StatusRunning} {
 		cursor := ""

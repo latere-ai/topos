@@ -73,7 +73,10 @@ type runTarget struct {
 
 // triggerRun is one run as the read answers it.
 type triggerRun struct {
-	FiringID     string    `json:"firing_id"`
+	FiringID string `json:"firing_id"`
+	// Scope is the scope of a run of a trigger whose reach splits by scope
+	// (spec 095), absent for any other run.
+	Scope        string    `json:"scope,omitempty"`
 	At           time.Time `json:"at"`
 	Outcome      string    `json:"outcome"`
 	Reason       string    `json:"reason,omitempty"`
@@ -132,7 +135,7 @@ func (c *call) listTriggerRuns() error {
 	}
 	ctx := c.r.Context()
 	items := make([]triggerRuns, 0, len(list))
-	byOwner := map[string]map[string]store.Run{}
+	byOwner := map[string]map[store.RunKey]store.Run{}
 	for _, t := range list {
 		if byOwner[t.Owner] != nil {
 			continue
@@ -141,9 +144,9 @@ func (c *call) listTriggerRuns() error {
 		if err != nil {
 			return err
 		}
-		m := make(map[string]store.Run, len(rs))
+		m := make(map[store.RunKey]store.Run, len(rs))
 		for _, r := range rs {
-			m[r.FiringID] = r
+			m[r.Key()] = r
 		}
 		byOwner[t.Owner] = m
 	}
@@ -174,10 +177,14 @@ func (c *call) listTriggerRuns() error {
 }
 
 // recordMissingRuns records each firing of t since since that is a run
-// and has none in runs: a firing from before spec 088, or one whose run's
-// write failed. A wake's firings are deleted with it, so only a trigger
-// that is no wake is read this way.
-func (s *Server) recordMissingRuns(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, since time.Time, runs map[string]store.Run) error {
+// and has none in runs, of any scope: a firing from before spec 088, or
+// one whose run's write failed. A wake's firings are deleted with it, so
+// only a trigger that is no wake is read this way.
+func (s *Server) recordMissingRuns(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, since time.Time, runs map[store.RunKey]store.Run) error {
+	ran := map[string]bool{}
+	for k := range runs {
+		ran[k.FiringID] = true
+	}
 	cursor := ""
 	for {
 		fs, next, err := s.o.Objects.Firings(ctx, t.ID, MaxLimit, cursor)
@@ -190,14 +197,14 @@ func (s *Server) recordMissingRuns(ctx context.Context, t store.Trigger, spec v1
 			if f.Time.Before(since) {
 				return nil
 			}
-			if _, ok := runs[f.ID]; ok || !store.IsRun(f.Outcome) {
+			if ran[f.ID] || !store.IsRun(f.Outcome) {
 				continue
 			}
 			r := triggers.RunOf(t, spec, f)
 			if err := s.o.Objects.PutRun(ctx, r); err != nil {
 				return err
 			}
-			runs[f.ID] = r
+			runs[r.Key()] = r
 		}
 		if next == "" {
 			return nil
@@ -210,7 +217,7 @@ func (s *Server) recordMissingRuns(ctx context.Context, t store.Trigger, spec v1
 // ended, read from its session's log once per session, into the store and
 // into runs. A session that is gone holds nothing more to count, so its
 // runs end with the cost they hold.
-func (s *Server) completeRuns(ctx context.Context, runs map[string]store.Run) error {
+func (s *Server) completeRuns(ctx context.Context, runs map[store.RunKey]store.Run) error {
 	var sessions []string
 	for _, r := range runs {
 		if r.Ran() && !r.Ended && r.SessionID != "" && !slices.Contains(sessions, r.SessionID) {
@@ -232,10 +239,10 @@ func (s *Server) completeRuns(ctx context.Context, runs map[string]store.Run) er
 			if !ok {
 				// A session gone, or a log that no longer holds the look,
 				// leaves nothing more to count.
-				c = store.RunCost{FiringID: r.FiringID, CostUSDMicro: r.CostUSDMicro, Ended: read == nil}
+				c = store.RunCost{FiringID: r.FiringID, SessionID: id, CostUSDMicro: r.CostUSDMicro, Ended: read == nil}
 			}
 			if next := r.Costed(c); next != r {
-				runs[r.FiringID] = next
+				runs[r.Key()] = next
 				costs = append(costs, c)
 			}
 		}
@@ -244,7 +251,8 @@ func (s *Server) completeRuns(ctx context.Context, runs map[string]store.Run) er
 }
 
 // lookCosts are the costs of the looks session id's log holds, by firing
-// (spec 087's count); nil for a session that is gone.
+// (spec 087's count), each naming the session; nil for a session that is
+// gone.
 func (s *Server) lookCosts(ctx context.Context, id string) (map[string]store.RunCost, error) {
 	sess, err := s.o.Sessions.Get(ctx, id)
 	if errors.Is(err, session.ErrNotFound) {
@@ -259,7 +267,7 @@ func (s *Server) lookCosts(ctx context.Context, id string) (map[string]store.Run
 	}
 	out := map[string]store.RunCost{}
 	for _, l := range session.Looks(sess, evs) {
-		out[l.FiringID] = store.RunCost{FiringID: l.FiringID, CostUSDMicro: l.CostUSDMicro, Ended: l.Ended}
+		out[l.FiringID] = store.RunCost{FiringID: l.FiringID, SessionID: id, CostUSDMicro: l.CostUSDMicro, Ended: l.Ended}
 	}
 	return out, nil
 }
@@ -267,7 +275,7 @@ func (s *Server) lookCosts(ctx context.Context, id string) (map[string]store.Run
 // runsOf is trigger t's item of the read: its fields, its runs from since
 // among the owner's runs, the mean of its latest own runs, and its fire
 // times after now and before until.
-func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, owned map[string]store.Run, now, since, until time.Time) (triggerRuns, error) {
+func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, owned map[store.RunKey]store.Run, now, since, until time.Time) (triggerRuns, error) {
 	spec := doc.Spec
 	item := triggerRuns{TriggerID: t.ID, Name: t.Name, CreatedAt: t.CreatedAt.UTC(), FiresOn: firesOnSchedule, Suspended: spec.Suspend, Wake: isWake(doc),
 		MaxAge: spec.MaxAge, Runs: []triggerRun{}, Fires: []time.Time{}}
@@ -317,7 +325,7 @@ func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, o
 		mine, item.MoreRuns = mine[n-trigger.MaxRunsListed:], true
 	}
 	for _, r := range mine {
-		item.Runs = append(item.Runs, triggerRun{FiringID: r.FiringID, At: r.At, Outcome: r.Outcome, Reason: r.Reason, SessionID: r.SessionID, Wake: r.Wake,
+		item.Runs = append(item.Runs, triggerRun{FiringID: r.FiringID, Scope: r.Scope, At: r.At, Outcome: r.Outcome, Reason: r.Reason, SessionID: r.SessionID, Wake: r.Wake,
 			CostUSDMicro: r.CostUSDMicro, Ended: r.Ended})
 	}
 	slices.SortFunc(ran, compareRuns)
@@ -365,7 +373,8 @@ func maxTime(a, b time.Time) time.Time {
 	return b
 }
 
-// compareRuns orders runs by time, those of one time by firing id.
+// compareRuns orders runs by time, those of one time by firing id and
+// then by scope.
 func compareRuns(a, b store.Run) int {
-	return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.FiringID, b.FiringID))
+	return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.FiringID, b.FiringID), cmp.Compare(a.Scope, b.Scope))
 }

@@ -29,6 +29,7 @@ import (
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/store"
+	"latere.ai/x/topos/internal/triggers"
 	"latere.ai/x/topos/manifest"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/runner"
@@ -318,6 +319,9 @@ type creation struct {
 	// the fire request, nil for none. Only the trigger engine sets it; no
 	// request body is read into a creation's fields.
 	firedBy map[string]any
+	// reach is the reach of the trigger that starts the session (spec
+	// 095), nil for none. Only the trigger engine sets it.
+	reach *triggers.StartReach
 	// fork is the session and the log a fork continues, nil for any
 	// other create (spec 017).
 	fork *forkOrigin
@@ -488,6 +492,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		fields["trigger_id"], fields["firing_id"], fields["attended"] = in.triggerID, in.firingID, in.attended
 		if in.firedBy != nil {
 			fields["fired_by"] = in.firedBy
+		}
+		if in.reach != nil {
+			fields["reach"] = startReachField(*in.reach)
 		}
 	}
 	// A fork is asked about the session it forks, with that session's

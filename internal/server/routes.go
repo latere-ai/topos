@@ -94,8 +94,9 @@ func table() []route {
 		{method: http.MethodDelete, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerDelete),
 			op: "deleteTrigger", summary: "Delete a trigger", status: http.StatusNoContent, handle: (*call).deleteTrigger},
 		// A firing asks session.create and session.send as the trigger's
-		// owner, not as the caller (spec 022).
-		{method: http.MethodPost, path: "/triggers/{ref}/fire", actions: a(authorizer.ActionTriggerFire, authorizer.ActionSessionCreate, authorizer.ActionSessionSend),
+		// owner, not as the caller (spec 022), and before them trigger.runs
+		// for a trigger whose reach splits by scope (spec 095).
+		{method: http.MethodPost, path: "/triggers/{ref}/fire", actions: a(authorizer.ActionTriggerFire, authorizer.ActionTriggerRuns, authorizer.ActionSessionCreate, authorizer.ActionSessionSend),
 			op: "fireTrigger", summary: "Fire a trigger", status: http.StatusOK, body: MaxBody, handle: (*call).fireTrigger},
 		{method: http.MethodGet, path: "/triggers/{ref}/firings", actions: a(authorizer.ActionTriggerRead),
 			op: "listFirings", summary: "List trigger firings", status: http.StatusOK, handle: (*call).listFirings},

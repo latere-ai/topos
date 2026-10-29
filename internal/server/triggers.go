@@ -208,6 +208,9 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		maps.Copy(res.Fields, oneShotFields(spec))
 		res.Fields["notify"] = trigger.Notify(spec)
 		maps.Copy(res.Fields, deviceFields(spec.Session))
+		if spec.Reach != nil {
+			res.Fields["reach"] = reachField(*spec.Reach)
+		}
 		if how.origin != nil {
 			res.Fields["origin"] = originField(*how.origin, how.action)
 		}
@@ -246,6 +249,9 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		maps.Copy(fields, oneShotFields(spec))
 		fields["notify"] = trigger.Notify(spec)
 		maps.Copy(fields, deviceFields(spec.Session))
+		if spec.Reach != nil {
+			fields["reach"] = reachField(*spec.Reach)
+		}
 		if how.origin != nil {
 			fields["origin"] = originField(*how.origin, how.action)
 		}
@@ -320,6 +326,43 @@ func oneShotFields(spec v1.TriggerSpec) map[string]any {
 	}
 	if b := spec.Budget; b != nil {
 		f["budget"] = map[string]any{"per_week_usd_micro": b.PerWeek}
+	}
+	return f
+}
+
+// ReachRule is how a trigger's reach is applied and fired (spec 095).
+var ReachRule = fmt.Sprintf("spec.reach {kind, split} names what the trigger's runs reach as a kind matching %s, which the authorizer maps and the server decides nothing from: "+
+	"trigger.create and trigger.update carry reach {kind, split}, split left out when absent, and each firing's session.create carries reach {kind}. "+
+	"split scope, for a trigger on spec.schedule under policy new with no session.target and no session.key, runs each firing once per due scope: before it starts anything the firing asks trigger.runs as the owner, "+
+	"with the trigger's owner, name and agent, reach, firing {id, at, origin} and last {<scope>: <RFC 3339>}, each scope's latest run of the trigger that started a session. "+
+	`The allow's limits name the scopes due in the order they start, {"runs": [{"scope": "you", "since": "<RFC 3339>"}]}, since optional: at most %d, each matching %s, none twice, or the firing is refused runs_invalid. `+
+	"A deny refuses the firing with its reason. An allow that names none records skipped_nothing_new, counted as skippedNothingNew: a run that cost nothing, with no session and no model call. "+
+	"Each scope due starts a session keyed by the scope, its session.create carrying reach {kind, scope, since}; a scope whose session is still active is passed over under skipIfActive and recorded nowhere, "+
+	"and maxActive bounds no scope. The firing records started with its first session, refused with the first reason when no scope started and one was refused, "+
+	"failed when every start tried failed, and skipped_active when every scope was passed over; each started or refused scope is a run of its own, and every session of the firing counts toward the allowance together.",
+	trigger.ReachKindPattern, trigger.MaxRunsPerFiring, trigger.ScopePattern)
+
+// reachField is a trigger's reach as the questions of its create, its
+// update and its trigger.runs carry it (spec 095): kind, and split when it
+// names one.
+func reachField(r v1.TriggerReach) map[string]any {
+	f := map[string]any{"kind": r.Kind}
+	if r.Split != "" {
+		f["split"] = r.Split
+	}
+	return f
+}
+
+// startReachField is the reach a firing's session.create carries (spec
+// 095): kind, and for a run of one scope the scope, with since in RFC
+// 3339 when the answer of trigger.runs named it.
+func startReachField(r triggers.StartReach) map[string]any {
+	f := map[string]any{"kind": r.Kind}
+	if r.Scope != "" {
+		f["scope"] = r.Scope
+	}
+	if r.Since != nil {
+		f["since"] = r.Since.UTC().Format(time.RFC3339)
 	}
 	return f
 }
@@ -632,7 +675,7 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 	ss := st.Spec.Session
 	in := creation{agent: st.Spec.Agent, title: st.Title, message: st.Message, resources: st.Resources, machine: triggerMachine(ss),
 		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy, firesOn: firesOn(st.Spec),
-		attended: trigger.Attended(st.Spec), notify: messageNotify(st.Spec), spend: st.Spend}
+		attended: trigger.Attended(st.Spec), notify: messageNotify(st.Spec), spend: st.Spend, reach: st.Reach}
 	if ss.EndOnIdle != nil {
 		in.endOnIdle = *ss.EndOnIdle
 	}
@@ -649,6 +692,37 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 	}
 	in.startOn = startOn(ss.Model)
 	return a.s.create(ctx, a.s.owner(st.Trigger), in)
+}
+
+// Runs asks trigger.runs as the trigger's owner, as every question of a
+// firing is asked (spec 095): the trigger's resource with its reach, the
+// firing, and each scope's last started run, and reads the scopes due
+// from the allow's limits. Limits that do not read, or that name runs the
+// firing cannot start, wrap triggers.ErrRunsInvalid.
+func (a actor) Runs(ctx context.Context, ra triggers.RunsAsk) ([]triggers.DueRun, error) {
+	res := triggerResource(ra.Trigger)
+	if r := ra.Spec.Reach; r != nil {
+		res.Fields["reach"] = reachField(*r)
+	}
+	res.Fields["firing"] = map[string]any{"id": ra.Firing.ID, "at": ra.Firing.Time.UTC().Format(time.RFC3339), "origin": ra.Firing.Origin}
+	last := make(map[string]any, len(ra.Last))
+	for scope, at := range ra.Last {
+		last[scope] = at.UTC().Format(time.RFC3339)
+	}
+	res.Fields["last"] = last
+	d, err := a.s.owner(ra.Trigger).ask(ctx, authorizer.ActionTriggerRuns, res)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := authorizer.DecodeRuns(d)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", triggers.ErrRunsInvalid, err)
+	}
+	due := make([]triggers.DueRun, len(runs))
+	for i, r := range runs {
+		due[i] = triggers.DueRun{Scope: r.Scope, Since: r.Since}
+	}
+	return due, nil
 }
 
 // startOn is the model a firing's session starts on (spec 089), as the
