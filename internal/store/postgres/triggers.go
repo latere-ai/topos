@@ -504,48 +504,50 @@ func (s *Store) SetSpend(ctx context.Context, id string, spend v1.TriggerSpend) 
 }
 
 // runColumns are a run's columns in the order scanRun reads them.
-const runColumns = `firing_id, owner, trigger_id, session_id, wake, session_trigger_id, at, outcome, reason, cost_usd_micro, ended`
+const runColumns = `firing_id, owner, trigger_id, session_id, wake, session_trigger_id, at, outcome, reason, cost_usd_micro, ended, scope`
 
-// PutRun writes a run, replacing the row of its firing whole.
+// PutRun writes a run, replacing the row of its firing and its scope
+// whole.
 func (s *Store) PutRun(ctx context.Context, r store.Run) error {
 	if err := store.CheckRun(r); err != nil {
 		return err
 	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO trigger_runs (`+runColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (firing_id) DO UPDATE SET owner = $2, trigger_id = $3, session_id = $4, wake = $5, session_trigger_id = $6, at = $7, outcome = $8, reason = $9,
+	if _, err := s.pool.Exec(ctx, `INSERT INTO trigger_runs (`+runColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT (firing_id, scope) DO UPDATE SET owner = $2, trigger_id = $3, session_id = $4, wake = $5, session_trigger_id = $6, at = $7, outcome = $8, reason = $9,
 		cost_usd_micro = $10, ended = $11`,
-		r.FiringID, r.Owner, r.TriggerID, r.SessionID, r.Wake, r.SessionTriggerID, r.At.UTC(), r.Outcome, r.Reason, r.CostUSDMicro, r.Ended); err != nil {
+		r.FiringID, r.Owner, r.TriggerID, r.SessionID, r.Wake, r.SessionTriggerID, r.At.UTC(), r.Outcome, r.Reason, r.CostUSDMicro, r.Ended, r.Scope); err != nil {
 		return fmt.Errorf("postgres: put the run of %s: %w", r.FiringID, err)
 	}
 	return nil
 }
 
-// SetRunCosts writes every cost in one statement, to the runs that have
-// not ended, as store.Run.Costed does.
+// SetRunCosts writes every cost in one statement, to the runs it matches
+// that have not ended, as store.RunCost.Matches and store.Run.Costed do.
 func (s *Store) SetRunCosts(ctx context.Context, costs []store.RunCost) error {
 	if len(costs) == 0 {
 		return nil
 	}
-	ids, cost, ended := make([]string, len(costs)), make([]int64, len(costs)), make([]bool, len(costs))
+	ids, sessions, cost, ended := make([]string, len(costs)), make([]string, len(costs)), make([]int64, len(costs)), make([]bool, len(costs))
 	for i, c := range costs {
-		ids[i], cost[i], ended[i] = c.FiringID, c.CostUSDMicro, c.Ended
+		ids[i], sessions[i], cost[i], ended[i] = c.FiringID, c.SessionID, c.CostUSDMicro, c.Ended
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE trigger_runs AS r SET cost_usd_micro = c.cost, ended = c.ended
-		FROM unnest($1::text[], $2::bigint[], $3::boolean[]) AS c(firing_id, cost, ended)
-		WHERE r.firing_id = c.firing_id AND NOT r.ended`, ids, cost, ended); err != nil {
+		FROM unnest($1::text[], $2::text[], $3::bigint[], $4::boolean[]) AS c(firing_id, session_id, cost, ended)
+		WHERE r.firing_id = c.firing_id AND (c.session_id = '' OR r.session_id = c.session_id) AND NOT r.ended`, ids, sessions, cost, ended); err != nil {
 		return fmt.Errorf("postgres: set the cost of %d runs: %w", len(costs), err)
 	}
 	return nil
 }
 
 func (s *Store) Runs(ctx context.Context, owner string, since time.Time) ([]store.Run, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+runColumns+` FROM trigger_runs WHERE owner = $1 AND at >= $2 ORDER BY at, firing_id`, owner, since.UTC())
+	rows, err := s.pool.Query(ctx, `SELECT `+runColumns+` FROM trigger_runs WHERE owner = $1 AND at >= $2
+		ORDER BY at, firing_id COLLATE "C", scope COLLATE "C"`, owner, since.UTC())
 	if err != nil {
 		return nil, fmt.Errorf("postgres: list the runs of %s: %w", owner, err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.Run, error) {
 		var r store.Run
-		if err := row.Scan(&r.FiringID, &r.Owner, &r.TriggerID, &r.SessionID, &r.Wake, &r.SessionTriggerID, &r.At, &r.Outcome, &r.Reason, &r.CostUSDMicro, &r.Ended); err != nil {
+		if err := row.Scan(&r.FiringID, &r.Owner, &r.TriggerID, &r.SessionID, &r.Wake, &r.SessionTriggerID, &r.At, &r.Outcome, &r.Reason, &r.CostUSDMicro, &r.Ended, &r.Scope); err != nil {
 			return store.Run{}, err
 		}
 		r.At = r.At.UTC()

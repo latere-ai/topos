@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 )
@@ -41,8 +42,12 @@ const (
 	// again, as it takes a failed one, so a one-shot fires once the spend
 	// allows.
 	OutcomeSkippedBudget = "skipped_budget"
-	OutcomeRefused       = "refused"
-	OutcomeFailed        = "failed"
+	// OutcomeSkippedNothingNew is a firing of a trigger whose reach splits
+	// by scope that the authorizer answered with no scope due (spec 095):
+	// it starts nothing and asks no model, and is a run that cost nothing.
+	OutcomeSkippedNothingNew = "skipped_nothing_new"
+	OutcomeRefused           = "refused"
+	OutcomeFailed            = "failed"
 )
 
 // Trigger is one stored trigger: its latest resolved document and its
@@ -130,11 +135,15 @@ func (f Firing) Waits() bool { return f.Outcome == OutcomeRefused && f.Until != 
 // Run is one firing a person counts as a run (spec 088): one that started
 // or continued a session, so a turn a trigger's message began, or one
 // that started nothing because an allowance or the authorizer stopped it.
-// It is keyed by its firing and kept apart from the firing's row, which a
-// one-shot's firing deletes with its trigger, so a wake's run outlives
-// the wake.
+// It is keyed by its firing and its scope, and kept apart from the
+// firing's row, which a one-shot's firing deletes with its trigger, so a
+// wake's run outlives the wake.
 type Run struct {
 	FiringID string
+	// Scope is the scope the run is one of (spec 095): one firing of a
+	// trigger whose reach splits by scope is a run per scope it started or
+	// the authorizer refused. Empty for every other run.
+	Scope string
 	// Owner is the trigger's owner, whose read answers the run.
 	Owner string
 	// TriggerID is the trigger that fired: for a wake, the wake's own
@@ -151,8 +160,9 @@ type Run struct {
 	SessionTriggerID string
 	// At is the firing's time.
 	At time.Time
-	// Outcome is the firing's: OutcomeStarted, OutcomeContinued,
-	// OutcomeSkippedBudget or OutcomeRefused.
+	// Outcome is the firing's, or for a run of a scope the scope's:
+	// OutcomeStarted, OutcomeContinued, OutcomeSkippedBudget,
+	// OutcomeSkippedNothingNew or OutcomeRefused.
 	Outcome string
 	// Reason is a refused firing's reason.
 	Reason string
@@ -164,18 +174,35 @@ type Run struct {
 	Ended bool
 }
 
+// RunKey is what a run is kept by: its firing and its scope (spec 095).
+type RunKey struct {
+	FiringID string
+	Scope    string
+}
+
+// Key is the run's key.
+func (r Run) Key() RunKey { return RunKey{FiringID: r.FiringID, Scope: r.Scope} }
+
 // RunCost is what a log says one run's turn cost so far, and whether it
-// has ended.
+// has ended. A look is in one session's log, so a cost names the session
+// as well as the firing, and is written to the firing's run of that
+// session; a cost of no session is written to every run of the firing.
 type RunCost struct {
 	FiringID     string
+	SessionID    string
 	CostUSDMicro int64
 	Ended        bool
+}
+
+// Matches reports whether cost c is written to run r.
+func (c RunCost) Matches(r Run) bool {
+	return c.FiringID == r.FiringID && (c.SessionID == "" || c.SessionID == r.SessionID)
 }
 
 // IsRun reports whether a firing of outcome is a run (spec 088).
 func IsRun(outcome string) bool {
 	switch outcome {
-	case OutcomeStarted, OutcomeContinued, OutcomeSkippedBudget, OutcomeRefused:
+	case OutcomeStarted, OutcomeContinued, OutcomeSkippedBudget, OutcomeSkippedNothingNew, OutcomeRefused:
 		return true
 	}
 	return false
@@ -193,6 +220,8 @@ func CheckRun(r Run) error {
 		return fmt.Errorf("%w: a run names its owner and its trigger", session.ErrInvalid)
 	case !IsRun(r.Outcome):
 		return fmt.Errorf("%w: a firing of outcome %q is no run", session.ErrInvalid, r.Outcome)
+	case r.Scope != "" && !trigger.ValidScope(r.Scope):
+		return fmt.Errorf("%w: %q is not a run's scope", session.ErrInvalid, r.Scope)
 	}
 	return nil
 }
@@ -302,14 +331,14 @@ type Triggers interface {
 	// 087).
 	SetSpend(ctx context.Context, id string, spend v1.TriggerSpend) error
 
-	// PutRun stores a run (spec 088), replacing the run of its firing
-	// whole: a firing taken again writes its new outcome.
+	// PutRun stores a run (spec 088), replacing the run of its firing and
+	// its scope whole: a firing taken again writes its new outcome.
 	PutRun(ctx context.Context, r Run) error
-	// SetRunCosts writes each cost to the run of its firing as Run.Costed
-	// does, and passes over a firing that has no run.
+	// SetRunCosts writes each cost to the runs it matches (RunCost.Matches)
+	// as Run.Costed does, and passes over a cost that matches none.
 	SetRunCosts(ctx context.Context, costs []RunCost) error
 	// Runs lists owner's runs at or after since, oldest first, those of
-	// one time by firing id.
+	// one time by firing id and then by scope.
 	Runs(ctx context.Context, owner string, since time.Time) ([]Run, error)
 	// PruneRuns deletes every run before before. Runs outlive their
 	// triggers until then.
@@ -369,6 +398,8 @@ func Count(c *v1.TriggerCounts, outcome string, n int64) {
 		c.SkippedEnded += n
 	case OutcomeSkippedBudget:
 		c.SkippedBudget += n
+	case OutcomeSkippedNothingNew:
+		c.SkippedNothingNew += n
 	case OutcomeRefused:
 		c.Refused += n
 	case OutcomeFailed:

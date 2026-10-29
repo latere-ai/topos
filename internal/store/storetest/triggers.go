@@ -761,6 +761,89 @@ func triggerRuns(t *testing.T, f Factory) {
 	}
 }
 
+// triggerScopedRuns: the runs of one firing of a trigger whose reach
+// splits by scope are kept apart by their scopes, beside the firing's run
+// of no scope; a cost is written to the run of its session, or to every
+// run of its firing when it names none; the runs list by time, firing and
+// scope; a prune deletes them all; and a scope outside its pattern is
+// refused (spec 095).
+func triggerScopedRuns(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	at := clock.Now()
+	firing := session.NewID(session.PrefixFiring)
+	you := store.Run{FiringID: firing, Scope: "you", Owner: "alice", TriggerID: "trg_1", SessionID: "ses_you", At: at, Outcome: store.OutcomeStarted}
+	project := store.Run{FiringID: firing, Scope: "projects/prj_01JA4R", Owner: "alice", TriggerID: "trg_1", SessionID: "ses_project", At: at,
+		Outcome: store.OutcomeStarted}
+	refused := store.Run{FiringID: firing, Scope: "projects/prj_02", Owner: "alice", TriggerID: "trg_1", At: at, Outcome: store.OutcomeRefused,
+		Reason: "share_spent", Ended: true}
+	nothing := store.Run{FiringID: session.NewID(session.PrefixFiring), Owner: "alice", TriggerID: "trg_1", At: at.Add(time.Hour),
+		Outcome: store.OutcomeSkippedNothingNew, Ended: true}
+	for _, r := range []store.Run{project, you, refused, nothing} {
+		if err := st.PutRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, scope := range []string{"a b", "/you", strings.Repeat("s", 129), "you\n"} {
+		bad := you
+		bad.Scope = scope
+		if err := st.PutRun(ctx, bad); !errors.Is(err, session.ErrInvalid) {
+			t.Fatalf("a run of scope %q: %v", scope, err)
+		}
+	}
+	// Written again whole, a scope's run replaces its own row alone.
+	project.Reason = "kept"
+	if err := st.PutRun(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRunCosts(ctx, []store.RunCost{{FiringID: firing, SessionID: "ses_you", CostUSDMicro: 30, Ended: true},
+		{FiringID: firing, SessionID: "ses_project", CostUSDMicro: 70}, {FiringID: firing, SessionID: "ses_none", CostUSDMicro: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	// A cost of no session is written to each run of its firing that has
+	// not ended.
+	if err := st.SetRunCosts(ctx, []store.RunCost{{FiringID: firing, CostUSDMicro: 90, Ended: true}}); err != nil {
+		t.Fatal(err)
+	}
+	you.CostUSDMicro, you.Ended = 30, true
+	project.CostUSDMicro, project.Ended = 90, true
+	got, err := st.Runs(ctx, "alice", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.Run{project, refused, you, nothing}
+	if len(got) != len(want) {
+		t.Fatalf("alice's runs = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("run %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if err := st.PruneRuns(ctx, at.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Runs(ctx, "alice", time.Time{}); err != nil || len(got) != 1 || got[0] != nothing {
+		t.Fatalf("alice's runs after the prune = %+v, %v", got, err)
+	}
+	// A scope's session is named by its key alone, no firing's row naming
+	// it: closing it clears the key.
+	tr := NewTrigger("alice", "tidy", clock.Now())
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTriggerSession(ctx, tr.ID, "projects/p1", "ses_scope"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CloseSession(ctx, tr.ID, "ses_scope"); err != nil {
+		t.Fatalf("close a session no firing names: %v", err)
+	}
+	if _, err := st.TriggerSession(ctx, tr.ID, "projects/p1"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the key of a closed scope's session: %v", err)
+	}
+}
+
 // triggerRefusedRetake: a refused firing is taken again by a claim that
 // asks, as a waiting one-shot's claim does, under its first id with its
 // count taken back, and not by one that does not (spec 087); and the

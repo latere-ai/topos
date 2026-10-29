@@ -793,3 +793,41 @@ func TestStoredAgentsRenameTheirSubagentLimits(t *testing.T) {
 		t.Fatalf("a later open rewrote the version again: %v", err)
 	}
 }
+
+// TestARunBeforeTheScopeColumnReadsWithNone: a run a database at
+// migration 0022 holds, keyed by its firing alone, reads back after 0023
+// with no scope, and the runs of the same firing's scopes are kept beside
+// it, each its own row (spec 095).
+func TestARunBeforeTheScopeColumnReadsWithNone(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0022")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	firing := session.NewID(session.PrefixFiring)
+	if _, err := conn.Exec(t.Context(), `INSERT INTO trigger_runs (firing_id, owner, trigger_id, session_id, at, outcome, cost_usd_micro, ended)
+		VALUES ($1, 'alice', 'trg_1', 'ses_1', $2, 'started', 40, true)`, firing, at); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	before := store.Run{FiringID: firing, Owner: "alice", TriggerID: "trg_1", SessionID: "ses_1", At: at, Outcome: store.OutcomeStarted, CostUSDMicro: 40, Ended: true}
+	scoped := store.Run{FiringID: firing, Scope: "you", Owner: "alice", TriggerID: "trg_1", SessionID: "ses_2", At: at, Outcome: store.OutcomeStarted}
+	if err := st.PutRun(t.Context(), scoped); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Runs(t.Context(), "alice", time.Time{})
+	if err != nil || len(got) != 2 || got[0] != before || got[1] != scoped {
+		t.Fatalf("the runs across the migration: %+v, %v", got, err)
+	}
+}

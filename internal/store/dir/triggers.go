@@ -82,6 +82,7 @@ type firingFile struct {
 // runFile is a run's file.
 type runFile struct {
 	FiringID         string    `json:"firing_id"`
+	Scope            string    `json:"scope,omitempty"`
 	Owner            string    `json:"owner"`
 	TriggerID        string    `json:"trigger_id"`
 	SessionID        string    `json:"session_id,omitempty"`
@@ -95,7 +96,7 @@ type runFile struct {
 }
 
 func (f runFile) run() store.Run {
-	return store.Run{FiringID: f.FiringID, Owner: f.Owner, TriggerID: f.TriggerID, SessionID: f.SessionID, Wake: f.Wake, SessionTriggerID: f.SessionTriggerID,
+	return store.Run{FiringID: f.FiringID, Scope: f.Scope, Owner: f.Owner, TriggerID: f.TriggerID, SessionID: f.SessionID, Wake: f.Wake, SessionTriggerID: f.SessionTriggerID,
 		At: f.At.UTC(), Outcome: f.Outcome, Reason: f.Reason, CostUSDMicro: f.CostUSDMicro, Ended: f.Ended}
 }
 
@@ -147,8 +148,25 @@ func (s triggerFiles) keyPath(triggerID, key string) string {
 	return filepath.Join(s.root, kindTriggerKey, triggerID, hex.EncodeToString(sum[:])+".json")
 }
 
-func (s triggerFiles) runPath(firingID string) string {
-	return filepath.Join(s.root, kindTriggerRun, firingID+".json")
+// runPath is the file of a run: its firing's id for a run of no scope,
+// and otherwise the id and a digest of the scope, which a file's name
+// can always hold (spec 095).
+func (s triggerFiles) runPath(k store.RunKey) string {
+	return filepath.Join(s.root, kindTriggerRun, runName(k)+".json")
+}
+
+// runName is a run's file name without its extension.
+func runName(k store.RunKey) string {
+	if k.Scope == "" {
+		return k.FiringID
+	}
+	return k.FiringID + "." + scopeDigest(k.Scope)
+}
+
+// scopeDigest is the part of a run's file name its scope gives.
+func scopeDigest(scope string) string {
+	sum := sha256.Sum256([]byte(scope))
+	return hex.EncodeToString(sum[:8])
 }
 
 func (s triggerFiles) holdPath(owner string) string {
@@ -168,18 +186,19 @@ func (s triggerFiles) SaveHold(owner string, since *time.Time) error {
 	return write(path, holdFile{Owner: owner, Since: *since})
 }
 
-// SaveRun writes a run's file, replacing the one of its firing.
+// SaveRun writes a run's file, replacing the one of its firing and its
+// scope.
 func (s triggerFiles) SaveRun(r store.Run) error {
-	return write(s.runPath(r.FiringID), runFile{FiringID: r.FiringID, Owner: r.Owner, TriggerID: r.TriggerID, SessionID: r.SessionID, Wake: r.Wake,
+	return write(s.runPath(r.Key()), runFile{FiringID: r.FiringID, Scope: r.Scope, Owner: r.Owner, TriggerID: r.TriggerID, SessionID: r.SessionID, Wake: r.Wake,
 		SessionTriggerID: r.SessionTriggerID, At: r.At, Outcome: r.Outcome, Reason: r.Reason, CostUSDMicro: r.CostUSDMicro, Ended: r.Ended})
 }
 
-// RemoveRuns removes the files of the runs of the firings ids; one
-// already gone is passed over.
-func (s triggerFiles) RemoveRuns(ids []string) error {
-	for _, id := range ids {
-		if err := os.Remove(s.runPath(id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("dir: remove the run of %s: %w", id, err)
+// RemoveRuns removes the files of the runs keys name; one already gone
+// is passed over.
+func (s triggerFiles) RemoveRuns(keys []store.RunKey) error {
+	for _, k := range keys {
+		if err := os.Remove(s.runPath(k)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("dir: remove the run of %s: %w", runName(k), err)
 		}
 	}
 	return syncDir(filepath.Join(s.root, kindTriggerRun))
@@ -336,30 +355,44 @@ func loadTriggers(root string, book *store.TriggerBook) error {
 
 // loadRuns reads every run file into a book. A run outlives its trigger,
 // so a run of a trigger that has no file is loaded too; a well-named file
-// that does not decode, or holds another firing's run, is ErrCorrupt.
+// that does not decode, or holds the run of another firing or another
+// scope, is ErrCorrupt.
 func loadRuns(root string, book *store.TriggerBook) error {
-	files := triggerFiles{root: root}
 	entries, err := os.ReadDir(filepath.Join(root, kindTriggerRun))
 	if err != nil {
 		return fmt.Errorf("dir: list runs: %w", err)
 	}
 	var rs []store.Run
 	for _, e := range entries {
-		id, ok := strings.CutSuffix(e.Name(), ".json")
-		if !ok || !isID(session.PrefixFiring, id) {
+		name, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok {
+			continue
+		}
+		id, digest, scoped := strings.Cut(name, ".")
+		if !isID(session.PrefixFiring, id) || scoped && !isDigest(digest) {
 			continue
 		}
 		var f runFile
-		if err := readJSON(files.runPath(id), &f); err != nil {
+		if err := readJSON(filepath.Join(root, kindTriggerRun, e.Name()), &f); err != nil {
 			return err
 		}
-		if f.FiringID != id {
-			return fmt.Errorf("%w: %s holds the run of %q", session.ErrCorrupt, e.Name(), f.FiringID)
+		if f.FiringID != id || scoped != (f.Scope != "") || scoped && scopeDigest(f.Scope) != digest {
+			return fmt.Errorf("%w: %s holds the run of %q, scope %q", session.ErrCorrupt, e.Name(), f.FiringID, f.Scope)
 		}
 		rs = append(rs, f.run())
 	}
 	book.LoadRuns(rs)
 	return nil
+}
+
+// isDigest reports whether s is the part of a run's file name a scope
+// gives: sixteen lower-case hex digits.
+func isDigest(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil && strings.ToLower(s) == s
 }
 
 // isID reports whether name is an id of prefix, the name of an object's

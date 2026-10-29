@@ -76,12 +76,12 @@ func (s *saver) SaveRun(r Run) error {
 	return nil
 }
 
-func (s *saver) RemoveRuns(ids []string) error {
+func (s *saver) RemoveRuns(keys []RunKey) error {
 	if s.fail {
 		return errDisk
 	}
-	for _, id := range ids {
-		s.runs = append(s.runs, "-"+id)
+	for _, k := range keys {
+		s.runs = append(s.runs, "-"+k.FiringID)
 	}
 	return nil
 }

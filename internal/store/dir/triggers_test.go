@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -256,17 +257,53 @@ func TestReopenReadsRunsBack(t *testing.T) {
 	}
 	files := triggerFiles{root: filepath.Join(root, "objects")}
 	other := session.NewID(session.PrefixFiring)
-	if err := os.WriteFile(files.runPath(other), []byte(fmt.Sprintf(`{"firing_id":%q,"owner":"alice","trigger_id":"trg_1","at":"2026-10-23T09:00:00Z","outcome":"started"}`, fr.ID)), 0o600); err != nil {
+	if err := os.WriteFile(files.runPath(store.RunKey{FiringID: other}), []byte(fmt.Sprintf(`{"firing_id":%q,"owner":"alice","trigger_id":"trg_1","at":"2026-10-23T09:00:00Z","outcome":"started"}`, fr.ID)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(root, clock.Now); !errors.Is(err, session.ErrCorrupt) {
 		t.Fatalf("a run of another firing's name: %v", err)
 	}
-	if err := os.WriteFile(files.runPath(other), []byte(`not json`), 0o600); err != nil {
+	if err := os.WriteFile(files.runPath(store.RunKey{FiringID: other}), []byte(`not json`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(root, clock.Now); err == nil {
 		t.Fatal("a run that does not read opened")
+	}
+}
+
+// TestScopedRunsReopen: the runs of one firing's scopes are each a file,
+// named after the firing and a digest of the scope, beside the firing's
+// run of no scope, and read back after a restart; a file whose digest is
+// not its scope's is refused (spec 095).
+func TestScopedRunsReopen(t *testing.T) {
+	root := t.TempDir()
+	clock := storetest.NewClock()
+	st := open(t, root, clock.Now)
+	firing := session.NewID(session.PrefixFiring)
+	runs := []store.Run{
+		{FiringID: firing, Owner: "alice", TriggerID: "trg_1", At: clock.Now().UTC(), Outcome: store.OutcomeSkippedNothingNew, Ended: true},
+		{FiringID: firing, Scope: "projects/prj_01JA4R", Owner: "alice", TriggerID: "trg_1", SessionID: "ses_1", At: clock.Now().UTC(), Outcome: store.OutcomeStarted},
+		{FiringID: firing, Scope: "you", Owner: "alice", TriggerID: "trg_1", SessionID: "ses_2", At: clock.Now().UTC(), Outcome: store.OutcomeStarted},
+	}
+	for _, r := range runs {
+		if err := st.PutRun(t.Context(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := open(t, root, clock.Now).Runs(t.Context(), "alice", time.Time{})
+	if err != nil || !slices.Equal(got, runs) {
+		t.Fatalf("the runs after a restart: %+v, %v", got, err)
+	}
+	files := triggerFiles{root: filepath.Join(root, "objects")}
+	b, err := os.ReadFile(files.runPath(runs[2].Key()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(files.runPath(store.RunKey{FiringID: firing, Scope: "someone else"}), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, clock.Now); !errors.Is(err, session.ErrCorrupt) {
+		t.Fatalf("a run under another scope's name: %v", err)
 	}
 }
 

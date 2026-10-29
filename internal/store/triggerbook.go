@@ -27,10 +27,11 @@ type TriggerSaver interface {
 	SaveKey(triggerID, key, sessionID string) error
 	// SaveHold holds owner's triggers from since; nil releases them.
 	SaveHold(owner string, since *time.Time) error
-	// SaveRun writes a run (spec 088), replacing the run of its firing.
+	// SaveRun writes a run (spec 088), replacing the run of its firing
+	// and its scope.
 	SaveRun(r Run) error
-	// RemoveRuns removes the runs of the firings ids.
-	RemoveRuns(ids []string) error
+	// RemoveRuns removes the runs keys name.
+	RemoveRuns(keys []RunKey) error
 }
 
 // KeySession is one stored mapping of a trigger's key to its session.
@@ -56,9 +57,9 @@ type TriggerBook struct {
 	leases  map[string]triggerLease
 	// holds maps each held owner to since when.
 	holds map[string]time.Time
-	// runs holds every run by its firing's id; a run outlives its
-	// trigger (spec 088).
-	runs map[string]Run
+	// runs holds every run by its firing's id and then its scope (spec
+	// 095); a run outlives its trigger (spec 088).
+	runs map[string]map[string]Run
 }
 
 type triggerLease struct {
@@ -73,7 +74,7 @@ func NewTriggerBook(now func() time.Time, save TriggerSaver) *TriggerBook {
 		now = time.Now
 	}
 	return &TriggerBook{now: now, save: save, triggers: map[string]Trigger{}, names: map[ownedName]string{},
-		firings: map[string]map[string]Firing{}, keys: map[string]map[string]string{}, leases: map[string]triggerLease{}, holds: map[string]time.Time{}, runs: map[string]Run{}}
+		firings: map[string]map[string]Firing{}, keys: map[string]map[string]string{}, leases: map[string]triggerLease{}, holds: map[string]time.Time{}, runs: map[string]map[string]Run{}}
 }
 
 // Load fills the book with stored objects, without writing them again.
@@ -576,8 +577,16 @@ func (b *TriggerBook) LoadRuns(rs []Run) {
 	defer b.mu.Unlock()
 	for _, r := range rs {
 		r.At = r.At.UTC()
-		b.runs[r.FiringID] = r
+		b.putRun(r)
 	}
+}
+
+// putRun keeps r in the book, under its firing and its scope.
+func (b *TriggerBook) putRun(r Run) {
+	if b.runs[r.FiringID] == nil {
+		b.runs[r.FiringID] = map[string]Run{}
+	}
+	b.runs[r.FiringID][r.Scope] = r
 }
 
 func (b *TriggerBook) PutRun(_ context.Context, r Run) error {
@@ -592,7 +601,7 @@ func (b *TriggerBook) PutRun(_ context.Context, r Run) error {
 			return err
 		}
 	}
-	b.runs[r.FiringID] = r
+	b.putRun(r)
 	return nil
 }
 
@@ -600,20 +609,21 @@ func (b *TriggerBook) SetRunCosts(_ context.Context, costs []RunCost) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, c := range costs {
-		r, ok := b.runs[c.FiringID]
-		if !ok {
-			continue
-		}
-		next := r.Costed(c)
-		if next == r {
-			continue
-		}
-		if b.save != nil {
-			if err := b.save.SaveRun(next); err != nil {
-				return err
+		for _, r := range b.runs[c.FiringID] {
+			if !c.Matches(r) {
+				continue
 			}
+			next := r.Costed(c)
+			if next == r {
+				continue
+			}
+			if b.save != nil {
+				if err := b.save.SaveRun(next); err != nil {
+					return err
+				}
+			}
+			b.putRun(next)
 		}
-		b.runs[c.FiringID] = next
 	}
 	return nil
 }
@@ -622,9 +632,11 @@ func (b *TriggerBook) Runs(_ context.Context, owner string, since time.Time) ([]
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var out []Run
-	for _, r := range b.runs {
-		if r.Owner == owner && !r.At.Before(since) {
-			out = append(out, r)
+	for _, scopes := range b.runs {
+		for _, r := range scopes {
+			if r.Owner == owner && !r.At.Before(since) {
+				out = append(out, r)
+			}
 		}
 	}
 	slices.SortFunc(out, compareRuns)
@@ -634,29 +646,36 @@ func (b *TriggerBook) Runs(_ context.Context, owner string, since time.Time) ([]
 func (b *TriggerBook) PruneRuns(_ context.Context, before time.Time) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var ids []string
-	for id, r := range b.runs {
-		if r.At.Before(before) {
-			ids = append(ids, id)
+	var keys []RunKey
+	for _, scopes := range b.runs {
+		for _, r := range scopes {
+			if r.At.Before(before) {
+				keys = append(keys, r.Key())
+			}
 		}
 	}
-	if len(ids) == 0 {
+	if len(keys) == 0 {
 		return nil
 	}
-	slices.Sort(ids)
+	slices.SortFunc(keys, func(a, b RunKey) int {
+		return cmp.Or(cmp.Compare(a.FiringID, b.FiringID), cmp.Compare(a.Scope, b.Scope))
+	})
 	if b.save != nil {
-		if err := b.save.RemoveRuns(ids); err != nil {
+		if err := b.save.RemoveRuns(keys); err != nil {
 			return err
 		}
 	}
-	for _, id := range ids {
-		delete(b.runs, id)
+	for _, k := range keys {
+		delete(b.runs[k.FiringID], k.Scope)
+		if len(b.runs[k.FiringID]) == 0 {
+			delete(b.runs, k.FiringID)
+		}
 	}
 	return nil
 }
 
-// compareRuns orders runs by time, those of one time by firing id, as
-// Runs lists them.
+// compareRuns orders runs by time, those of one time by firing id and
+// then by scope, as Runs lists them.
 func compareRuns(a, b Run) int {
-	return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.FiringID, b.FiringID))
+	return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.FiringID, b.FiringID), cmp.Compare(a.Scope, b.Scope))
 }
