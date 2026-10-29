@@ -88,7 +88,13 @@ for what a reader sees. They are renamed with no compatibility: no
 reader takes the old names, and the stores rename what they hold, the
 Postgres store with a migration of its events and a data directory the
 first time `toposd` opens it, so a log written before reads and replays
-as one written after. The manifest's `spec.threads` keeps its name.
+as one written after. The manifest's limits on subagents are
+`spec.subagentLimits`, which was `spec.threads` through v0.59.0, with no
+compatibility either: a manifest that names `threads` is refused as any
+unknown field, and the stores rename what they kept, every agent
+version's document and bundle with its digest the renamed spec's, and
+every session's agent, whose spec and bundle a session keeps as blobs
+named by their digests, as new blobs its header names.
 
 A subagent's status is derived from the log:
 
@@ -115,7 +121,7 @@ A subagent is a conversation of the session, never a second principal in
 it: it acts with the session's credentials and spends the session's
 budget, whoever owns the agent it names. A referenced agent contributes
 its instructions, tools, model, approvals, hooks, skills, subagents,
-advisor, threads and context settings, each narrowed as the table below
+advisor, subagent limits and context settings, each narrowed as the table below
 says. Its `identity`, `permissions`, `model.credential`, `connections`,
 `memoryStores`, `repositories` and `machine` are not used, and
 `subagent.started` lists the ones the referenced agent declares in
@@ -242,12 +248,12 @@ asks: the call is answered `unknown_tool` and nothing runs.
 
 The session's own conversation has depth 0 and a subagent one more than
 its caller. The limit defaults to 2 and an agent may set it up to 4
-with `spec.threads.maxDepth`; a manifest asking more is refused at
+with `spec.subagentLimits.maxDepth`; a manifest asking more is refused at
 resolve. Two gates hold it: a subagent at the limit is offered neither
 `agent` nor `send_message`, and `agent` refuses past it with
 `depth_exceeded`. Several `agent` and `send_message` calls in one step
 run their subagents at once ([[005-harness-loop]]), at most
-`spec.threads.maxConcurrent` (default 8) running in a session. An agent
+`spec.subagentLimits.maxConcurrent` (default 8) running in a session. An agent
 that divides work among several subagents in one step and messages them
 afterward needs no mechanism of its own: it is a pattern of its
 instructions on these tools.
@@ -347,9 +353,16 @@ After v0.59.0, in no release yet: the events `subagent.started`,
 `subagent.message` and `subagent.ended` and the `subagent` member of an
 event and a delta in place of `thread.*` and `thread`, the stored logs
 renamed in place (`internal/store/postgres` migration 0021,
-`session/dir`), and `tools/agent-v2`. The criterion is
-`internal/store/postgres.TestSubagentEventsMigrateInPlace` and
-`session/dir.TestADirectoryOfThreadEventsOpensAsSubagentEvents`.
+`session/dir`), `spec.subagentLimits` in place of `spec.threads` with
+the stored agents renamed (`manifest.RenameSubagentLimits`, run by each
+store at its first open: `internal/store/postgres` after migration 0022,
+`internal/store/dir`, `session/dir`), and `tools/agent-v2`. The criteria
+are `internal/store/postgres.TestSubagentEventsMigrateInPlace`,
+`internal/store/postgres.TestStoredAgentsRenameTheirSubagentLimits`,
+`session/dir.TestADirectoryOfThreadEventsOpensAsSubagentEvents`,
+`session/dir.TestADirectoryRenamesItsSessionsSubagentLimits`,
+`internal/store/dir.TestADirectoryRenamesItsSubagentLimits` and
+`manifest.TestAStoredAgentRenamesItsSubagentLimits`.
 
 Open: the table test of narrowing from caller to subagent, the refusal
 of a tool the caller lacks, two isolated subagents merged by their

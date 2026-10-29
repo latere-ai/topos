@@ -66,7 +66,7 @@ it:
   `t.root.Subset(names)`, and an empty transcript but the task
   (`harness/threads.go`). `send_message` continues a subagent its
   caller started. Several calls in one step run at once, at most
-  `spec.threads.maxConcurrent` (default 8); past it a call is answered
+  `spec.subagentLimits.maxConcurrent` (default 8); past it a call is answered
   `too_many_subagents` and is not queued.
 - A thread's registry withholds `agent` and `send_message` at the depth
   limit (default 2, at most 4), and `agent` refuses past it with
@@ -116,12 +116,12 @@ it:
 | Item | Recommended | Weighed against, and why not |
 |---|---|---|
 | The tool | a value of the `agent` tool's `subagent` input, `fork`, beside the names of the agent's subagents ([[013-threads-and-subagents]]): one input makes the one choice, fresh or fork, and every other input (`task`, `isolation`, `tools`, `budget`) means the same for both; it is the shape of Claude Code's `Agent` tool, whose `subagent_type` names a defined subagent or `fork`, so a model that knows that tool reads this one; and `send_message` continues both kinds | a tool of its own, `fork`, this spec's first draft: two tools that start a subagent split one decision across two definitions, and a model that knows the `Agent` tool looks for the fork among the subagents; the draft's reason, that a fork takes no agent, model or effort, no longer separates them, since `agent` takes no model or effort for any subagent and the input that differs is the choice itself; both have effect `none`, so one tool still has one effect, decided, narrowed and scored on its own. Leaving `subagent` out to fork: shorter, but a model that forgets the input gets a fork it did not choose, and the description reads better with both choices named side by side. A `context: fork` input beside `subagent`: two inputs for one choice, and a value of `subagent` the call must then leave out |
-| How an agent offers forks | its `spec.tools` names `agent`, which adds `fork` to `subagent` and offers the tool to an agent with no subagents; `fork` is refused as a subagent's name at resolve | forks for every agent that has subagents: a default changes what each agent that never chose may do on upgrade, as the depth row says; a switch under `spec.threads`: a second place that turns a tool's use on, beside `spec.tools`, which already does |
+| How an agent offers forks | its `spec.tools` names `agent`, which adds `fork` to `subagent` and offers the tool to an agent with no subagents; `fork` is refused as a subagent's name at resolve | forks for every agent that has subagents: a default changes what each agent that never chose may do on upgrade, as the depth row says; a switch under `spec.subagentLimits`: a second place that turns a tool's use on, beside `spec.tools`, which already does |
 | The fork's opening message | a result for every call of the caller's step, each the same fixed text, then the task in a text block after them | the task as the fork's own call's result: sibling forks of one step would differ from the first fork's result on, and share less of the prefix |
 | Narrowing | when a call runs: a refusal at validation with `withheld_from_fork` | a narrowed list of definitions: the list is the first part of the cached prefix, so every narrowed fork would pay for the whole conversation again |
 | The tools of the conversation with the person (`question`, `publish`, `trigger`, ...) | held in a fork's definitions and refused when called | run by the fork: the session's own thread holds the conversation with the person, and two threads asking at once is what 039 rules out |
 | The model and the effort | the caller's, with no input to change them | a model per call: caches are per model, and a fork on another model is a fresh inline subagent, which already exists |
-| The default depth | 013's 2, kept; an agent names `spec.threads.maxDepth: 3` to nest three levels, as Latere Chat's agent does | 3 as the core's default: a default applies to every agent of every installation that never chose, so raising it changes what each of them may do on upgrade; depth is not where spending is bounded (concurrency and ceilings are), and each level is one more hop at which a subagent's work is cut to its final text |
+| The default depth | 013's 2, kept; an agent names `spec.subagentLimits.maxDepth: 3` to nest three levels, as Latere Chat's agent does | 3 as the core's default: a default applies to every agent of every installation that never chose, so raising it changes what each of them may do on upgrade; depth is not where spending is bounded (concurrency and ceilings are), and each level is one more hop at which a subagent's work is cut to its final text |
 | Depth for fresh subagents and forks | one count: a subagent is one deeper than its caller, fresh or fork | two counts: a fork of a fresh subagent of a fork would escape both |
 | A subagent's ceiling | counts the subagent and every subagent under it | its own requests alone: a fork that forks again would spend past it |
 | A subagent with no model | runs its caller's model, connection and effort, at its first turn and at each later one (below) | routing every subagent's model through the authorizer: a new question at every start, and a subagent most often needs only the model the person chose |
@@ -272,12 +272,12 @@ the session's credentials and machine.
 ### Depth and concurrency
 
 A subagent's depth is its caller's plus one, fresh or fork. The limit
-stays 013's: 2 unless `spec.threads.maxDepth` says otherwise, at most
+stays 013's: 2 unless `spec.subagentLimits.maxDepth` says otherwise, at most
 4. Of 013's two gates, the first, `agent` not offered at the limit,
 applies to every subagent but a fork, which carries
 its caller's definitions; the second, a call past the limit refused
 with `depth_exceeded`, applies to all. Forks count toward
-`spec.threads.maxConcurrent` as fresh subagents do.
+`spec.subagentLimits.maxConcurrent` as fresh subagents do.
 
 ### A subagent's ceiling
 
@@ -433,7 +433,7 @@ Latere Chat the first caller:
 
 | Need | Why |
 |---|---|
-| The managed agent's definition carries subagents and `threads`, and a version names a subagent that leaves its model out | step 1: subagents for an agent that runs on a routed name |
+| The managed agent's definition carries subagents and `subagentLimits`, and a version names a subagent that leaves its model out | step 1: subagents for an agent that runs on a routed name |
 | A later version names `agent` among its tools, so its subagents include `fork`, with instructions on when a fork beats a fresh subagent (the task needs what the conversation read) and when neither is worth it | step 2 |
 | The authorizer answers `session.fork` asked for a firing as it answers a firing's create | step 3 |
 
