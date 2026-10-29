@@ -811,7 +811,7 @@ func TestSigtermLeavesARunningSessionToTheNextClaim(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 
-	st, err := sessiondir.Open(data)
+	st, err := sessiondir.Open(t.Context(), data)
 	if err != nil {
 		t.Fatal(err)
 	}

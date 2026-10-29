@@ -382,7 +382,7 @@ func TestFoldRendersEveryType(t *testing.T) {
 // twice: every fold is the golden bytes.
 func TestFoldIsByteIdenticalAcrossStores(t *testing.T) {
 	ctx := t.Context()
-	d, err := dir.Open(t.TempDir())
+	d, err := dir.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

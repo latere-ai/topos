@@ -86,11 +86,15 @@ type Options struct {
 
 // Open returns the store over dataDir/sessions, creating it, with the
 // blob bodies in each session's directory. A directory written before a
-// subagent's events were named subagent.* has its logs renamed first.
-func Open(dataDir string) (*Store, error) { return OpenWith(dataDir, Options{}) }
+// subagent's events were named subagent.*, or before spec.threads was
+// named spec.subagentLimits, has its logs and its sessions' agents
+// renamed first.
+func Open(ctx context.Context, dataDir string) (*Store, error) {
+	return OpenWith(ctx, dataDir, Options{})
+}
 
 // OpenWith is Open with options.
-func OpenWith(dataDir string, o Options) (*Store, error) {
+func OpenWith(ctx context.Context, dataDir string, o Options) (*Store, error) {
 	root := filepath.Join(dataDir, "sessions")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("dir: create %s: %w", root, err)
@@ -101,6 +105,9 @@ func OpenWith(dataDir string, o Options) (*Store, error) {
 	}
 	s := &Store{root: root, host: host, now: time.Now, blobs: o.Blobs, states: map[string]*state{}}
 	if err := s.renameSubagents(); err != nil {
+		return nil, err
+	}
+	if err := s.renameSubagentLimits(ctx); err != nil {
 		return nil, err
 	}
 	return s, nil

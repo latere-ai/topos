@@ -248,7 +248,7 @@ func runCmd(ctx context.Context, args []string, env *cli) int {
 		}
 		agent = a
 	}
-	l, err := openLocal(env, o)
+	l, err := openLocal(ctx, env, o)
 	if err != nil {
 		return report(env, err)
 	}
@@ -299,7 +299,7 @@ func confirmCmd(ctx context.Context, args []string, env *cli) int {
 		env.stderr.println("topos:", err)
 		return ExitUsage
 	}
-	l, err := openLocal(env, o)
+	l, err := openLocal(ctx, env, o)
 	if err != nil {
 		return report(env, err)
 	}
@@ -324,7 +324,7 @@ func rewindCmd(ctx context.Context, args []string, env *cli) int {
 		env.stderr.println("topos: the turn is a number from 1")
 		return ExitUsage
 	}
-	l, err := openLocal(env, runOptions{})
+	l, err := openLocal(ctx, env, runOptions{})
 	if err != nil {
 		return report(env, err)
 	}
@@ -382,12 +382,12 @@ type local struct {
 	discovered bool
 }
 
-func openLocal(env *cli, o runOptions) (*local, error) {
+func openLocal(ctx context.Context, env *cli, o runOptions) (*local, error) {
 	dataDir, err := config.DataDir(env.Getenv)
 	if err != nil {
 		return nil, err
 	}
-	st, err := dir.Open(dataDir)
+	st, err := dir.Open(ctx, dataDir)
 	if err != nil {
 		return nil, err
 	}

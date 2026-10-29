@@ -383,7 +383,7 @@ func openStores(ctx context.Context, cfg config.Config, log *slog.Logger) (store
 	if err != nil {
 		return stores{}, fmt.Errorf("TOPOS_DATA_DIR %s: %w", cfg.DataDir, err)
 	}
-	sessions, err := sessiondir.OpenWith(cfg.DataDir, sessiondir.Options{Blobs: blobs})
+	sessions, err := sessiondir.OpenWith(ctx, cfg.DataDir, sessiondir.Options{Blobs: blobs})
 	if err != nil {
 		return stores{}, errors.Join(err, release())
 	}

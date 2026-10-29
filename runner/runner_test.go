@@ -85,7 +85,7 @@ func setup(t *testing.T) *fixture {
 	personal := filepath.Join(base, "config", "AGENTS.md")
 	write(t, personal, "Personal rules.\n")
 	write(t, filepath.Join(base, "config", "skills", "notes", "SKILL.md"), "---\nname: notes\ndescription: \"Keep notes.\"\n---\n")
-	if f.store, err = dir.Open(filepath.Join(base, "data")); err != nil {
+	if f.store, err = dir.Open(t.Context(), filepath.Join(base, "data")); err != nil {
 		t.Fatal(err)
 	}
 	f.r, err = New(Options{

@@ -22,7 +22,7 @@ import (
 // with its blob bodies in a blob store of their own.
 func TestDirStoreConformanceWithOutsideBlobs(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) session.Store {
-		st, err := OpenWith(t.TempDir(), Options{Blobs: blob.NewDir(t.TempDir())})
+		st, err := OpenWith(t.Context(), t.TempDir(), Options{Blobs: blob.NewDir(t.TempDir())})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func TestOutsideBlobs(t *testing.T) {
 	ctx := t.Context()
 	data, outside := t.TempDir(), t.TempDir()
 	blobs := &failing{Blobs: blob.NewDir(outside)}
-	st, err := OpenWith(data, Options{Blobs: blobs})
+	st, err := OpenWith(ctx, data, Options{Blobs: blobs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func (f *failing) DeleteSession(ctx context.Context, id string) error {
 // directory that no longer hashes to its digest is ErrCorrupt.
 func TestABlobInTheDirectoryIsVerified(t *testing.T) {
 	ctx := t.Context()
-	st := open(t, t.TempDir())
+	st := open(t.Context(), t, t.TempDir())
 	s := storetest.NewSession()
 	if err := st.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)

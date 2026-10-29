@@ -34,15 +34,19 @@ var renamedTypes = map[string]session.Type{
 // renamedTypes becomes the type it has now, and the thread field, the id
 // of the subagent the event belongs to, becomes subagent with the same
 // value. Every other line is kept byte for byte, so a batch's last line
-// still closes it and a torn tail stays for recover to truncate. The
-// marker is written after every log, so a crash part way reads them all
-// again on the next Open, and a log already renamed is left as it is.
-func (s *Store) renameSubagents() error {
-	marker := filepath.Join(s.root, subagentMarker)
-	if _, err := os.Stat(marker); err == nil {
+// still closes it and a torn tail stays for recover to truncate.
+func (s *Store) renameSubagents() error { return s.rewriteOnce(subagentMarker, s.renameSubagentsOf) }
+
+// rewriteOnce runs rewrite on every session of the directory unless the
+// marker is there, and writes the marker after the last, so a crash part
+// way runs it on every session again at the next Open; a rewrite leaves a
+// session it already rewrote as it is.
+func (s *Store) rewriteOnce(marker string, rewrite func(id string) error) error {
+	path := filepath.Join(s.root, marker)
+	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("dir: stat %s: %w", subagentMarker, err)
+		return fmt.Errorf("dir: stat %s: %w", marker, err)
 	}
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
@@ -53,15 +57,34 @@ func (s *Store) renameSubagents() error {
 		if !e.IsDir() || strings.HasPrefix(name, ".") || session.CheckID(session.PrefixSession, name) != nil {
 			continue
 		}
-		if err := s.renameSubagentsOf(name); err != nil {
+		if err := rewrite(name); err != nil {
 			return err
 		}
 	}
-	return writeFileAtomic(marker, nil)
+	return writeFileAtomic(path, nil)
+}
+
+// lockedRewrite runs fn with the session's lock held, and fails for a
+// session another open file holds, naming what it was to do.
+func (s *Store) lockedRewrite(id, what string, fn func() error) (err error) {
+	f, err := s.lockFile(id)
+	if err != nil {
+		return err
+	}
+	defer closeInto(&err, f)
+	ok, err := tryLock(f)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("dir: %s %s: %w", what, id, &session.LockedError{Holder: readHolder(f)})
+	}
+	defer func() { err = errors.Join(err, unlock(f)) }()
+	return fn()
 }
 
 // renameSubagentsOf rewrites one session's log under its lock.
-func (s *Store) renameSubagentsOf(id string) (err error) {
+func (s *Store) renameSubagentsOf(id string) error {
 	path := s.eventsPath(id)
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -73,32 +96,22 @@ func (s *Store) renameSubagentsOf(id string) (err error) {
 	if !bytes.Contains(b, []byte(`"thread`)) {
 		return nil
 	}
-	f, err := s.lockFile(id)
-	if err != nil {
-		return err
-	}
-	defer closeInto(&err, f)
-	ok, err := tryLock(f)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("dir: rename the subagent events of %s: %w", id, &session.LockedError{Holder: readHolder(f)})
-	}
-	defer func() { err = errors.Join(err, unlock(f)) }()
-	// The log is read again under the lock, so no append lands between
-	// the read and the replace.
-	if b, err = os.ReadFile(path); err != nil {
-		return fmt.Errorf("dir: read the events of %s: %w", id, err)
-	}
-	out, changed, err := renameLines(b)
-	if err != nil {
-		return fmt.Errorf("dir: rename the subagent events of %s: %w", id, err)
-	}
-	if !changed {
-		return nil
-	}
-	return writeFileAtomic(path, out)
+	return s.lockedRewrite(id, "rename the subagent events of", func() error {
+		// The log is read again under the lock, so no append lands
+		// between the read and the replace.
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("dir: read the events of %s: %w", id, err)
+		}
+		out, changed, err := renameLines(b)
+		if err != nil {
+			return fmt.Errorf("dir: rename the subagent events of %s: %w", id, err)
+		}
+		if !changed {
+			return nil
+		}
+		return writeFileAtomic(path, out)
+	})
 }
 
 // renameLines returns b with each whole line renamed by renameLine, and

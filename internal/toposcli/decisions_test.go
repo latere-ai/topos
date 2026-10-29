@@ -67,7 +67,7 @@ func TestDecisionServiceConfiguration(t *testing.T) {
 		t.Fatalf("sessions %+v", list)
 	}
 	var found bool
-	st, err := dir.Open(g.vars["TOPOS_DATA_DIR"])
+	st, err := dir.Open(t.Context(), g.vars["TOPOS_DATA_DIR"])
 	if err != nil {
 		t.Fatal(err)
 	}

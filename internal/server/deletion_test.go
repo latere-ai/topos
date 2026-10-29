@@ -49,7 +49,7 @@ func TestSessionDeletionOrder(t *testing.T) {
 	ctx := t.Context()
 	outside := t.TempDir()
 	blobs := &downOnce{Blobs: blob.NewDir(outside)}
-	st, err := sessiondir.OpenWith(t.TempDir(), sessiondir.Options{Blobs: blobs})
+	st, err := sessiondir.OpenWith(t.Context(), t.TempDir(), sessiondir.Options{Blobs: blobs})
 	if err != nil {
 		t.Fatal(err)
 	}

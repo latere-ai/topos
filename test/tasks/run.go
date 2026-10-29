@@ -535,7 +535,7 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	if err != nil {
 		return RunResult{}, err
 	}
-	st, err := dir.Open(r.data)
+	st, err := dir.Open(ctx, r.data)
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -684,7 +684,7 @@ func Judge(ctx context.Context, t Task, res RunResult, scratch string) (Verdict,
 	if res.Log == "" || res.Session == "" {
 		return Verdict{}, errors.New("tasks: the run has no session log")
 	}
-	st, err := dir.Open(filepath.Dir(filepath.Dir(filepath.Dir(res.Log))))
+	st, err := dir.Open(ctx, filepath.Dir(filepath.Dir(filepath.Dir(res.Log))))
 	if err != nil {
 		return Verdict{}, err
 	}

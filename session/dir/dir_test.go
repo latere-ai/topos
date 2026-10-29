@@ -22,9 +22,9 @@ import (
 
 var t0 = time.Date(2026, 9, 27, 10, 0, 0, 0, time.UTC)
 
-func open(t *testing.T, dataDir string) *Store {
+func open(ctx context.Context, t *testing.T, dataDir string) *Store {
 	t.Helper()
-	s, err := Open(dataDir)
+	s, err := Open(ctx, dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func open(t *testing.T, dataDir string) *Store {
 }
 
 func TestDirStoreConformance(t *testing.T) {
-	storetest.Run(t, func(t *testing.T) session.Store { return open(t, t.TempDir()) })
+	storetest.Run(t, func(t *testing.T) session.Store { return open(t.Context(), t, t.TempDir()) })
 }
 
 func newSession(ctx context.Context, t *testing.T, st session.Store) session.Session {
@@ -97,7 +97,7 @@ func TestDirStoreTruncatesTornTail(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			st := open(t, t.TempDir())
+			st := open(ctx, t, t.TempDir())
 			s := newSession(ctx, t, st)
 			appendBatchOf(ctx, t, st, s.ID, 0, storetest.Message(t, "one", t0), storetest.Message(t, "two", t0))
 			path := st.eventsPath(s.ID)
@@ -129,7 +129,7 @@ func TestDirStoreTruncatesTornTail(t *testing.T) {
 
 func TestDirStoreRefusesCorruptSequence(t *testing.T) {
 	ctx := t.Context()
-	st := open(t, t.TempDir())
+	st := open(t.Context(), t, t.TempDir())
 	s := newSession(ctx, t, st)
 	appendBatchOf(ctx, t, st, s.ID, 0, storetest.Message(t, "one", t0))
 	gap := []session.Event{storetest.Message(t, "gap", t0)}
@@ -161,7 +161,7 @@ func TestDirStoreRefusesCorruptSequence(t *testing.T) {
 
 func TestDirStoreGetReadsTheTailAcrossChunks(t *testing.T) {
 	ctx := t.Context()
-	st := open(t, t.TempDir())
+	st := open(t.Context(), t, t.TempDir())
 	s := newSession(ctx, t, st)
 	big := strings.Repeat("x", 40<<10)
 	var last uint64
@@ -181,7 +181,7 @@ func TestDirStoreGetReadsTheTailAcrossChunks(t *testing.T) {
 func TestDirStoreWatchSeesAnotherWriter(t *testing.T) {
 	PollInterval = 20 * time.Millisecond
 	data := t.TempDir()
-	reader, writer := open(t, data), open(t, data)
+	reader, writer := open(t.Context(), t, data), open(t.Context(), t, data)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	s := newSession(ctx, t, writer)
@@ -222,7 +222,7 @@ func mustEvents(ctx context.Context, t *testing.T, st session.Store, id string) 
 func TestDirStoreSecondInstanceIsLockedOut(t *testing.T) {
 	ctx := t.Context()
 	data := t.TempDir()
-	a, b := open(t, data), open(t, data)
+	a, b := open(t.Context(), t, data), open(t.Context(), t, data)
 	s := newSession(ctx, t, a)
 	l, err := a.Acquire(ctx, s.ID, session.Holder{Runner: "run_a"})
 	if err != nil {
@@ -255,7 +255,7 @@ func TestMain(m *testing.M) {
 }
 
 func helper(mode, data, id, crash string) int {
-	st, err := Open(data)
+	st, err := Open(context.Background(), data)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -317,7 +317,7 @@ func child(t *testing.T, mode, data, id, crash string) *exec.Cmd {
 func TestDirStoreSingleWriterLock(t *testing.T) {
 	ctx := t.Context()
 	data := t.TempDir()
-	st := open(t, data)
+	st := open(t.Context(), t, data)
 	s := newSession(ctx, t, st)
 	cmd := child(t, "hold", data, s.ID, "")
 	stdin, err := cmd.StdinPipe()
@@ -374,7 +374,7 @@ func TestDirStoreCrashAtEachDurabilityPoint(t *testing.T) {
 	} {
 		t.Run(c.point, func(t *testing.T) {
 			data := t.TempDir()
-			st := open(t, data)
+			st := open(ctx, t, data)
 			s := newSession(ctx, t, st)
 			last := appendBatchOf(ctx, t, st, s.ID, 0, storetest.Status(t, session.StatusRunning, "", t0), storetest.Message(t, "go", t0))
 			cmd := child(t, "crash", data, s.ID, c.point)
@@ -423,7 +423,7 @@ func TestDirStoreCrashAtEachDurabilityPoint(t *testing.T) {
 
 func TestSessionStatusMirrorsTheLog(t *testing.T) {
 	ctx := t.Context()
-	st := open(t, t.TempDir())
+	st := open(t.Context(), t, t.TempDir())
 	s := newSession(ctx, t, st)
 	appendBatchOf(ctx, t, st, s.ID, 0, storetest.Status(t, session.StatusRunning, "", t0))
 	stale, err := os.ReadFile(st.headerPath(s.ID))
@@ -456,7 +456,7 @@ func TestSessionStatusMirrorsTheLog(t *testing.T) {
 
 func TestDirStoreCreateIsAllOrNothing(t *testing.T) {
 	data := t.TempDir()
-	st := open(t, data)
+	st := open(t.Context(), t, data)
 	leftover := filepath.Join(st.root, ".ses_leftover.creating")
 	if err := os.MkdirAll(leftover, 0o700); err != nil {
 		t.Fatal(err)

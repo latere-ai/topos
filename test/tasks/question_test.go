@@ -64,7 +64,7 @@ func TestADriverAnswersAQuestion(t *testing.T) {
 	if !res.Passed {
 		t.Fatalf("the solution failed: %s\nlog %s", res.Reason, res.Log)
 	}
-	st, err := dir.Open(filepath.Dir(filepath.Dir(filepath.Dir(res.Log))))
+	st, err := dir.Open(t.Context(), filepath.Dir(filepath.Dir(filepath.Dir(res.Log))))
 	if err != nil {
 		t.Fatal(err)
 	}

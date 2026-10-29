@@ -26,7 +26,7 @@ import (
 func TestADirectoryOfThreadEventsOpensAsSubagentEvents(t *testing.T) {
 	ctx := t.Context()
 	data := t.TempDir()
-	st := open(t, data)
+	st := open(t.Context(), t, data)
 	s := newSession(ctx, t, st)
 	sub := "evt_01J9Z3Q4W8KX6T0M2V5N7R0002"
 	own := `{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0001","seq":1,"session_id":"` + s.ID + `","type":"user.message","time":"2026-09-27T10:00:01Z","turn":1,"payload":{"sender":{"subject":"usr_ada","name":"Ada","kind":"person"},"content":[{"type":"text","text":"Review then fix."}]}}` + "\n"
@@ -49,7 +49,7 @@ func TestADirectoryOfThreadEventsOpensAsSubagentEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st = open(t, data)
+	st = open(t.Context(), t, data)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestADirectoryOfThreadEventsOpensAsSubagentEvents(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.Replace(string(after), `"type":"subagent.ended"`, `"type":"thread.ended"`, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	open(t, data)
+	open(t.Context(), t, data)
 	if again, err := os.ReadFile(path); err != nil || !bytes.Contains(again, []byte(`"thread.ended"`)) {
 		t.Fatalf("a second Open read the log again: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRenameLinesKeepsWhatItCannotRead(t *testing.T) {
 func TestRenamingASessionAnotherProcessHoldsFailsTheOpen(t *testing.T) {
 	ctx := t.Context()
 	data := t.TempDir()
-	st := open(t, data)
+	st := open(t.Context(), t, data)
 	s := newSession(ctx, t, st)
 	bare := newSession(ctx, t, st)
 	path := st.eventsPath(s.ID)
@@ -167,7 +167,7 @@ func TestRenamingASessionAnotherProcessHoldsFailsTheOpen(t *testing.T) {
 		t.Fatalf("take the lock: %v, %v", ok, err)
 	}
 	var locked *session.LockedError
-	if _, err := Open(data); !errors.As(err, &locked) || !strings.Contains(err.Error(), s.ID) {
+	if _, err := Open(t.Context(), data); !errors.As(err, &locked) || !strings.Contains(err.Error(), s.ID) {
 		t.Fatalf("Open while the session is held: %v", err)
 	}
 	if b, err := os.ReadFile(path); err != nil || string(b) != line {
@@ -176,7 +176,7 @@ func TestRenamingASessionAnotherProcessHoldsFailsTheOpen(t *testing.T) {
 	if err := errors.Join(unlock(held), held.Close()); err != nil {
 		t.Fatal(err)
 	}
-	st = open(t, data)
+	st = open(t.Context(), t, data)
 	evs, err := st.Events(ctx, s.ID, 1, 0)
 	if err != nil || len(evs) != 1 || evs[0].Type != session.TypeSubagentStarted || evs[0].Subagent == "" {
 		t.Fatalf("the log once free: %+v, %v", evs, err)
@@ -198,7 +198,7 @@ func TestARenameThatCannotReadASessionFailsTheOpen(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			data := t.TempDir()
-			st := open(t, data)
+			st := open(t.Context(), t, data)
 			s := newSession(t.Context(), t, st)
 			p := path(st, s.ID)
 			if err := os.Remove(p); err != nil {
@@ -210,7 +210,7 @@ func TestARenameThatCannotReadASessionFailsTheOpen(t *testing.T) {
 			if err := os.Remove(filepath.Join(data, "sessions", subagentMarker)); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Open(data); err == nil {
+			if _, err := Open(t.Context(), data); err == nil {
 				t.Fatalf("Open renamed over %s that is a directory", name)
 			}
 			if _, err := os.Stat(filepath.Join(data, "sessions", subagentMarker)); !errors.Is(err, os.ErrNotExist) {

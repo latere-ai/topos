@@ -303,7 +303,7 @@ func TestEveryRouteOfAnObjectAnswersNotFound(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			sessions := session.NewMemoryStore()
 			if kind == "dir" {
-				d, err := dir.Open(t.TempDir())
+				d, err := dir.Open(t.Context(), t.TempDir())
 				if err != nil {
 					t.Fatal(err)
 				}
