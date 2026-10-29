@@ -148,6 +148,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [092](092-a-persons-sessions-that-see-each-others-work.md) | A person's sessions that see each other's work: each open session's work read from its log, a `list_sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app, a `set_working_on` tool that says which paths this session is about to change, and `send_message` reaching another of the person's sessions with a message that arrives as data, starting nothing and never the person's word | large | drafted | 004, 006, 008, 010, 012, 013, 015, 018, 019, 058, 059, 073, 080, 086, 087, 090 |
 | [093](093-memory-folders-the-file-tools-reach.md) | Memory folders the file tools reach: an allow names folders of a files store, read, write, edit, glob and grep reach them at `/memory/<name>/` through the runner with the session's token, every write conditional on what the session last read, an empty write forgets, and a call that reaches memory alone opens no machine | medium | testing | 008, 010, 012, 018, 058, 068 |
 | [094](094-a-memory-folder-of-past-conversations.md) | A memory folder of past conversations: an allow names a read-only memory folder whose files are the initiator's other conversations in the session's context, kept by one metadata entry or by its absence, served from the server's log as one Markdown file each, with every list and read asked of the authorizer as the initiator and the session named as the question's origin | medium | testing | 015, 016, 050, 056, 057, 058, 077, 083, 086, 093 |
+| [095](095-a-triggers-reach-and-one-run-per-scope.md) | A trigger's reach and one run per scope: `spec.reach` names a kind the authorizer maps and, with `split: scope`, makes each firing ask `trigger.runs` which scopes are due before it starts anything, start one session for each with the scope and the time since which it reads, and record `skipped_nothing_new` when none is, so a night with nothing new starts no session and asks no model | medium | testing | 022, 086, 087, 088, 090, 093 |
 
 ## Dependency graph
 
@@ -248,6 +249,7 @@ flowchart BT
   S092[092 sessions that see each other's work]
   S093[093 memory folders the file tools reach]
   S094[094 a memory folder of past conversations]
+  S095[095 a trigger's reach and one run per scope]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -435,6 +437,8 @@ flowchart BT
   S094 --> S083
   S094 --> S086
   S094 --> S093
+  S095 --> S090
+  S095 --> S093
 ```
 
 ## Build order
