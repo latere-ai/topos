@@ -181,6 +181,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [docs/memory-folders.md](docs/memory-folders.md): folders of a files
   service a session keeps across sessions, which its file tools reach at
   `/memory/<name>/` with no sandbox.
+- [docs/trigger-reach.md](docs/trigger-reach.md): a trigger's reach, a
+  kind the authorizer maps, and a firing that runs once per due scope or
+  not at all when nothing is new.
 
 ## Contributing
 

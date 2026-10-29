@@ -57,10 +57,14 @@ A run is a firing a person would count:
 |---|---|---|
 | `started`, `continued` | the firing started a session or continued one, and the agent worked | what that turn cost, from its message to the status that closed it |
 | `skipped_budget` | the trigger's weekly allowance was reached, so nothing ran (see `docs/allowances.md`) | 0 |
+| `skipped_nothing_new` | the trigger runs once per due scope, and the authorizer named none, so nothing ran and no model was asked (see `docs/trigger-reach.md`) | 0 |
 | `refused` | the installation's authorizer refused it; `reason` says why | 0 |
 
 `ended` says the turn closed, so its cost is final. A turn still running
-answers what it has cost so far. A firing skipped as late or busy, or
+answers what it has cost so far. A firing of a trigger that runs once
+per due scope is a run for each scope it started or the authorizer
+refused, each naming its `scope` and costing what its own session's
+turn cost; `scope` is absent on every other run. A firing skipped as late or busy, or
 still waiting for the person, is not a run.
 
 Which runs a trigger answers:
