@@ -45,6 +45,10 @@ func (f *fixture) appendTo(id string, turn int, payloads ...any) uint64 {
 			typ = session.TypeSessionResumed
 		case session.UserMessage:
 			typ = session.TypeUserMessage
+		case session.AgentToolUse:
+			typ = session.TypeAgentToolUse
+		case session.ToolResult:
+			typ = session.TypeToolResult
 		default:
 			f.t.Fatalf("no event type for %T", p)
 		}

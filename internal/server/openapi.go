@@ -94,6 +94,7 @@ func OpenAPI(server string) ([]byte, error) {
 		{Key: "QuestionResultMeta", Value: questionResultMeta},
 		{Key: "WebSearchResultMeta", Value: webSearchResultMeta},
 		{Key: "ReadResultMeta", Value: readResultMeta},
+		{Key: "TodoResultMeta", Value: todoResultMeta},
 		{Key: "Error", Value: errorSchema(errorCodes)},
 	}
 	components, err := mergeComponents(written, sc.components())
@@ -448,13 +449,13 @@ var opDescriptions = map[string]string{
 		"a session the caller may not read is left out, so a page may hold fewer sessions than limit while next_cursor remains. "+
 		"A fork holds its parent's events, so a session and the session it was forked from can both match. A q that is empty, holds no word, or is longer than %d characters is invalid_request.",
 		session.MaxSearchText, session.MaxSearchMatches, session.SearchExcerpt, session.MaxSearchQuery),
-	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there. " + ContextRule,
+	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there. " + ContextRule + " " + CostRule,
 	"resumeSession": "Resume a session idle on its budget once the cap is raised, or one idle on machine_waiting once its computer is back or its owner allowed the session: that resume adds no message, keeps the session's budget, and takes no max_cost_usd_micro, which is invalid_request.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
 		"interrupt it and delete it once it is idle. An idle session whose runner still holds it, as one does while it names the session after a turn, is waited for, at most " + spoken(DefaultLeaseWait) + ", and deleted once the runner lets go; " +
 		"one held past that, or that a runner claims for a turn while the authorizer decides, is conflict, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
-	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule + " " + ContextRule + " " + WatchedRule,
+	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule + " " + ContextRule + " " + WatchedRule + " " + CostRule,
 	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. "+
 		"A blob whose leading bytes are PNG, JPEG, GIF or WebP is answered as that image type with Content-Disposition inline. "+
 		"Any other blob, an SVG and an HTML page included, is answered with Content-Disposition attachment and the Content-Type of the file it is: "+
@@ -593,7 +594,7 @@ var opDescriptions = map[string]string{
 		"each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every %d seconds, and the stream closes after the event that ends the session. "+
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
-		int(DefaultHeartbeat.Seconds()), StreamsPerSubject) + " " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + ContextRule + " " + WatchedRule,
+		int(DefaultHeartbeat.Seconds()), StreamsPerSubject) + " " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + ContextRule + " " + WatchedRule + " " + CostRule,
 	"forkSession": "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. " +
 		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"tree\": \"new\", \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
 		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own conversation that is idle, whatever its stop reason, " +
