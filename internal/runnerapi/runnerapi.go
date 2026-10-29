@@ -377,6 +377,14 @@ func (s *Server) claim(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// A runner that hung up while the queue took its sessions reads no
+	// answer, so nothing would renew or release their leases and the
+	// sessions would wait for the reaper to find the claims expired. The
+	// leases go back now instead.
+	if r.Context().Err() != nil {
+		s.giveBack(got)
+		return errHungUp
+	}
 	out := make([]Claimed, 0, len(got))
 	s.mu.Lock()
 	for _, c := range got {
@@ -387,6 +395,15 @@ func (s *Server) claim(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.mu.Unlock()
 	return reply(w, http.StatusOK, out)
+}
+
+// giveBack releases the leases of claims no runner received.
+func (s *Server) giveBack(claims []runner.Claim) {
+	for _, c := range claims {
+		if err := c.Lease.Release(); err != nil {
+			s.o.Log.Error("release a claim its runner hung up on", "session", c.ID, "err", err)
+		}
+	}
 }
 
 // held is the live claim of a session at gen, or lease_lost.
@@ -765,8 +782,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// errHungUp is a stream whose runner went away: there is nobody left to
-// answer, so no error response is written.
+// errHungUp is a stream or a claim whose runner went away: there is
+// nobody left to answer, so no error response is written.
 var errHungUp = errors.New("runnerapi: the runner hung up")
 
 // putBlob stores a blob the runner names by its digest, which the

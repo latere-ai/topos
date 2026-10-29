@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,13 +35,21 @@ import (
 type fixture struct {
 	st     session.Store
 	server *runnerapi.Server
+	// hs is the server's listener. Closing it waits for every request in
+	// flight to be answered.
+	hs     *httptest.Server
 	url    string
 	client *Client
 }
 
 func setup(t *testing.T, ttl time.Duration) fixture {
 	t.Helper()
-	st := session.NewMemoryStore()
+	return setupOver(t, session.NewMemoryStore(), ttl)
+}
+
+// setupOver serves the protocol over st, with a claim queue over it.
+func setupOver(t *testing.T, st session.Store, ttl time.Duration) fixture {
+	t.Helper()
 	srv, err := runnerapi.New(runnerapi.Options{Store: st, Queue: runner.NewQueue(st, 10*time.Millisecond), Tokens: []string{"old", "runner-token"}, TTL: ttl})
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +60,7 @@ func setup(t *testing.T, ttl time.Duration) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fixture{st: st, server: srv, url: hs.URL, client: c}
+	return fixture{st: st, server: srv, hs: hs, url: hs.URL, client: c}
 }
 
 func hosted(t *testing.T, st session.Store, text string) session.Session {
@@ -130,6 +139,60 @@ func TestARemoteRunnerRunsASession(t *testing.T) {
 	if lease, err := f.st.Acquire(t.Context(), s.ID, session.Holder{Runner: "after"}); err != nil {
 		t.Fatalf("the claim was not released: %v", err)
 	} else if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// hangUp is a store that takes a lease for the runner named gone only once
+// the request asking for it has ended: the queue wins a session in the
+// moment its runner hangs up.
+type hangUp struct {
+	session.Store
+	gone  string
+	asked chan struct{}
+	once  sync.Once
+}
+
+func (h *hangUp) Acquire(ctx context.Context, id string, holder session.Holder) (session.Lease, error) {
+	if holder.Runner == h.gone {
+		h.once.Do(func() { close(h.asked) })
+		<-ctx.Done()
+	}
+	return h.Store.Acquire(ctx, id, holder)
+}
+
+// TestAClaimItsRunnerHungUpOnGoesBack: a session the queue took for a
+// runner that hung up before the answer is not held for that runner,
+// which would never renew or release it: its lease goes back at once
+// rather than when the reaper finds the claim expired.
+func TestAClaimItsRunnerHungUpOnGoesBack(t *testing.T) {
+	st := &hangUp{Store: session.NewMemoryStore(), gone: "run_gone", asked: make(chan struct{})}
+	f := setupOver(t, st, 0)
+	s := hosted(t, st, "Go.")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	claimed := make(chan error, 1)
+	go func() {
+		_, err := f.client.Claim(ctx, session.Holder{Runner: "run_gone"}, 1, time.Second)
+		claimed <- err
+	}()
+	select {
+	case <-st.asked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the queue never asked for the session")
+	}
+	cancel()
+	if err := <-claimed; !errors.Is(err, context.Canceled) {
+		t.Fatalf("a claim its runner stopped waiting for answered %v", err)
+	}
+	// Closing the server waits for its answer to the claim, so the lease
+	// read below is what the claim left.
+	f.hs.Close()
+	lease, err := st.Acquire(t.Context(), s.ID, session.Holder{Runner: "next"})
+	if err != nil {
+		t.Fatalf("the session is still held for the runner that hung up: %v", err)
+	}
+	if err := lease.Release(); err != nil {
 		t.Fatal(err)
 	}
 }
