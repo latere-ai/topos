@@ -1900,6 +1900,7 @@ paths:
                     skippedLate: 0
                     skippedEnded: 0
                     skippedBudget: 0
+                    skippedNothingNew: 0
                     refused: 0
                     failed: 0
         "201":
@@ -1941,6 +1942,7 @@ paths:
                     skippedLate: 0
                     skippedEnded: 0
                     skippedBudget: 0
+                    skippedNothingNew: 0
                     refused: 0
                     failed: 0
         default:
@@ -2021,6 +2023,7 @@ paths:
                         skippedLate: 0
                         skippedEnded: 0
                         skippedBudget: 0
+                        skippedNothingNew: 0
                         refused: 0
                         failed: 0
                 next_cursor: dHJnXzAxTTM0SEdCQTBKUjk4V0tLWFdaR0FYNlZB
@@ -2203,6 +2206,7 @@ paths:
                     skippedLate: 0
                     skippedEnded: 0
                     skippedBudget: 0
+                    skippedNothingNew: 0
                     refused: 0
                     failed: 0
                   spend:
@@ -5508,6 +5512,7 @@ components:
         - skippedLate
         - skippedEnded
         - skippedBudget
+        - skippedNothingNew
         - refused
         - failed
       properties:
@@ -5528,6 +5533,8 @@ components:
         skippedEnded:
           type: integer
         skippedBudget:
+          type: integer
+        skippedNothingNew:
           type: integer
         refused:
           type: integer
@@ -5616,6 +5623,15 @@ components:
         at:
           type: string
           format: date-time
+    TriggerReach:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+        split:
+          type: string
     TriggerRun:
       type: object
       required:
@@ -5777,6 +5793,8 @@ components:
           type: boolean
         budget:
           $ref: "#/components/schemas/TriggerBudget"
+        reach:
+          $ref: "#/components/schemas/TriggerReach"
     TriggerSpend:
       type: object
       required:

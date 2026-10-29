@@ -874,3 +874,43 @@ func TestTheRouteNamesAreNoTriggers(t *testing.T) {
 		t.Fatalf("a name beside the routes' resolved as %q", r.Name)
 	}
 }
+
+// TestTheReachOfSpec095: a trigger's reach resolves as written, a
+// trigger that names none writes none and keeps its digest, and a kind
+// outside the pattern, a split other than scope, and a split trigger on
+// events, at a time, at a list of times, under policy continue, with a
+// target or with a key are invalid_manifest at their paths.
+func TestTheReachOfSpec095(t *testing.T) {
+	o := storedA(t)
+	o.Now = func() time.Time { return time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC) }
+	r := one(t, eventTrigger("schedule: '0 3 * * *', reach: {kind: memory, split: scope}, session: {message: x}"), o)
+	if re := r.Trigger.Spec.Reach; re == nil || re.Kind != "memory" || re.Split != v1.SplitScope || !trigger.Split(r.Trigger.Spec) {
+		t.Fatalf("the reach resolved as %+v", r.Trigger.Spec.Reach)
+	}
+	whole := one(t, eventTrigger("schedule: '@daily', reach: {kind: notes}, session: {message: x}"), o)
+	if re := whole.Trigger.Spec.Reach; re == nil || re.Kind != "notes" || re.Split != "" || trigger.Split(whole.Trigger.Spec) {
+		t.Fatalf("a reach with no split resolved as %+v", whole.Trigger.Spec.Reach)
+	}
+	plain := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o)
+	if strings.Contains(string(plain.Spec), `"reach"`) || trigger.Split(plain.Trigger.Spec) {
+		t.Fatalf("a trigger without a reach writes one: %s", plain.Spec)
+	}
+	if again := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o); again.Digest != plain.Digest {
+		t.Fatal("the digest of a trigger without a reach moved")
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{eventTrigger("schedule: '@daily', reach: {kind: Memory}, session: {message: x}"), "spec.reach.kind", "is not a reach's kind"},
+		{eventTrigger("schedule: '@daily', reach: {kind: ''}, session: {message: x}"), "spec.reach.kind", "is not a reach's kind"},
+		{eventTrigger("schedule: '@daily', reach: {kind: memory, split: project}, session: {message: x}"), "spec.reach.split", "scope"},
+		{eventTrigger("on: {product: github, verbs: [push]}, reach: {kind: memory, split: scope}, session: {message: x}"), "spec.reach.split", "a trigger on events, at or times"},
+		{eventTrigger("at: '2026-11-01T09:00:00Z', reach: {kind: memory, split: scope}, session: {message: x}"), "spec.reach.split", "a trigger on events, at or times"},
+		{eventTrigger("times: ['2026-11-01T09:00:00Z'], reach: {kind: memory, split: scope}, session: {message: x}"), "spec.reach.split", "a trigger on events, at or times"},
+		{eventTrigger("schedule: '@daily', reach: {kind: memory, split: scope}, session: {message: x, policy: continue}"), "spec.reach.split", "policy new and no target"},
+		{eventTrigger("schedule: '@daily', reach: {kind: memory, split: scope}, session: {message: x, key: night}"), "spec.reach.split", "a key names none"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, o)
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%.120s: want %s: %s, got\n%s", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, e.Detail())
+		}
+	}
+}

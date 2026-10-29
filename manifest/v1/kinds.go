@@ -31,6 +31,13 @@ const (
 	NotifyJudged = "judged"
 )
 
+// Values of TriggerReach.Split (spec 095).
+const (
+	// SplitScope makes each firing ask the authorizer which scopes are
+	// due and start one session for each.
+	SplitScope = "scope"
+)
+
 // TriggerSpec is what a trigger fires on, a schedule, delivered events,
 // one time or a list of times, and the session each firing starts or
 // continues (spec 022). The fields specs 022, 086 and 090 added (On, At,
@@ -65,6 +72,20 @@ type TriggerSpec struct {
 	Suspend   bool   `json:"suspend"`
 	// Budget is the trigger's weekly allowance (spec 087); nil for none.
 	Budget *TriggerBudget `json:"budget,omitempty"`
+	// Reach names what the trigger's runs reach, which the authorizer
+	// maps, and whether a firing runs once per due scope (spec 095); nil
+	// for a trigger that runs as its agent does.
+	Reach *TriggerReach `json:"reach,omitempty"`
+}
+
+// TriggerReach is a trigger's reach (spec 095). Kind is a name the
+// installation's authorizer maps to what the trigger's runs may read and
+// write; the core carries it in its questions and decides nothing from
+// it. Split, SplitScope or empty, makes each firing ask trigger.runs
+// which scopes are due and start one session for each.
+type TriggerReach struct {
+	Kind  string `json:"kind"`
+	Split string `json:"split,omitempty"`
 }
 
 // TriggerBudget is a trigger's allowance (spec 087): PerWeek is the most

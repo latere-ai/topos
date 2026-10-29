@@ -658,7 +658,36 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 	if n := s.MaxActive; n != nil && (*n < 1 || *n > trigger.MaxActiveCeiling) {
 		v.add("spec.maxActive", fmt.Sprintf("%d is outside 1 to %d", *n, trigger.MaxActiveCeiling))
 	}
+	if r := s.Reach; r != nil {
+		v.reach(s, *r)
+	}
 	v.duration("spec.maxAge", s.MaxAge)
+}
+
+// reach checks a trigger's reach (spec 095): a kind of the pattern an
+// authorizer maps, and a split by scope alone, of a trigger that fires
+// on a schedule and starts a new session per scope, whose key is the
+// scope.
+func (v *validator) reach(s v1.TriggerSpec, r v1.TriggerReach) {
+	if !trigger.ValidReachKind(r.Kind) {
+		v.add("spec.reach.kind", fmt.Sprintf("%q is not a reach's kind: lower-case letters, digits and underscores, a letter first, at most 32", r.Kind))
+	}
+	switch {
+	case r.Split == "":
+		return
+	case r.Split != v1.SplitScope:
+		v.oneOf("spec.reach.split", r.Split, v1.SplitScope)
+		return
+	}
+	ss := s.Session
+	switch {
+	case s.On != nil || s.At != nil || s.Times != nil:
+		v.add("spec.reach.split", "splits a schedule's firings by scope; a trigger on events, at or times runs once per firing")
+	case ss.Policy == v1.PolicyContinue || ss.Target != "":
+		v.add("spec.reach.split", "starts a new session per scope, so it takes policy new and no target")
+	case ss.Key != "":
+		v.add("spec.reach.split", "keys each run's session by its scope, so a key names none")
+	}
 }
 
 // sessionModel checks the model a triggered session starts on by the

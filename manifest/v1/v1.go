@@ -146,8 +146,11 @@ type TriggerCounts struct {
 	// spend of the trigger they count toward was at its allowance (spec
 	// 087).
 	SkippedBudget int64 `json:"skippedBudget"`
-	Refused       int64 `json:"refused"`
-	Failed        int64 `json:"failed"`
+	// SkippedNothingNew counts the firings of a split trigger whose
+	// authorizer named no scope due, which started nothing (spec 095).
+	SkippedNothingNew int64 `json:"skippedNothingNew"`
+	Refused           int64 `json:"refused"`
+	Failed            int64 `json:"failed"`
 }
 
 // TriggerSpend is a Trigger's week as the server last counted it, at a
