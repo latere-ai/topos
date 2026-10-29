@@ -408,6 +408,27 @@
 // hold their own. An endpoint that does not know the action denies it,
 // and the hold's routes answer forbidden.
 //
+// A trigger may name its reach (spec 095), a kind the endpoint maps to
+// what the trigger's runs may reach: its trigger.create and
+// trigger.update carry reach {"kind": "...", "split": "scope"}, split
+// left out when the trigger runs once per firing, so an endpoint refuses
+// a kind it does not know, or one the applier may not use, before the
+// trigger is stored. At each firing of a trigger whose reach splits by
+// scope, before any session starts, toposd asks trigger.runs as the
+// owner. Its resource is the trigger's, with owner, name, agent, reach,
+// firing {"id", "at", "origin"} and last, each scope's latest run of the
+// trigger that started a session, {"<scope>": "<RFC 3339>"}. The allow's
+// limits name the scopes due as WireRuns, read by DecodeRuns:
+//
+//	{"runs": [{"scope": "you", "since": "2026-10-28T03:00:00Z"}, {"scope": "projects/prj_01JA4R"}]}
+//
+// Each starts a session keyed by its scope, whose session.create carries
+// reach {"kind", "scope", "since"} beside trigger_id and firing_id; an
+// allow that names none records skipped_nothing_new and asks no model.
+// toposd decides nothing about what a kind reaches, what a scope is, or
+// when one is due, and an endpoint that knows no kind allows with no
+// limits.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The

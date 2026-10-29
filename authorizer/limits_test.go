@@ -13,6 +13,7 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
+	"latere.ai/x/topos/manifest/trigger"
 	"latere.ai/x/topos/session"
 )
 
@@ -523,6 +524,51 @@ func TestTheMemoryMember(t *testing.T) {
 		"a number":      {"name": "chats", "access": "read_only", "sessions": map[string]any{"metadata": map[string]any{"project": 1}}},
 	} {
 		if _, err := DecodeLimits(decision(t, map[string]any{"memory": []any{f}})); err == nil || !strings.Contains(err.Error(), "memory") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// TestDecodeRuns: an allow of trigger.runs names its runs in order, each
+// with its since when it has one; an allow with no limits, or with none,
+// names none; and runs past trigger.MaxRunsPerFiring, a scope outside its
+// pattern, one named twice, or limits that do not read, are an error
+// (spec 095).
+func TestDecodeRuns(t *testing.T) {
+	since := time.Date(2026, 10, 28, 3, 0, 0, 0, time.FixedZone("CET", 3600))
+	got, err := DecodeRuns(decision(t, WireRuns{Runs: []WireRun{{Scope: "you", Since: &since}, {Scope: "projects/prj_01JA4R"}}}))
+	if err != nil || len(got) != 2 || got[0].Scope != "you" || !got[0].Since.Equal(since) || got[0].Since.Location() != time.UTC ||
+		got[1].Scope != "projects/prj_01JA4R" || got[1].Since != nil {
+		t.Fatalf("the runs: %+v, %v", got, err)
+	}
+	raw := `{"runs":[{"scope":"you","since":"2026-10-28T03:00:00Z"}],"memory":[]}`
+	if got, err := DecodeRuns(authz.Decision{Allow: true, Limits: json.RawMessage(raw)}); err != nil || len(got) != 1 || got[0].Scope != "you" {
+		t.Fatalf("the runs as the wire writes them: %+v, %v", got, err)
+	}
+	for name, d := range map[string]authz.Decision{
+		"no limits": {Allow: true},
+		"no runs":   decision(t, WireRuns{}),
+		"other":     decision(t, WireLimits{Model: "vendor/model-a"}),
+	} {
+		if got, err := DecodeRuns(d); err != nil || len(got) != 0 {
+			t.Errorf("%s: %+v, %v", name, got, err)
+		}
+	}
+	many := make([]WireRun, trigger.MaxRunsPerFiring+1)
+	for i := range many {
+		many[i].Scope = fmt.Sprintf("projects/p%d", i)
+	}
+	for name, d := range map[string]authz.Decision{
+		"too many":      decision(t, WireRuns{Runs: many}),
+		"no scope":      decision(t, WireRuns{Runs: []WireRun{{}}}),
+		"a space":       decision(t, WireRuns{Runs: []WireRun{{Scope: "a b"}}}),
+		"a slash first": decision(t, WireRuns{Runs: []WireRun{{Scope: "/you"}}}),
+		"too long":      decision(t, WireRuns{Runs: []WireRun{{Scope: strings.Repeat("s", 129)}}}),
+		"twice":         decision(t, WireRuns{Runs: []WireRun{{Scope: "you"}, {Scope: "you"}}}),
+		"not a list":    {Allow: true, Limits: json.RawMessage(`{"runs":{"scope":"you"}}`)},
+		"a bad since":   {Allow: true, Limits: json.RawMessage(`{"runs":[{"scope":"you","since":"yesterday"}]}`)},
+	} {
+		if _, err := DecodeRuns(d); err == nil || !strings.HasPrefix(err.Error(), "limits") {
 			t.Errorf("%s: %v", name, err)
 		}
 	}

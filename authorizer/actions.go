@@ -66,6 +66,11 @@ const (
 	// holds (spec 086): its resource names the owner, and held when it
 	// sets it.
 	ActionTriggerHold = "trigger.hold"
+	// ActionTriggerRuns asks, at a firing of a trigger whose reach splits
+	// by scope, which scopes are due (spec 095): its resource names the
+	// trigger, its reach, the firing and each scope's last run, and the
+	// allow's limits name the runs to start, WireRuns.
+	ActionTriggerRuns = "trigger.runs"
 
 	ActionCredentialCreate = "credential.create"
 	ActionCredentialRead   = "credential.read"
@@ -115,6 +120,7 @@ var table = []authz.Action{
 	{Name: ActionTriggerDelete, Kind: KindTrigger},
 	{Name: ActionTriggerFire, Kind: KindTrigger},
 	{Name: ActionTriggerHold, Kind: KindTrigger},
+	{Name: ActionTriggerRuns, Kind: KindTrigger},
 
 	{Name: ActionCredentialCreate, Kind: KindCredential},
 	{Name: ActionCredentialRead, Kind: KindCredential},
