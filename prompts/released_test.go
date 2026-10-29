@@ -300,4 +300,11 @@ var released = map[string]string{
 	"tools/read-v5.md":                               "87eb63857697d7cf5eb3bb4caea3dcf1ba8c8754abd93e055fe57352df53cc7c",
 	"tools/todo-v2.md":                               "e62881782bcb46845a59d2a000ea4ab02127308a15ca18733ae3670fb4b1abb9",
 	"results/files/unread-v2.md":                     "68f0438fc72e614153b2dd9020972c47a0bca49d671de6e38fd42601235e98e3",
+	"context/attachments-v2.md":                      "ed848bc0f9de43266b2fb6a1d4cbe03b0e38566092023cd8e6b9243a50b1499c",
+	"results/memory/forgot-v1.md":                    "957b274cdbcf652dde852ba6f207ac65c50c66ffdd04e968c696f37aa836812f",
+	"results/memory/read-only-v1.md":                 "f89f09f4fc1be4263fb0816df1ba916edc799ab110500d8990bb9a707b520909",
+	"results/memory/refused-v1.md":                   "baffb4e4c1a80531bf8033d965c0d9f06461dc567c4cb2b33aee9db55f2a6c7e",
+	"results/memory/too-large-v1.md":                 "48c6eecb7247f117c63cc4f4720da2791707149502c0b08b279d931a39c713b6",
+	"results/memory/unlisted-v1.md":                  "4ea149d173d2de98d2632bb581dffccc91cb34ba0b43eb70b8047250f1d011ec",
+	"results/memory/unreachable-v1.md":               "5be62827c8add472f425e253fe10cbef3319ea1d0de280798a14c89ac768a74e",
 }

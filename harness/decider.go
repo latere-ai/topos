@@ -38,6 +38,11 @@ type Call struct {
 	// watches (spec 087); its Remembered is then empty. A decision
 	// service is told it, to weigh a call nobody sees.
 	Attended bool
+	// Memory is true for a call that runs on the session's memory machine
+	// (spec 093), every path of which is under /memory/: it scores with
+	// the feature memory in place of its tool's own, and the rules settle
+	// it.
+	Memory bool
 }
 
 // Decider decides a validated call: its risk score and its verdict. The
@@ -58,6 +63,11 @@ func (Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
 	named := func(host string) bool { return slices.Contains(c.Policy.Egress, host) }
 	if n := c.Policy.Network; n != nil {
 		named = n.Inside
+	}
+	if c.Memory {
+		d := held(c.Policy.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm)
+		_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
+		return memoryRisk(), d, nil
 	}
 	risk := score(c.Name, c.Props, c.Input, c.MachineKind, named)
 	d := held(c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered), c.Confirm)
@@ -90,7 +100,17 @@ func (h *Harness) decider() Decider {
 // a score at or above block_at is blocked, and a read-only call, or one an
 // always_allow or remembered pattern matches, is allowed. Every other call
 // is open to the service, under a ceiling of allow.
+//
+// A call that reaches memory folders alone is the rules' to decide (spec
+// 093): the person reviews every memory through the installation.
 func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
+	if c.Memory {
+		d := held(p.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm)
+		if d.Verdict == VerdictAsk {
+			d.ReviewProbability = 1
+		}
+		return d, true
+	}
 	// A fetch outside the session's network is the network's to decide,
 	// which no service suggests past (spec 052).
 	if d, ok := p.fetchDecision(c.Name, c.Input); ok && d.Verdict != VerdictAllow {

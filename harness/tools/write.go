@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/prompts"
 )
 
@@ -27,7 +28,7 @@ const writeSchema = `{
 }`
 
 func writeTool() Tool {
-	return newBuiltin(NameWrite, prompts.Text(prompts.ToolWrite), writeSchema, Properties{Effect: EffectWrite}, runWrite)
+	return pathTool{newBuiltin(NameWrite, prompts.Text(prompts.ToolWrite), writeSchema, Properties{Effect: EffectWrite}, runWrite)}
 }
 
 type writeInput struct {
@@ -51,10 +52,32 @@ func runWrite(ctx context.Context, b *builtin, c Call) (Result, error) {
 	if err := c.Machine.WriteFile(ctx, p, strings.NewReader(in.Content), 0); err != nil {
 		return b.fail(ctx, c, p, err)
 	}
+	change := memoryChange(c, p, in.Content)
+	if change != nil && change.Action == MemoryForgotten {
+		return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.MemoryForgot, prompts.Data{"Path": p}), &Meta{Path: p, Memory: change})
+	}
 	size := int64(len(in.Content))
-	meta := &Meta{Path: p, SHA256: digest([]byte(in.Content)), Size: &size}
+	meta := &Meta{Path: p, SHA256: digest([]byte(in.Content)), Size: &size, Memory: change}
 	done := prompts.Data{"Existed": f.exists, "Path": p, "Bytes": plural(len(in.Content), "byte"), "Lines": plural(lineCount(in.Content), "line")}
 	return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.WriteDone, done), meta)
+}
+
+// memoryChange is the record of a write or an edit that left content at
+// p on a memory machine (spec 093): the file's folder, its path in the
+// folder, and saved, or forgotten for no content, which the memory
+// machine deleted; nil for a call on any other machine. A forget's meta
+// records the path absent, so the thread's next write of it creates it
+// anew.
+func memoryChange(c Call, p, content string) *MemoryMeta {
+	if c.Machine == nil || c.Machine.Info().Kind != memory.Kind {
+		return nil
+	}
+	name, rel, _ := memory.Locate(p)
+	action := MemorySaved
+	if content == "" {
+		action = MemoryForgotten
+	}
+	return &MemoryMeta{Folder: name, Path: rel, Action: action}
 }
 
 // plural renders a count with its noun, "1 line" or "2 lines", for the

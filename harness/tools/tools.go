@@ -113,6 +113,16 @@ type Confirmer interface {
 	Confirm(c Call) string
 }
 
+// Pather is the optional interface of a tool whose calls name the paths
+// they act on (spec 093): read, write, edit, glob and grep. Paths answers
+// a call's paths as its input writes them, "" for the working directory
+// a call that names none acts in. The harness runs a call whose every
+// path is under /memory/ on the session's memory machine, and opens no
+// other machine for it.
+type Pather interface {
+	Paths(input json.RawMessage) []string
+}
+
 // Call is one call of a tool.
 type Call struct {
 	ID      string
@@ -205,7 +215,25 @@ type Meta struct {
 	// Notice is a notify call's record (spec 086), which the session's
 	// header folds as its latest notice.
 	Notice *session.NoticeMeta `json:"notice,omitempty"`
+	// Memory is a write's or an edit's change of a file in a memory
+	// folder (spec 093), which a client shows as a memory saved or
+	// forgotten.
+	Memory *MemoryMeta `json:"memory,omitempty"`
 }
+
+// MemoryMeta is one change of a memory folder's file: the folder's name,
+// the file's path in the folder, and MemorySaved or MemoryForgotten.
+type MemoryMeta struct {
+	Folder string `json:"folder"`
+	Path   string `json:"path"`
+	Action string `json:"action"`
+}
+
+// The actions of a MemoryMeta.
+const (
+	MemorySaved     = "saved"
+	MemoryForgotten = "forgotten"
+)
 
 // Todo is one entry of a thread's list.
 type Todo struct {

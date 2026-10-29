@@ -207,6 +207,44 @@ func score(name string, props tools.Properties, input json.RawMessage, machineKi
 	return r
 }
 
+// FeatureMemory is the risk feature of a call that reaches memory
+// folders alone (spec 093), and the word always_confirm names to ask a
+// person about each one.
+const FeatureMemory = "memory"
+
+// ReasonMemory is the reason a call that reaches memory folders alone is
+// allowed in confirm and progressive (spec 093).
+const ReasonMemory = "a memory the person can review"
+
+// memoryRisk is the score of a call that reaches memory folders alone, in
+// place of its tool's own features (spec 093).
+func memoryRisk() session.Risk {
+	return session.Risk{Source: RiskSource, Score: 0.1, Features: []string{FeatureMemory}}
+}
+
+// decideMemory decides a call that reaches memory folders alone (spec
+// 093): asked when always_confirm names memory or the call, and blocked
+// for that in plan; in plan a read is allowed and a change blocked, as
+// every change is; and allowed otherwise, since the person reviews and
+// removes every memory through the installation.
+func (p Policy) decideMemory(name string, props tools.Properties, input json.RawMessage, machineKind string) Decision {
+	mode := ModeOn(p.Mode, machineKind)
+	readOnly := props.Effect == tools.EffectNone || props.Effect == tools.EffectRead
+	if slices.Contains(p.AlwaysConfirm, FeatureMemory) || matchAny(p.AlwaysConfirm, name, patternSubject(name, input)) {
+		if mode == ModePlan {
+			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+		}
+		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list"}
+	}
+	switch {
+	case mode == ModePlan && readOnly:
+		return Decision{Verdict: VerdictAllow, Reason: "read-only"}
+	case mode == ModePlan:
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+	}
+	return Decision{Verdict: VerdictAllow, Reason: ReasonMemory}
+}
+
 // fetchHost is the host a web_fetch's URL names, lowercased, without its
 // port or the user information before it; empty for an input that names
 // no http or https URL with a host.

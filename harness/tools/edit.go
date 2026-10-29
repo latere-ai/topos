@@ -24,7 +24,7 @@ const editSchema = `{
 }`
 
 func editTool() Tool {
-	return newBuiltin(NameEdit, prompts.Text(prompts.ToolEdit), editSchema, Properties{Effect: EffectWrite}, runEdit)
+	return pathTool{newBuiltin(NameEdit, prompts.Text(prompts.ToolEdit), editSchema, Properties{Effect: EffectWrite}, runEdit)}
 }
 
 type editInput struct {
@@ -77,8 +77,12 @@ func runEdit(ctx context.Context, b *builtin, c Call) (Result, error) {
 	if err := c.Machine.WriteFile(ctx, p, strings.NewReader(updated), 0); err != nil {
 		return b.fail(ctx, c, p, err)
 	}
+	change := memoryChange(c, p, updated)
+	if change != nil && change.Action == MemoryForgotten {
+		return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.MemoryForgot, prompts.Data{"Path": p}), &Meta{Path: p, Memory: change})
+	}
 	size := int64(len(updated))
-	meta := &Meta{Path: p, SHA256: digest([]byte(updated)), Size: &size}
+	meta := &Meta{Path: p, SHA256: digest([]byte(updated)), Size: &size, Memory: change}
 	text := prompts.Render(prompts.EditDoneOne, prompts.Data{"Path": p, "Line": line})
 	if n > 1 {
 		text = prompts.Render(prompts.EditDoneMany, prompts.Data{"Path": p, "Count": n, "Line": line})

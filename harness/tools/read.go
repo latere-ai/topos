@@ -90,9 +90,9 @@ func Read(r parsing.Reader) Tool {
 	props := Properties{Parallel: true, Effect: EffectRead}
 	run := func(ctx context.Context, b *builtin, c Call) (Result, error) { return runRead(ctx, b, c, r) }
 	if r == nil {
-		return newBuiltin(NameRead, prompts.Text(prompts.ToolRead), readSchema, props, run)
+		return pathTool{newBuiltin(NameRead, prompts.Text(prompts.ToolRead), readSchema, props, run)}
 	}
-	return newBuiltin(NameRead, prompts.Text(prompts.ToolReadParsed), readParsedSchema, props, run)
+	return pathTool{newBuiltin(NameRead, prompts.Text(prompts.ToolReadParsed), readParsedSchema, props, run)}
 }
 
 type readInput struct {

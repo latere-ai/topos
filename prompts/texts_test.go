@@ -29,6 +29,12 @@ type repository struct{ URL, Ref, Branch, Dir string }
 // attachedApp stands in for the harness's line of an attached app.
 type attachedApp struct{ Dir, Name, URL, Slug string }
 
+// memoryLine stands in for the harness's line of a memory folder.
+type memoryLine struct {
+	Name     string
+	ReadOnly bool
+}
+
 // httpConnection and mcpConnection stand in for the harness's lines of
 // the connections block before version 3, and httpLine and mcpLine for
 // its lines from version 3, which name the account and the API base URL.
@@ -324,6 +330,14 @@ var textCases = func() []textCase {
 		{name: OutputSpilled, data: Data{"Omitted": 73182, "Path": "/spill/tool-toolu_1.txt"}, want: strings.Trim(fmt.Sprintf("\n[... %d bytes omitted; the full output is in %s ...]\n", 73182, "/spill/tool-toolu_1.txt"), "\n")},
 
 		{name: FileChanged, data: Data{"Path": p}, want: p + " changed since it was last read; read it again before writing."},
+		{name: MemoryForgot, data: Data{"Path": "/memory/user/trains.md"}, want: "Forgot /memory/user/trains.md."},
+		{name: MemoryReadOnly, data: Data{"Path": "/memory/user/trains.md", "Folder": "user"}, want: "/memory/user/trains.md is in /memory/user/, which this session reads and does not change."},
+		{name: MemoryRefused, data: Data{"Path": "/memory/user/trains.md", "Message": "You do not have permission to do this.", "Detail": "Memory is off for this person."},
+			want: "/memory/user/trains.md: You do not have permission to do this. Memory is off for this person."},
+		{name: MemoryRefused, data: Data{"Path": "/memory/user/trains.md", "Message": "The object is too large.", "Detail": ""}, want: "/memory/user/trains.md: The object is too large."},
+		{name: MemoryUnreachable, data: Data{"Detail": "the files store answered the read with 503"}, want: "Memory could not be reached: the files store answered the read with 503."},
+		{name: MemoryTooLarge, data: Data{"Path": "/memory/user/big.md", "Size": 2097152, "Max": 1048576}, want: "/memory/user/big.md is 2097152 bytes; a memory file holds at most 1048576 bytes."},
+		{name: MemoryUnlisted, data: Data{"Limit": 2000}, want: "[... a memory folder holds more than 2000 files; only the first 2000 were searched, and the rest were not read]"},
 		{name: FileUnread, data: Data{"Path": p}, want: p + " exists and you have not read it; read it before writing to it."},
 		{name: "results/files/unread-v1", data: Data{"Path": p}, want: p + " exists and this thread has not read it; read it before writing to it."},
 		{name: FileOutside, data: Data{"Path": p}, want: p + " is outside the working directory."},
@@ -608,6 +622,14 @@ var textCases = func() []textCase {
 		}}, want: "<attachments>\n" + "Apps, each a checkout of its source in the working directory, on your branch agents/assistant/ses_1:\n" +
 			`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
 			`- notes-2/ : Notes, published at https://notes.apps.example.com (publish with app "notes")` + "\n" + "</attachments>"},
+		{name: ContextAttachmentsMemory, data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp(nil), "Memory": []memoryLine{{"user", true}, {"project", false}}},
+			want: "<attachments>\n" + "Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:\n" +
+				"- /memory/user/ (read only)\n" + "- /memory/project/ (read and write)\n" + "</attachments>"},
+		{name: ContextAttachmentsMemory, data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp{{"tide-tables", "Tide tables", "https://tide-tables.apps.example.com", "tide-tables"}}, "Memory": []memoryLine{{"project", false}}},
+			want: "<attachments>\n" + "Apps, each a checkout of its source in the working directory, on your branch agents/assistant/ses_1:\n" +
+				`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
+				"Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:\n" +
+				"- /memory/project/ (read and write)\n" + "</attachments>"},
 		{name: "context/connections-v1", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP": []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
 			"MCP":  []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}},

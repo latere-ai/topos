@@ -99,7 +99,8 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 // attached, a block per part (spec 058), on the session's own thread,
 // since they speak to its agent and a subagent works from its task; and
 // on every thread the attachments block, which names the checkout of
-// each app an allow attached, and the connections block (spec 069),
+// each app an allow attached and each memory folder (spec 093), and the
+// connections block (spec 069),
 // since every thread works in the same machine. The connections block
 // names the services the person may be asked to connect on the session's
 // own thread alone, which holds the conversation with the person, and
@@ -110,7 +111,7 @@ func headerBlocks(s session.Session, own, http bool, mcp map[string]MCPListing) 
 	// written before that rule renders none either (spec 077, "A run is
 	// isolated").
 	if s.Isolated() {
-		s.Instructions, s.Context, s.Connections = "", nil, nil
+		s.Instructions, s.Context, s.Connections, s.Memory = "", nil, nil, nil
 	}
 	var out []string
 	if own && s.Instructions != "" {
@@ -121,11 +122,33 @@ func headerBlocks(s session.Session, own, http bool, mcp map[string]MCPListing) 
 			out = append(out, prompts.Render(prompts.ContextAttached, prompts.Data{"First": i == 0, "Title": p.Title, "Text": strings.TrimRight(p.Text, "\n")}))
 		}
 	}
-	if apps := attachedApps(s); len(apps) > 0 {
+	// A session with memory folders names them after its apps in version
+	// 2 of the block; a session with none renders version 1, so its bytes
+	// are the ones it had.
+	switch apps := attachedApps(s); {
+	case len(s.Memory) > 0:
+		out = append(out, prompts.Render(prompts.ContextAttachmentsMemory, prompts.Data{"Branch": session.Branch(s), "Apps": apps, "Memory": memoryLines(s.Memory)}))
+	case len(apps) > 0:
 		out = append(out, prompts.Render(prompts.ContextAttachments, prompts.Data{"Branch": session.Branch(s), "Apps": apps}))
 	}
 	if block := connectionsBlock(s, own, http, mcp); block != "" {
 		out = append(out, block)
+	}
+	return out
+}
+
+// memoryLine is one memory folder as the attachments block names it.
+type memoryLine struct {
+	Name     string
+	ReadOnly bool
+}
+
+// memoryLines are a session's memory folders as the attachments block
+// names them, in the allow's order.
+func memoryLines(fs []session.MemoryFolder) []memoryLine {
+	out := make([]memoryLine, len(fs))
+	for i, f := range fs {
+		out[i] = memoryLine{Name: f.Name, ReadOnly: !f.Writable()}
 	}
 	return out
 }

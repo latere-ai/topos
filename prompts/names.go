@@ -524,6 +524,24 @@ const (
 	FileDirectory  Name = "results/files/directory-v1"
 )
 
+// The results of the file tools on a session's memory folders (spec
+// 093). MemoryForgot takes Path, a file an empty write forgot.
+// MemoryReadOnly takes Path and Folder, a change refused in a folder the
+// session reads alone. MemoryRefused takes Path, Message, the files
+// store's sentence, and Detail, the authorizer's words when its refusal
+// gave a reason, else empty. MemoryUnreachable takes Detail, what kept
+// the store from answering. MemoryTooLarge takes Path, Size and Max.
+// MemoryUnlisted takes Limit, memory.MaxListed: the line after a glob's
+// or a grep's result that read the first Limit files of a folder alone.
+const (
+	MemoryForgot      Name = "results/memory/forgot-v1"
+	MemoryReadOnly    Name = "results/memory/read-only-v1"
+	MemoryRefused     Name = "results/memory/refused-v1"
+	MemoryUnreachable Name = "results/memory/unreachable-v1"
+	MemoryTooLarge    Name = "results/memory/too-large-v1"
+	MemoryUnlisted    Name = "results/memory/unlisted-v1"
+)
+
 // The results of read, write and edit (spec 008).
 const (
 	ReadDirectory     Name = "results/read/directory-v1"
@@ -676,6 +694,12 @@ const (
 	// each with Dir, Name, URL and Slug: the apps whose source an allow
 	// attached (spec 058).
 	ContextAttachments Name = "context/attachments-v1"
+	// ContextAttachmentsMemory takes Branch, Apps as ContextAttachments
+	// does, and Memory, each with Name and ReadOnly: the attachments block
+	// of a session with memory folders (spec 093), which names the
+	// folders after the apps. A session with none renders
+	// ContextAttachments, so its bytes are unchanged.
+	ContextAttachmentsMemory Name = "context/attachments-v2"
 	// ContextConnections takes Branch, the session's branch, Token, the
 	// variable of the connection service's placeholder, HTTP, each with
 	// Title, Account, APIURL, APIExample, GitURL, Env and Notes, MCP, each with Title,

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 )
@@ -54,6 +55,23 @@ func (b *builtin) Definition() Definition { return b.def }
 func (b *builtin) Properties() Properties { return b.props }
 
 func (b *builtin) Run(ctx context.Context, c Call) (Result, error) { return b.run(ctx, b, c) }
+
+// pathTool is a built-in whose input names the one path it acts on as
+// path (Pather): read, write, edit, glob and grep.
+type pathTool struct{ *builtin }
+
+// Paths answers the call's path as its input writes it, "" for one that
+// names none, which acts in the working directory; an input that does not
+// decode names none.
+func (t pathTool) Paths(input json.RawMessage) []string {
+	var in struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal(input, &in) != nil {
+		return []string{""}
+	}
+	return []string{in.Path}
+}
 
 func newBuiltin(name, description, schema string, props Properties, run func(context.Context, *builtin, Call) (Result, error)) *builtin {
 	return &builtin{
@@ -119,12 +137,17 @@ func (b *builtin) result(ctx context.Context, c Call, outcome, text string, meta
 
 // fail answers a machine error on p. An error the harness acts on
 // returns as a Go error; every other error is a result the model can
-// act on.
+// act on, and a files store's refusal of a memory call carries its name
+// in the meta as refusal (spec 093).
 func (b *builtin) fail(ctx context.Context, c Call, p string, err error) (Result, error) {
 	if harnessError(err) {
 		return Result{}, err
 	}
-	return b.result(ctx, c, OutcomeError, pathError(p, err), nil)
+	var meta *Meta
+	if r, ok := errors.AsType[*memory.Refusal](err); ok {
+		meta = &Meta{Refusal: r.Name()}
+	}
+	return b.result(ctx, c, OutcomeError, pathError(p, err), meta)
 }
 
 // harnessError reports whether a machine error is the harness's to act
@@ -139,8 +162,12 @@ func harnessError(err error) bool {
 	return spent
 }
 
-// pathError is the model's sentence for a machine error on p.
+// pathError is the model's sentence for a machine error on p, a memory
+// machine's own errors among them (spec 093).
 func pathError(p string, err error) string {
+	if text, ok := memoryError(p, err); ok {
+		return text
+	}
 	switch {
 	case errors.Is(err, machine.ErrOutside):
 		return prompts.Render(prompts.FileOutside, prompts.Data{"Path": p})
@@ -152,6 +179,35 @@ func pathError(p string, err error) string {
 		return prompts.Render(prompts.FilePermission, prompts.Data{"Path": p})
 	}
 	return prompts.Render(prompts.FileError, prompts.Data{"Path": p, "Error": err.Error()})
+}
+
+// memoryError is the model's sentence for an error of a memory machine
+// on p (spec 093), false for any other error: a write refused for a
+// change since the read is the current-content rule's changed text.
+func memoryError(p string, err error) (string, bool) {
+	if errors.Is(err, memory.ErrChanged) {
+		return changedText(p), true
+	}
+	if r, ok := errors.AsType[*memory.ReadOnly](err); ok {
+		return prompts.Render(prompts.MemoryReadOnly, prompts.Data{"Path": p, "Folder": r.Folder}), true
+	}
+	if r, ok := errors.AsType[*memory.Refusal](err); ok {
+		return prompts.Render(prompts.MemoryRefused, prompts.Data{"Path": p, "Message": strings.TrimSpace(r.Message), "Detail": strings.TrimSpace(r.Detail)}), true
+	}
+	if u, ok := errors.AsType[*memory.Unreachable](err); ok {
+		return prompts.Render(prompts.MemoryUnreachable, prompts.Data{"Detail": strings.TrimSuffix(u.Detail, ".")}), true
+	}
+	if t, ok := errors.AsType[*memory.TooLarge](err); ok {
+		return prompts.Render(prompts.MemoryTooLarge, prompts.Data{"Path": p, "Size": t.Size, "Max": memory.MaxFileBytes}), true
+	}
+	return "", false
+}
+
+// memoryFailure reports whether err is an error of a memory machine,
+// which a search says as the file tools say it.
+func memoryFailure(err error) bool {
+	_, ok := memoryError("", err)
+	return ok
 }
 
 // resolve makes p a clean absolute machine path: a relative path resolves

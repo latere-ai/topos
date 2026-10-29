@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/prompts"
 )
 
@@ -30,7 +31,7 @@ const grepSchema = `{
 }`
 
 func grepTool() Tool {
-	return newBuiltin(NameGrep, prompts.Text(prompts.ToolGrep), grepSchema, Properties{Parallel: true, Effect: EffectRead}, runGrep)
+	return pathTool{newBuiltin(NameGrep, prompts.Text(prompts.ToolGrep), grepSchema, Properties{Parallel: true, Effect: EffectRead}, runGrep)}
 }
 
 type grepInput struct {
@@ -69,13 +70,13 @@ func runGrep(ctx context.Context, b *builtin, c Call) (Result, error) {
 		return searchFailed(ctx, b, c, q.Path, err)
 	}
 	if len(res.Lines) == 0 {
-		return b.result(ctx, c, OutcomeOK, prompts.Text(prompts.GrepNoMatches), nil)
+		return b.result(ctx, c, OutcomeOK, unlisted(prompts.Text(prompts.GrepNoMatches), res), nil)
 	}
 	text := strings.Join(res.Lines, "\n") + "\n"
 	if res.Truncated {
 		text += prompts.Render(prompts.GrepMore, prompts.Data{"Limit": limit}) + "\n"
 	}
-	return b.result(ctx, c, OutcomeOK, text, nil)
+	return b.result(ctx, c, OutcomeOK, unlisted(text, res), nil)
 }
 
 // searchPath resolves a search's start: the working directory when the
@@ -87,12 +88,25 @@ func searchPath(m machine.Machine, p string) string {
 	return resolve(m, p)
 }
 
+// unlisted is a search's result text with the line that says the search
+// read the first memory.MaxListed files of a memory folder alone after
+// it, when it did (spec 093), and the text as it is otherwise.
+func unlisted(text string, res machine.SearchResult) string {
+	if !res.Unlisted {
+		return text
+	}
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	return text + prompts.Render(prompts.MemoryUnlisted, prompts.Data{"Limit": memory.MaxListed}) + "\n"
+}
+
 // searchFailed answers a failed search. A machine error on the path is
-// said as the file tools say it; anything else is the search's own
-// complaint, a bad pattern or mode.
+// said as the file tools say it, a memory machine's among them; anything
+// else is the search's own complaint, a bad pattern or mode.
 func searchFailed(ctx context.Context, b *builtin, c Call, p string, err error) (Result, error) {
 	if harnessError(err) || errors.Is(err, machine.ErrOutside) || errors.Is(err, machine.ErrDenied) ||
-		errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+		errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) || memoryFailure(err) {
 		return b.fail(ctx, c, p, err)
 	}
 	msg := strings.TrimPrefix(err.Error(), "machine: ")

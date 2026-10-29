@@ -27,6 +27,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
@@ -102,8 +103,14 @@ type Config struct {
 	// max_tokens, which asks OutputCap first.
 	Entry   models.Entry
 	Machine machine.Machine
-	Tools   *tools.Registry
-	Policy  Policy
+	// Memory is the session's memory machine (spec 093), which serves
+	// its memory folders at /memory/<name>/: a call of a tool that names
+	// its paths, every one of them under /memory/, runs on it, and the
+	// harness opens and starts no other machine for it. Nil for a session
+	// with no memory folders.
+	Memory machine.Machine
+	Tools  *tools.Registry
+	Policy Policy
 	// Decider decides each validated call (spec 037); nil decides by the
 	// rules of spec 012 over Policy.
 	Decider Decider
@@ -1220,13 +1227,46 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 // refused as unknown before anything would run on the machine. A turn
 // whose machine, a person's computer, refused the session starts it no
 // more: that would ask the computer's owner again (spec 080).
+//
+// In a session with memory folders a call of a tool that names its paths
+// starts nothing: its path has not streamed yet, and a call under
+// /memory/ runs on the memory machine (spec 093). The call opens the
+// machine when it runs, if it needs it.
 func (t *turn) startMachine(ev ir.Event) {
 	if ev.Type != ir.EventBlockStart || ev.Block == nil || ev.Block.ToolUse == nil || t.machineRefused() != nil {
 		return
 	}
-	if tool, ok := t.reg.Get(ev.Block.ToolUse.Name); ok && opensMachine(tool.Properties()) {
-		machine.Start(t.h.c.Machine)
+	tool, ok := t.reg.Get(ev.Block.ToolUse.Name)
+	if !ok || !opensMachine(tool.Properties()) {
+		return
 	}
+	if _, paths := tool.(tools.Pather); paths && t.h.c.Memory != nil {
+		return
+	}
+	machine.Start(t.h.c.Machine)
+}
+
+// onMemory reports whether a call runs on the session's memory machine
+// (spec 093): a call of a tool that names its paths, in a session with
+// memory folders, every path of which is under /memory/ once cleaned. A
+// relative path, and a call that names none, act in the working
+// directory and run on the session's machine.
+func (h *Harness) onMemory(tool tools.Tool, input []byte) bool {
+	p, ok := tool.(tools.Pather)
+	if !ok || h.c.Memory == nil {
+		return false
+	}
+	paths := p.Paths(input)
+	return len(paths) > 0 && !slices.ContainsFunc(paths, func(p string) bool { return !memory.Under(p) })
+}
+
+// machineOf is the machine a call runs on: the memory machine for one
+// onMemory names, the session's for any other.
+func (h *Harness) machineOf(tool tools.Tool, input []byte) (machine.Machine, bool) {
+	if h.onMemory(tool, input) {
+		return h.c.Memory, true
+	}
+	return h.c.Machine, false
 }
 
 // opensMachine reports whether a call of a tool with these properties
@@ -1711,7 +1751,8 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 				st := t.toolState()
 				state = &st
 			}
-			if refused := c.Check(tools.Call{ID: id, Input: input, Machine: t.h.c.Machine, State: *state}); refused != nil {
+			m, _ := t.h.machineOf(tool, input)
+			if refused := c.Check(tools.Call{ID: id, Input: input, Machine: m, State: *state}); refused != nil {
 				answered = append(answered, answeredCall{id, *refused})
 				continue
 			}
@@ -1751,7 +1792,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		risk, d, err := decider.Decide(ctx, Call{
 			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered, Confirm: confirm,
-			Attended: attended,
+			Attended: attended, Memory: t.h.onMemory(tool, input),
 		})
 		if err != nil {
 			return stepPlan{}, nil, nil, err
@@ -2021,10 +2062,14 @@ func (t *turn) call(ctx context.Context, c plannedCall, w *waits) error {
 // refusal returns beside it to stop the turn once the step's calls are
 // answered.
 func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (tools.Result, error) {
+	// A call whose every path is under /memory/ runs on the memory
+	// machine and opens no other (spec 093).
+	m, onMemory := t.h.machineOf(c.tool, c.input)
+	opens := opensMachine(c.tool.Properties()) && !onMemory
 	// A tool that acts on the machine opens a machine opened on demand
 	// first, so its paths resolve against the working directory of the
 	// machine that exists; a tool of no effect never opens one.
-	if opensMachine(c.tool.Properties()) {
+	if opens {
 		if r := t.machineRefused(); r != nil {
 			return refusedResult(r), nil
 		}
@@ -2038,7 +2083,7 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 			return t.unopened(ctx, err)
 		}
 	}
-	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: t.h.c.Machine, State: state})
+	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: m, State: state})
 	var lost *appendError
 	if isPause(err) || errors.As(err, &lost) {
 		return tools.Result{}, err
@@ -2049,7 +2094,7 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 	// A person's computer that stopped answering under the call took what
 	// the call did with it: the result says so, and the turn stops to wait
 	// for the computer once the step's calls are answered (spec 080).
-	if w := machine.AbsentOf(t.h.c.Machine); w != nil && opensMachine(c.tool.Properties()) {
+	if w := machine.AbsentOf(t.h.c.Machine); w != nil && opens {
 		return tools.Text(tools.OutcomeError, prompts.Text(prompts.CallMachineAway)), w
 	}
 	return settle(ctx, res, err), nil
