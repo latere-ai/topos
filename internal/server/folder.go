@@ -12,6 +12,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/session"
 )
 
@@ -36,9 +37,11 @@ const FolderRule = "The authorizer's allow of session.create or session.fork may
 var MemoryRule = fmt.Sprintf("The authorizer's allow of session.create or session.fork may name memory, at most %d folders of an Arca-compatible files API, each {name, url, owner, path, access}: "+
 	"name a lowercase letter and at most 31 more lowercase letters, digits or -, unique, url the API's root, owner the space of 1 to %d bytes, path the folder in that space of at most %d bytes with no empty, . or .. segment, and access read_only or read_write. "+
 	"The session's read, write, edit, glob and grep reach each folder at /memory/<name>/, with the session's own token, and its commands do not; a write of empty content forgets a file. "+
+	"A folder may name sessions {metadata} in place of url, owner and path, with access read_only: a folder of conversations, one Markdown file per other session of the session's initiator in the session's context that its at most %d metadata entry keeps (a value the sessions holding the key with it, null those without the key), one per fork tree and never the session's own, "+
+	"named <yyyy-mm-dd>-<session id>.md and holding what the person and the agent said, at most %d KiB, each list asked session.list and each conversation session.read as the initiator with origin {kind: %s, session_id, folder} and a read with the conversation's metadata. "+
 	"A fork's memory folders are its own allow's, and a rollout's run has none. The session answers memory [{name, access}], without the API's address, the space or the path. "+
-	"An allow that names memory on a server that keeps no files store, or memory that breaks a rule, is authorizer_unavailable.",
-	session.MaxMemoryFolders, session.MaxMemoryOwner, session.MaxMemoryPath)
+	"An allow that names a folder of a files store on a server that keeps none, or memory that breaks a rule, is authorizer_unavailable.",
+	session.MaxMemoryFolders, session.MaxMemoryOwner, session.MaxMemoryPath, session.MaxMemorySessionsMetadata, memory.MaxConversationBytes>>10, OriginMemory)
 
 // filesRefused is the refusal of a files store call that failed: a write
 // the files service refused for its size as tooLarge, when one is given,
@@ -66,14 +69,15 @@ func (s *Server) folderOf(f *session.Folder) (*session.Folder, error) {
 }
 
 // memoryOf is the memory folders an allow of a create or a fork names for
-// the session (spec 093): none for none, and a refusal when this server
-// keeps no files store, since the runner would have no credential to
-// reach them with.
+// the session (spec 093): none for none, and a refusal when one is of a
+// files store and this server keeps none, since the runner would have no
+// credential to reach it with. A folder of conversations is served from
+// the server's own log (spec 094) and needs no files store.
 func (s *Server) memoryOf(fs []session.MemoryFolder) ([]session.MemoryFolder, error) {
 	if len(fs) == 0 {
 		return nil, nil
 	}
-	if s.o.Files == nil {
+	if s.o.Files == nil && slices.ContainsFunc(fs, func(f session.MemoryFolder) bool { return !f.Conversations() }) {
 		return nil, &apiError{code: auth.CodeAuthorizerUnavailable, detail: "limits.memory names folders of a files store, and this server keeps none: TOPOS_FILES_AUDIENCE is unset"}
 	}
 	return slices.Clone(fs), nil
