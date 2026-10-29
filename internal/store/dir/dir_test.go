@@ -440,3 +440,58 @@ func TestAVersionDirectoryThatCannotBeMadeIsReturned(t *testing.T) {
 		t.Fatalf("the agent of a failed write: %v", err)
 	}
 }
+
+// TestADirectoryRenamesItsSubagentLimits: an agent version a release
+// before spec.subagentLimits wrote, its limits under threads, opens
+// renamed, its digest the one an apply of its manifest resolves to, so
+// the manifest applied again keeps the version; and the marker keeps a
+// later Open from reading the versions again (spec 013).
+func TestADirectoryRenamesItsSubagentLimits(t *testing.T) {
+	root := t.TempDir()
+	st := open(t, root, storetest.NewClock().Now)
+	r, _ := storetest.ApplyBeforeLimits(t, st, "alice")
+	marker := filepath.Join(root, "objects", limitsMarker)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	st = open(t, root, storetest.NewClock().Now)
+	storetest.RenamedLimits(t, st, "alice", r)
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("no marker after the rename: %v", err)
+	}
+
+	path := st.versionPath(r.Agent.Status.ID, 1)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, bytes.Replace(b, []byte(`subagentLimits`), []byte(`threads`), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	open(t, root, storetest.NewClock().Now)
+	if again, err := os.ReadFile(path); err != nil || bytes.Equal(again, b) {
+		t.Fatalf("a later Open renamed a version again: %v", err)
+	}
+}
+
+// TestARenameOfAVersionThatDoesNotReadFailsTheOpen: a version the rename
+// cannot read fails Open, which names it, and writes no marker.
+func TestARenameOfAVersionThatDoesNotReadFailsTheOpen(t *testing.T) {
+	root := t.TempDir()
+	st := open(t, root, storetest.NewClock().Now)
+	r, _ := storetest.ApplyBeforeLimits(t, st, "alice")
+	marker := filepath.Join(root, "objects", limitsMarker)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	f := versionFile{AgentID: r.Agent.Status.ID, Version: 1, Digest: "sha256:x", Doc: `{"kind":"Agent"}`, Bundle: `{}`}
+	if err := write(st.versionPath(r.Agent.Status.ID, 1), f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, nil); err == nil || !strings.Contains(err.Error(), r.Agent.Status.ID) {
+		t.Fatalf("Open over a version that does not read: %v", err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the marker after a failed rename: %v", err)
+	}
+}

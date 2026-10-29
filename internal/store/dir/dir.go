@@ -162,6 +162,9 @@ func Open(dataDir string, now func() time.Time) (*Store, error) {
 		}
 		s.agents[id], s.names[key] = f.agent(), id
 	}
+	if err := s.renameSubagentLimits(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
