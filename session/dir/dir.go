@@ -85,7 +85,8 @@ type Options struct {
 }
 
 // Open returns the store over dataDir/sessions, creating it, with the
-// blob bodies in each session's directory.
+// blob bodies in each session's directory. A directory written before a
+// subagent's events were named subagent.* has its logs renamed first.
 func Open(dataDir string) (*Store, error) { return OpenWith(dataDir, Options{}) }
 
 // OpenWith is Open with options.
@@ -98,7 +99,11 @@ func OpenWith(dataDir string, o Options) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dir: hostname: %w", err)
 	}
-	return &Store{root: root, host: host, now: time.Now, blobs: o.Blobs, states: map[string]*state{}}, nil
+	s := &Store{root: root, host: host, now: time.Now, blobs: o.Blobs, states: map[string]*state{}}
+	if err := s.renameSubagents(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func (s *Store) state(id string) *state {
