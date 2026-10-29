@@ -40,6 +40,7 @@ import (
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/memory/arca"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/prompts"
@@ -271,6 +272,9 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			return harness.Config{}, machineSetup(err)
 		}
 		cfg.Machine = m
+		if cfg.Memory, err = b.memory(ctx, s, cfg.Machine); err != nil {
+			return harness.Config{}, err
+		}
 		return cfg, nil
 	}
 	// A Cella sandbox is created when a tool first acts on it (spec
@@ -305,6 +309,9 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		se, _ := errors.AsType[*runner.SetupError](machineSetup(err))
 		return nil, &machine.OpenError{Code: se.Code, Err: se.Err}
 	})
+	if cfg.Memory, err = b.memory(ctx, s, cfg.Machine); err != nil {
+		return harness.Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -332,6 +339,32 @@ func (b builder) files(ctx context.Context, s session.Session) (harness.Files, e
 		return nil, setup(CodeFilesUnavailable, err)
 	}
 	return f, nil
+}
+
+// memory is the session's memory machine over the memory folders its
+// allow named (spec 093), reached with the session's own token for
+// FilesAudience and the workload session, asked of the drive's token
+// source at each request, so no token reaches the session's machine,
+// which holds the memory machine's spill files. Nil for a session with no
+// memory folders and for a rollout's run, which is isolated (spec 077). A
+// session with folders, on a runner with no audience or no token source,
+// is a setup error, as a session's folder is.
+func (b builder) memory(ctx context.Context, s session.Session, m machine.Machine) (machine.Machine, error) {
+	if len(s.Memory) == 0 || s.Isolated() {
+		return nil, nil
+	}
+	src := runner.TokensFrom(ctx)
+	if b.o.FilesAudience == "" || src == nil {
+		return nil, setup(CodeFilesUnavailable, fmt.Errorf("session %s keeps memory folders in a files store, and this runner reaches none: TOPOS_FILES_AUDIENCE is unset or it mints no session token", s.ID))
+	}
+	mem, err := arca.New(s.Memory, func(ctx context.Context) (string, error) {
+		c, err := src.Token(ctx, b.o.FilesAudience, runner.WorkloadSession)
+		return c.Value, err
+	}, otel.HTTPClient(), m)
+	if err != nil {
+		return nil, setup(CodeFilesUnavailable, err)
+	}
+	return mem, nil
 }
 
 // withNetwork is the session's header as the store holds it when the
