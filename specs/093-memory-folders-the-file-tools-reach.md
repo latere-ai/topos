@@ -1,9 +1,9 @@
 ---
 title: "Memory folders the file tools reach: an allow names folders of a files store that a session keeps across sessions, read, write, edit, glob and grep reach them at /memory/<name>/ through the runner with the session's own token, every write is conditional on what the session last read, an empty write forgets, and a call that reaches memory alone opens no machine"
-status: drafted
+status: testing
 track: core
 depends_on: [008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 018-credentials-and-secrets.md, 058-what-a-create-allow-attaches.md, 068-a-sessions-files-in-a-files-store.md]
-affects: [authorizer/, session/, memory/, harness/, harness/tools/, prompts/, internal/hosted/, internal/server/, test/stubs/arcastub/, api/openapi.yaml, docs/]
+affects: [authorizer/, session/, memory/, harness/, harness/tools/, prompts/, internal/hosted/, internal/server/, cmd/toposd/, test/stubs/arcastub/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-29
 updated: 2026-10-29
@@ -68,7 +68,7 @@ sequenceDiagram
   M-->>R: write {path: /memory/project/audience.md, content}
   R->>F: PUT {url}/files/{owner}/{path}/audience.md, If-None-Match: * (the session's token)
   F-->>R: 201, ETag
-  R->>M: "Saved /memory/project/audience.md."
+  R->>M: "Created /memory/project/audience.md (...)", meta memory {folder: project, path: audience.md, action: saved}
 ```
 
 ### The member
@@ -87,7 +87,7 @@ sequenceDiagram
 | `name` | `^[a-z][a-z0-9-]{0,31}$`, unique among the folders; the folder is `/memory/<name>/` |
 | `url` | the files API's root, under which `files/{owner}/{path}` is served, as spec 068's `folder.url` |
 | `owner` | the space, 1 to 512 bytes with no control character, as spec 068's |
-| `path` | relative, `/` separated, no empty or `..` segment, at most 512 bytes |
+| `path` | relative, `/` separated, no empty, `.` or `..` segment, no control character, at most 512 bytes |
 | `access` | `read_only` or `read_write` |
 
 | Bound | Value | Holds |
@@ -105,8 +105,10 @@ credential to reach the folders with.
 ### Where it is kept
 
 `Session.Memory []MemoryFolder`, from the allow, beside `Folder`. No event
-changes it. A fork's are its own allow's. The session's object in the API
-carries `memory: [{name, access}]`, so a client knows a session has memory
+changes it. A fork's are its own allow's. A rollout's run is isolated
+([[077-rollouts]]) and gets none: the server keeps none on its header, and
+the harness renders none. The session's object in the API carries
+`memory: [{name, access}]`, so a client knows a session has memory
 without the store's address.
 
 ### The paths
@@ -145,13 +147,13 @@ The memory machine's operations:
 | Operation | Request |
 |---|---|
 | `ReadFile` | `GET`; the `ETag` is kept for the path |
-| `Stat` | `HEAD` for a file; a folder and `/memory` are directories |
+| `Stat` | `HEAD` for a file; a folder and `/memory` are directories; a refusal, which a `HEAD` answers with no body, is asked again with `GET` for its envelope |
 | `List` | `GET ?list=1` under the folder, paged, at most `memory.MaxListed` files, with the directories the paths imply |
 | `WriteFile` with content | `PUT` with `If-Match` on the kept `ETag`, or `If-None-Match: *` for a path last seen absent or never seen |
-| `WriteFile` empty | `DELETE` with `If-Match` on the kept `ETag`: the file is forgotten |
-| `Remove` | `DELETE` with `If-Match` |
+| `WriteFile` empty | `DELETE` with `If-Match` on the kept `ETag`, a `Stat` first for a path never seen, and without `permanent=1`: the file is forgotten into the store's trash, where the person can restore it |
+| `Remove` | as `WriteFile` empty |
 | `Rename` | refused: a memory file is not moved |
-| `Search` | the listing, then each file read, cached by checksum for the session, and matched as the Go-native search matches |
+| `Search` | the listing, then each file read, four at a time, cached by checksum for the drive up to 32 MiB, and matched as the Go-native search matches |
 | `Exec`, `ExecStream` | refused: commands run on the session's machine |
 
 A folder whose access is `read_only` refuses `WriteFile`, `Remove` and
@@ -169,23 +171,35 @@ and the write is refused `412` and nothing is overwritten. The tool's
 result is the rule's own "changed since you read it" text, and the model
 reads the file again.
 
-`write` with empty content to a path under `/memory/` forgets the file.
-The result reads "Forgot /memory/user/trains.md." Its meta carries
-`memory: {folder, path, action}`, with `action` `saved` or `forgotten`,
-so a client can show that memory changed.
+`write` with empty content to a path under `/memory/` forgets the file,
+and so does an `edit` that leaves it empty. The result reads "Forgot
+/memory/project/trains.md." Its meta carries `memory: {folder, path,
+action}`, with `action` `saved` or `forgotten` and `path` the file's path
+in the folder, so a client can show that memory changed. A forget's meta
+has `path` and no `sha256`, so the thread's next write of the path
+creates the file anew.
 
 ### Refusals and failures
 
 | The store answers | The tool's result |
 |---|---|
 | `412` | the current-content rule's changed text |
-| a 4xx with the error envelope | its `message`, the installation's sentence, which the model reads; its `code` in the result's meta as `refusal` |
+| a 4xx with the error envelope | `<path>: <message> <words>`, where `<words>` follow `<reason>: ` at the start of `details.detail`, which the model reads; the reason in the result's meta as `refusal`, or the `code` when the detail names none |
 | a 5xx, a timeout, a body that does not decode | an error: "Memory could not be reached: <detail>." |
+
+A change to a `read_only` folder reads "<path> is in /memory/<name>/,
+which this session reads and does not change." A file past
+`memory.MaxFileBytes` names its size and the bound. A glob or a grep over
+a folder past `memory.MaxListed` ends with "[... a memory folder holds
+more than 2000 files; only the first 2000 were searched, and the rest
+were not read]".
 
 ### What the model is told
 
 `context/attachments-v2`, rendered from the session's header on every
-request, adds the folders to the attachments block:
+request, adds the folders to the attachments block, after the apps of a
+session that has them; a session with no memory folders renders
+`context/attachments-v1`, byte for byte as before:
 
 ```
 <attachments>
@@ -204,10 +218,13 @@ its format, and the index the session reads first are the installation's
 A call whose every path is under `/memory/` scores with the feature
 `memory` at 0.1 in place of the tool's own features ([[012-permissions-and-approvals]]):
 allowed in `confirm` and `progressive` with the reason "a memory the
-person can review", and blocked in `plan`, as every write. An
-installation that wants each one asked names `memory` in
-`always_confirm`. The person reviews and removes every memory through the
-installation.
+person can review"; in `plan` a read is allowed and a write blocked, as
+every write. An installation that wants each one asked names `memory` in
+`always_confirm`, which asks every memory call, reads included, and
+blocks it in `plan`; a pattern such as `write(/memory/project/*)` asks
+some. A decision service never changes the verdict: `Policy.Settle`
+settles every memory call. The person reviews and removes every memory
+through the installation.
 
 ## Decisions
 
@@ -240,11 +257,57 @@ Searching by meaning. Specs 020 and 060, which this supersedes.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The member is decoded with its rules and bounds and kept on the session; one past a bound, breaking a rule, or with no `TOPOS_FILES_AUDIENCE` refuses the create `authorizer_unavailable` naming it; a fork's are its own allow's | `authorizer.TestTheMemoryMember`, `internal/server.TestACreateKeepsTheMemoryFolders` | not built |
-| Over the files store stub: a read keeps the `ETag`; a new file is written `If-None-Match: *` and an overwrite `If-Match`; a `412` is the changed text and overwrites nothing; an empty write forgets with `If-Match`; a rename and a command are refused; a `read_only` folder refuses a write before any request | `memory.TestTheMemoryMachine` | not built |
-| A call whose every path is under `/memory/` runs on the memory machine and opens no machine; any other call opens it as before; a session with memory folders does not start its machine for a file tool at the response's start | `harness.TestAMemoryCallOpensNoMachine` | not built |
-| `glob` and `grep` over a folder find its files and lines, past `memory.MaxListed` say so, and read a file once per checksum | `memory.TestGlobAndGrepInAFolder` | not built |
-| The attachments block names each folder and its access on every request, unchanged across turns | `harness.TestTheAttachmentsBlockNamesMemory` | not built |
-| A memory call scores with the feature `memory`, is allowed in `confirm` and `progressive`, blocked in `plan`, and asked when `always_confirm` names it | `harness.TestTheMemoryVerdict` | not built |
-| No token for the files store reaches the machine | `internal/hosted.TestNoMemoryCredentialInMachine` | not built |
-| A session saves a memory that a second session with the same folder reads, end to end | `test/e2e.TestMemoryAcrossSessions` over the files store stub | not built |
+| The member is decoded with its rules and bounds and kept on the session; one past a bound, breaking a rule, or with no `TOPOS_FILES_AUDIENCE` refuses the create `authorizer_unavailable` naming it; a fork's are its own allow's | `authorizer.TestTheMemoryMember`, `session.TestTheMemoryAnswer`, `internal/server.TestACreateKeepsTheMemoryFolders` | built |
+| Over the files store stub: a read keeps the `ETag`; a new file is written `If-None-Match: *` and an overwrite `If-Match`; a `412` is the changed text and overwrites nothing; an empty write forgets with `If-Match`; a rename and a command are refused; a `read_only` folder refuses a write before any request | `memory/arca.TestTheMemoryMachine`, `memory/arca.TestRefusalsAndFailures`, `harness/tools.TestTheFileToolsSaveAndForgetAMemory`, `harness/tools.TestAMemoryRefusalSaysWhatHappened`, `arcastub.TestTheStubServesMemory` | built |
+| A call whose every path is under `/memory/` runs on the memory machine and opens no machine; any other call opens it as before; a session with memory folders does not start its machine for a file tool at the response's start | `harness.TestAMemoryCallOpensNoMachine` | built |
+| `glob` and `grep` over a folder find its files and lines, past `memory.MaxListed` say so, and read a file once per checksum | `memory/arca.TestGlobAndGrepInAFolder`, `memory/arca.TestTheCacheIsBounded`, `harness/tools.TestASearchPastTheListingSaysSo` | built |
+| The attachments block names each folder and its access on every request, unchanged across turns | `harness.TestTheAttachmentsBlockNamesMemory` | built |
+| A memory call scores with the feature `memory`, is allowed in `confirm` and `progressive`, blocked in `plan`, and asked when `always_confirm` names it | `harness.TestTheMemoryVerdict` | built |
+| No token for the files store reaches the machine | `internal/hosted.TestNoMemoryCredentialInMachine`, `internal/hosted.TestTheMemoryMachineOfASession` | built |
+| A session saves a memory that a second session with the same folder reads, end to end | `cmd/toposd.TestMemoryAcrossSessions` over the files store stub | built |
+
+## Outcome
+
+Built on 2026-10-29 for v0.60.0: the `memory` member, its rules and
+bounds, the session's folders and their answer, the memory machine over
+an Arca-compatible files API, the routing of the five file tools, the
+forget, the refusal texts, `context/attachments-v2`, and the scoring.
+Every criterion above is proven by its test. The status is `testing`
+until an installation sends `memory` and a person's memory is saved and
+read across two of their sessions.
+
+Where the build differs from the design above, the design was changed to
+match:
+
+- **Two packages.** `memory` holds the paths, the bounds and the errors
+  and dials nothing, so `harness/tools` can say a memory machine's errors
+  without reaching `net/http`; `memory/arca` is the machine. The table's
+  `memory.Test...` names are `memory/arca.Test...`.
+- **A forget goes to the trash.** The `DELETE` carries no `permanent=1`,
+  so the person can restore a memory the agent forgot.
+- **Arca's `DELETE` reads no precondition today.** The memory machine
+  sends `If-Match` on every forget; a files store that ignores it forgets
+  whatever version it holds, which the trash keeps.
+- **A refusal reads the authorizer's words.** The design said the
+  envelope's `message`; that sentence is fixed per code, so the result
+  adds the words that follow `<reason>: ` in `details.detail`, and the
+  meta's `refusal` is that reason before the code.
+- **A `HEAD` refusal is asked again with `GET`**, which carries the
+  envelope a `HEAD` cannot.
+- **A rollout's run gets no memory**, as it gets no connections.
+- **The attachments block is one block.** Version 2 names the apps and
+  the folders together.
+- **`always_confirm` and `plan`.** `memory` in `always_confirm` asks every
+  memory call, reads included; `plan` allows a memory read as it allows
+  every read. `Policy.Settle` settles memory calls, so a decision service
+  in `progressive` never changes their verdict.
+- **An `edit` that leaves a file empty forgets it**, as an empty `write`
+  does.
+- **A spill opens the session's machine.** A memory call's result past
+  its tool's output limit is spilled to the session's machine, which the
+  spill opens. A memory call's own work never opens it.
+- **The end-to-end test lives in `cmd/toposd`**, beside the other tests
+  that run toposd over the stubs; the module has no `test/e2e`.
+- **The tools' descriptions are unchanged.** The attachments block alone
+  tells the model of the folders, so a session without them reads the
+  descriptions it read before.
