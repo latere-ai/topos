@@ -279,6 +279,7 @@ var released = map[string]string{
 	"transcript/summary-v2.md":                       "e04302dc54f0a6e3d48689bdf60225cbbbf91ae656589a8cc97ba53af95056f1",
 	"tools/agent-v1.md":                              "82cfdada65c8474efc7dc79f1bd9f1ac9ea5730ec949d084ad90c4ce20b1f9bf",
 	"tools/send_message-v1.md":                       "1d0d1acaa6d140381914179fe94b934e514e1cc2ccc7edf1b8654188a63f8cde",
+	"tools/agent-v2.md":                              "e28e8f596c56abcec8753c67042561b3e7e60f2a821cc6c54b51d79795ca4d37",
 	"results/threads/commit-failed-v2.md":            "51cc9a959fb641aff09e2ad2aff48020827ec1b7b21f09415facc01fb9ec1617",
 	"results/threads/depth-exceeded-v2.md":           "bb8a3168f07c96f66f7618418a199eb163c46cda2b3afdf240e01e060735070e",
 	"results/threads/ended-v2.md":                    "419612fad26ac9e2475d309c1e2da34301de7463c480ab83cb82c0531cc0c5e3",

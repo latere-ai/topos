@@ -68,8 +68,10 @@ const (
 	ToolTodo       Name = "tools/todo-v2"
 	// ToolAgent and ToolSendMessage describe the subagent tools under the
 	// names they took from spawn and message, whose descriptions,
-	// tools/spawn-v1 and tools/message-v1, stay for replay.
-	ToolAgent       Name = "tools/agent-v1"
+	// tools/spawn-v1 and tools/message-v1, stay for replay. Agent's
+	// version 2 says "a focused subagent" where version 1 said "a focused
+	// helper".
+	ToolAgent       Name = "tools/agent-v2"
 	ToolSendMessage Name = "tools/send_message-v1"
 	ToolAdvisor     Name = "tools/advisor-v1"
 	// ToolQuestion states the bounds of session's question constants in
