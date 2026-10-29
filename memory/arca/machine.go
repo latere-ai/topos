@@ -64,6 +64,9 @@ type Machine struct {
 	token    Token
 	api      *http.Client
 	fallback machine.Machine
+	// chats answers the folders of conversations (spec 094); nil for a
+	// session with none.
+	chats memory.Conversations
 
 	mu sync.Mutex
 	// versions are the version the store last answered for each path the
@@ -76,20 +79,44 @@ type Machine struct {
 
 var _ machine.Machine = (*Machine)(nil)
 
-// New is the memory machine of folders, each reached through client with
-// the bearer token answers. fallback is the session's own machine, which
-// takes a spill file of a long result and any path outside /memory; nil
-// takes none.
-func New(folders []session.MemoryFolder, token Token, client *http.Client, fallback machine.Machine) (*Machine, error) {
+// Option configures a memory machine.
+type Option func(*Machine)
+
+// WithConversations is the reach the machine reads its folders of
+// conversations through (spec 094).
+func WithConversations(c memory.Conversations) Option { return func(m *Machine) { m.chats = c } }
+
+// New is the memory machine of folders: each folder of a files store
+// reached through client with the bearer token answers, and each folder
+// of conversations through the reach WithConversations names. A token and
+// a client are needed only for a folder of a files store. fallback is the
+// session's own machine, which takes a spill file of a long result and
+// any path outside /memory; nil takes none.
+func New(folders []session.MemoryFolder, token Token, client *http.Client, fallback machine.Machine, opts ...Option) (*Machine, error) {
 	if err := session.CheckMemory(folders); err != nil {
 		return nil, fmt.Errorf("memory: %w", err)
 	}
-	if len(folders) == 0 || token == nil || client == nil {
-		return nil, fmt.Errorf("memory: no folders, no token or no HTTP client")
+	if len(folders) == 0 {
+		return nil, fmt.Errorf("memory: no folders")
 	}
-	api := *client
-	api.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Machine{folders: folders, token: token, api: &api, fallback: fallback, versions: map[string]string{}, cache: map[string][]byte{}}, nil
+	m := &Machine{folders: folders, token: token, fallback: fallback, versions: map[string]string{}, cache: map[string][]byte{}}
+	for _, o := range opts {
+		o(m)
+	}
+	for _, f := range folders {
+		switch {
+		case f.Conversations() && m.chats == nil:
+			return nil, fmt.Errorf("memory: the folder %s holds conversations, and the machine reaches none", f.Name)
+		case !f.Conversations() && (token == nil || client == nil):
+			return nil, fmt.Errorf("memory: the folder %s is in a files store, and the machine has no token or no HTTP client", f.Name)
+		}
+	}
+	if client != nil {
+		api := *client
+		api.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		m.api = &api
+	}
+	return m, nil
 }
 
 // folder is the folder named name, false for none of the session's.
@@ -228,6 +255,14 @@ func (m *Machine) ReadFile(ctx context.Context, p string) (io.ReadCloser, error)
 
 // read reads rel of f and keeps the version it read.
 func (m *Machine) read(ctx context.Context, f session.MemoryFolder, rel, p string) ([]byte, error) {
+	if f.Conversations() {
+		file, data, err := m.conversation(ctx, f, rel, p)
+		if err != nil {
+			return nil, err
+		}
+		m.remember(file.Version, data)
+		return data, nil
+	}
 	a, err := m.send(ctx, http.MethodGet, fileURL(f, rel), nil, nil, memory.MaxFileBytes, p)
 	if err != nil {
 		return nil, err
@@ -262,6 +297,14 @@ func (m *Machine) Stat(ctx context.Context, p string) (machine.FileInfo, error) 
 	}
 	if rel == "" {
 		return machine.FileInfo{Path: path.Clean(p), IsDir: true, Mode: dirMode(f)}, nil
+	}
+	if f.Conversations() {
+		file, data, err := m.conversation(ctx, f, rel, p)
+		if err != nil {
+			return machine.FileInfo{}, err
+		}
+		m.remember(file.Version, data)
+		return machine.FileInfo{Path: path.Clean(p), Size: int64(len(data)), ModTime: file.Modified, Mode: fileMode(f)}, nil
 	}
 	a, err := m.send(ctx, http.MethodHead, fileURL(f, rel), nil, nil, noBody, p)
 	if err != nil {

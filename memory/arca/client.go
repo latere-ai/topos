@@ -244,6 +244,9 @@ type listed struct {
 // list reads the files of f, a page at a time, at most memory.MaxListed of them,
 // and reports whether the folder holds more.
 func (m *Machine) list(ctx context.Context, f session.MemoryFolder) ([]listed, bool, error) {
+	if f.Conversations() {
+		return m.conversations(ctx, f)
+	}
 	var out []listed
 	cursor := ""
 	for {
