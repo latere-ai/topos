@@ -2,20 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package arcastub is a stub of an Arca-compatible files API, the
-// backend of a session's files store (spec 068): an HTTP server on
-// loopback that serves the routes a files store calls under its root,
-// "/v1": a put of one object, a read, of a version a test kept among
-// them (spec 079), a delete, a folder copy, and the three routes of an
+// backend of a session's files store (spec 068) and of its memory
+// folders (spec 093): an HTTP server on loopback that serves the routes a
+// files store calls under its root, "/v1": a put of one object, a read,
+// of a version a test kept among them (spec 079), a HEAD, a listing of a
+// folder (?list=1), a delete, a folder copy, and the three routes of an
 // upload session, with a second server standing for the bucket, which
-// answers a read's redirect and takes the parts of an upload. It holds the contract a client must keep: a put without
-// Content-Length is 411, an If-None-Match: * onto a taken path is 412,
-// a put above the single-request bound is 413, and a request to the
-// bucket that carries an Authorization header is refused and reported to
-// the test. Each request is checked against the token a test names, and
-// recorded. It is a test artifact.
+// answers a read's redirect and takes the parts of an upload. It holds
+// the contract a client must keep: a put without Content-Length is 411,
+// an If-None-Match: * onto a taken path is 412, an If-Match that does not
+// name the object's checksum is 412 on a put and a delete, a put above
+// the single-request bound is 413, and a request to the bucket that
+// carries an Authorization header is refused and reported to the test.
+// Every read, HEAD and put answers the object's checksum as its ETag.
+// Each request is checked against the token a test names, and recorded.
+// It is a test artifact.
 package arcastub
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,6 +40,8 @@ import (
 const (
 	OpPut      = "put"
 	OpRead     = "read"
+	OpHead     = "head"
+	OpList     = "list"
 	OpDelete   = "delete"
 	OpCopy     = "copy"
 	OpUpload   = "upload"
@@ -42,10 +49,13 @@ const (
 	OpComplete = "complete"
 )
 
-// Failure is a refusal answered in place of an operation.
+// Failure is a refusal answered in place of an operation: its status,
+// its code, and its message and detail, the stub's own when empty.
 type Failure struct {
-	Status int
-	Code   string
+	Status  int
+	Code    string
+	Message string
+	Detail  string
 	// Times is how many requests are refused; zero is once.
 	Times int
 }
@@ -86,6 +96,11 @@ type Server struct {
 	// number, which a read names with ?version=N.
 	versions map[string]map[string]map[int]Object
 	uploads  map[string]*upload
+	// trash holds what a delete that is not permanent removed, by owner
+	// and path, once KeepTrash is set; until then such a delete is
+	// refused.
+	trash    map[string]map[string]Object
+	keeps    bool
 	failures map[string][]Failure
 	requests []Recorded
 	tokenOK  func(string) bool
@@ -106,11 +121,11 @@ func NewTLS(t testing.TB) *Server { return start(t, true) }
 
 // start starts a stub, its bucket on https when secure is set.
 func start(t testing.TB, secure bool) *Server {
-	s := &Server{t: t, objects: map[string]map[string]Object{}, versions: map[string]map[string]map[int]Object{}, uploads: map[string]*upload{}, failures: map[string][]Failure{},
+	s := &Server{t: t, objects: map[string]map[string]Object{}, versions: map[string]map[string]map[int]Object{}, uploads: map[string]*upload{}, trash: map[string]map[string]Object{}, failures: map[string][]Failure{},
 		tokenOK: func(string) bool { return true }, inline: 16 << 20, redirectAbove: -1, partSize: 16 << 20}
 	api := http.NewServeMux()
 	api.HandleFunc("PUT /v1/files/{owner}/{path...}", s.put)
-	api.HandleFunc("GET /v1/files/{owner}/{path...}", s.read)
+	api.HandleFunc("GET /v1/files/{owner}/{path...}", s.get)
 	api.HandleFunc("POST /v1/files/{owner}/{path...}", s.copy)
 	api.HandleFunc("DELETE /v1/files/{owner}/{path...}", s.remove)
 	api.HandleFunc("POST /v1/uploads", s.open)
@@ -154,6 +169,20 @@ func (s *Server) SetInline(n int64) { s.mu.Lock(); s.inline = n; s.mu.Unlock() }
 // bytes, and a larger one redirect to the bucket; a negative n redirects
 // every read.
 func (s *Server) RedirectAbove(n int64) { s.mu.Lock(); s.redirectAbove = n; s.mu.Unlock() }
+
+// KeepTrash makes a delete that is not permanent move the object to its
+// space's trash, as an installation whose files API keeps one answers,
+// where Trashed reads it.
+func (s *Server) KeepTrash() { s.mu.Lock(); s.keeps = true; s.mu.Unlock() }
+
+// Trashed is the object a delete moved from path of owner's space to its
+// trash.
+func (s *Server) Trashed(owner, path string) (Object, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.trash[owner][path]
+	return o, ok
+}
 
 // SetPartSize sets the part size of an upload session.
 func (s *Server) SetPartSize(n int64) { s.mu.Lock(); s.partSize = n; s.mu.Unlock() }
@@ -234,7 +263,40 @@ func (s *Server) Uploads() int {
 
 // refuse writes the files API's error envelope.
 func refuse(w http.ResponseWriter, status int, code, detail string) {
-	reply(w, status, map[string]any{"error": map[string]any{"code": code, "message": "The stub refused the request.", "details": map[string]any{"detail": detail}}})
+	refuseWith(w, status, code, "The stub refused the request.", detail)
+}
+
+// refuseWith writes the files API's error envelope with its message.
+func refuseWith(w http.ResponseWriter, status int, code, message, detail string) {
+	reply(w, status, map[string]any{"error": map[string]any{"code": code, "message": message, "details": map[string]any{"detail": detail}}})
+}
+
+// checksum is an object's checksum, the hex SHA-256 of its bytes, which
+// the files API answers as its ETag.
+func checksum(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// ifMatch reports whether a write's If-Match allows it against the
+// object at the path, held when taken: an absent header, or *, allows any;
+// a list of checksums, quoted or bare, allows the object that carries one
+// of them, and refuses a path nothing holds.
+func ifMatch(r *http.Request, o Object, taken bool) bool {
+	raw := strings.TrimSpace(r.Header.Get("If-Match"))
+	if raw == "" || raw == "*" {
+		return true
+	}
+	if !taken {
+		return false
+	}
+	have := checksum(o.Data)
+	for tag := range strings.SplitSeq(raw, ",") {
+		if strings.Trim(strings.TrimSpace(tag), `"`) == have {
+			return true
+		}
+	}
+	return false
 }
 
 // reply writes v as JSON with status; a value that does not encode is a
@@ -265,7 +327,7 @@ func (s *Server) begin(w http.ResponseWriter, r *http.Request, op string) (strin
 		} else {
 			f.Times--
 		}
-		refuse(w, f.Status, f.Code, "an injected failure")
+		refuseWith(w, f.Status, f.Code, cmp.Or(f.Message, "The stub refused the request."), cmp.Or(f.Detail, "an injected failure"))
 		return "", false
 	}
 	auth := r.Header.Get("Authorization")
@@ -304,7 +366,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	inline := s.inline
-	_, taken := s.objects[owner][path]
+	held, taken := s.objects[owner][path]
 	s.mu.Unlock()
 	if r.ContentLength > inline {
 		refuse(w, http.StatusRequestEntityTooLarge, "object_too_large", "past the single-request bound; open an upload")
@@ -314,14 +376,101 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusPreconditionFailed, "precondition_failed", "the path is taken")
 		return
 	}
+	if !ifMatch(r, held, taken) {
+		refuse(w, http.StatusPreconditionFailed, "precondition_failed", "If-Match named "+r.Header.Get("If-Match")+"; the path holds another version")
+		return
+	}
 	data, err := io.ReadAll(r.Body)
 	if err != nil || int64(len(data)) != r.ContentLength {
 		refuse(w, http.StatusBadRequest, "bad_request", "the body is not its length")
 		return
 	}
 	s.Put(owner, path, Object{Data: data, ContentType: r.Header.Get("Content-Type"), Token: tok})
-	sum := sha256.Sum256(data)
-	reply(w, http.StatusCreated, map[string]any{"path": path, "size": len(data), "checksum": hex.EncodeToString(sum[:]), "checksum_kind": "sha256"})
+	w.Header().Set("ETag", `"`+checksum(data)+`"`)
+	reply(w, http.StatusCreated, map[string]any{"path": path, "size": len(data), "checksum": checksum(data), "checksum_kind": "sha256"})
+}
+
+// get answers a GET or a HEAD of a path: a listing of the folder for
+// ?list=1, the object's headers for a HEAD, and a read otherwise.
+func (s *Server) get(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.URL.Query().Has("list"):
+		s.list(w, r)
+	case r.Method == http.MethodHead:
+		s.head(w, r)
+	default:
+		s.read(w, r)
+	}
+}
+
+// head answers an object's headers, its checksum as its ETag and its
+// length, and never a redirect, as the files API answers a HEAD.
+func (s *Server) head(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.begin(w, r, OpHead); !ok {
+		return
+	}
+	o, ok := s.Object(key(r))
+	if !ok {
+		refuse(w, http.StatusNotFound, "not_found", "nothing is at the path")
+		return
+	}
+	w.Header().Set("ETag", `"`+checksum(o.Data)+`"`)
+	w.Header().Set("Content-Type", o.ContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(o.Data)))
+	w.WriteHeader(http.StatusOK)
+}
+
+// list answers the objects under a folder, sorted by path, a page of
+// ?limit= of them, 100 by default and at most 1000, after ?cursor=, the
+// path the last page ended on, with the directories the page implies.
+func (s *Server) list(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.begin(w, r, OpList); !ok {
+		return
+	}
+	owner, folder := key(r)
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 1000 {
+			refuse(w, http.StatusBadRequest, "invalid_field", "limit is between 1 and 1000")
+			return
+		}
+		limit = n
+	}
+	cursor := r.URL.Query().Get("cursor")
+	prefix := strings.TrimSuffix(folder, "/") + "/"
+	type entry struct {
+		Path         string `json:"path"`
+		Size         int    `json:"size"`
+		Checksum     string `json:"checksum"`
+		ChecksumKind string `json:"checksum_kind"`
+		ContentType  string `json:"content_type"`
+		Modified     string `json:"modified"`
+	}
+	entries, prefixes := []entry{}, []string{}
+	next := ""
+	for _, p := range s.Paths(owner, prefix) {
+		if p <= cursor {
+			continue
+		}
+		if len(entries) == limit {
+			next = entries[len(entries)-1].Path
+			break
+		}
+		o, ok := s.Object(owner, p)
+		if !ok {
+			continue
+		}
+		entries = append(entries, entry{Path: p, Size: len(o.Data), Checksum: checksum(o.Data), ChecksumKind: "sha256", ContentType: o.ContentType, Modified: "2026-10-29T00:00:00Z"})
+		if head, _, nested := strings.Cut(strings.TrimPrefix(p, prefix), "/"); nested && !slices.Contains(prefixes, prefix+head+"/") {
+			prefixes = append(prefixes, prefix+head+"/")
+		}
+	}
+	out := map[string]any{"entries": entries, "prefixes": prefixes}
+	if next != "" {
+		out["next_cursor"] = next
+	}
+	reply(w, http.StatusOK, out)
 }
 
 func (s *Server) read(w http.ResponseWriter, r *http.Request) {
@@ -339,6 +488,7 @@ func (s *Server) read(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusNotFound, "not_found", "nothing is at the path")
 		return
 	}
+	w.Header().Set("ETag", `"`+checksum(o.Data)+`"`)
 	s.mu.Lock()
 	above := s.redirectAbove
 	s.mu.Unlock()
@@ -396,24 +546,42 @@ func (s *Server) object(w http.ResponseWriter, r *http.Request) {
 	serve(w, o)
 }
 
-// remove deletes one object; nothing at the path is 404, as the files
-// API answers it. A delete that is not permanent=1 is refused, since the
-// stub keeps no trash and a client that meant to keep the file in one
+// remove deletes one object; nothing at the path is 404, and an If-Match
+// that does not name its checksum 412. A delete that is not permanent=1
+// moves the object to its space's trash once KeepTrash is set, and is
+// refused before, since a client that meant to keep the file in a trash
 // would read it as gone.
 func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.begin(w, r, OpDelete); !ok {
 		return
 	}
-	if r.URL.Query().Get("permanent") != "1" || r.URL.Query().Has("recursive") {
+	s.mu.Lock()
+	keeps := s.keeps
+	s.mu.Unlock()
+	permanent := r.URL.Query().Get("permanent") == "1"
+	if (!permanent && !keeps) || r.URL.Query().Has("recursive") {
 		refuse(w, http.StatusBadRequest, "invalid_field", "the stub deletes one object for good: permanent=1 and no recursive")
 		return
 	}
 	owner, path := key(r)
-	if _, ok := s.Object(owner, path); !ok {
+	o, ok := s.Object(owner, path)
+	if !ok {
 		refuse(w, http.StatusNotFound, "not_found", "nothing is at the path")
 		return
 	}
+	if !ifMatch(r, o, true) {
+		refuse(w, http.StatusPreconditionFailed, "precondition_failed", "If-Match named "+r.Header.Get("If-Match")+"; the path holds another version")
+		return
+	}
 	s.Remove(owner, path)
+	if !permanent {
+		s.mu.Lock()
+		if s.trash[owner] == nil {
+			s.trash[owner] = map[string]Object{}
+		}
+		s.trash[owner][path] = o
+		s.mu.Unlock()
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

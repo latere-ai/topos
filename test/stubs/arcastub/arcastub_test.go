@@ -296,3 +296,79 @@ func TestTheStubReadsAVersion(t *testing.T) {
 		t.Fatalf("the first read is recorded as %+v", r[0])
 	}
 }
+
+// TestTheStubServesMemory: every read, HEAD and put answers the object's
+// checksum as its ETag; a HEAD answers headers and never a redirect; a
+// listing pages through a folder with the directories a page implies; an
+// If-Match that names another version is 412 on a put and a delete; a
+// delete that is not permanent moves the object to the trash once the
+// test keeps one; and an injected failure carries its message and detail
+// (spec 093).
+func TestTheStubServesMemory(t *testing.T) {
+	s := New(t)
+	s.KeepTrash()
+	bearer := map[string]string{"Authorization": "Bearer ok"}
+	file := s.URL() + "/files/o/files/m/a.md"
+	c, h, b := do(t, http.MethodPut, file, []byte("a"), map[string]string{"Authorization": "Bearer ok", "If-None-Match": "*"})
+	tag := `"` + checksum([]byte("a")) + `"`
+	if c != http.StatusCreated || h.Get("ETag") != tag {
+		t.Fatalf("a put: %d %v %s", c, h, b)
+	}
+	if c, h, _ := do(t, http.MethodHead, file, nil, bearer); c != http.StatusOK || h.Get("ETag") != tag || h.Get("Content-Length") != "1" {
+		t.Fatalf("a HEAD: %d %v", c, h)
+	}
+	if c, h, _ := do(t, http.MethodGet, file, nil, bearer); c != http.StatusFound || h.Get("ETag") != tag {
+		t.Fatalf("a read: %d %v", c, h)
+	}
+	if c, _, _ := do(t, http.MethodHead, s.URL()+"/files/o/files/m/none.md", nil, bearer); c != http.StatusNotFound {
+		t.Fatalf("a HEAD of nothing: %d", c)
+	}
+	for name, h := range map[string]string{"another version": `"0000"`, "nothing there": tag} {
+		target := file
+		if name == "nothing there" {
+			target = s.URL() + "/files/o/files/m/none.md"
+		}
+		if c, _, b := do(t, http.MethodPut, target, []byte("b"), map[string]string{"Authorization": "Bearer ok", "If-Match": h}); c != http.StatusPreconditionFailed {
+			t.Fatalf("a put naming %s: %d %s", name, c, b)
+		}
+	}
+	if c, _, b := do(t, http.MethodPut, file, []byte("b"), map[string]string{"Authorization": "Bearer ok", "If-Match": tag}); c != http.StatusCreated {
+		t.Fatalf("a put naming the version: %d %s", c, b)
+	}
+	s.Put("o", "files/m/d/c.md", Object{Data: []byte("c")})
+	s.Put("o", "files/mx/e.md", Object{Data: []byte("e")})
+	var page struct {
+		Entries []struct {
+			Path, Checksum string
+		}
+		Prefixes   []string
+		NextCursor string `json:"next_cursor"`
+	}
+	c, _, b = do(t, http.MethodGet, s.URL()+"/files/o/files/m?list=1&limit=1", nil, bearer)
+	if c != http.StatusOK || json.Unmarshal(b, &page) != nil || len(page.Entries) != 1 || page.Entries[0].Path != "files/m/a.md" || page.NextCursor != "files/m/a.md" {
+		t.Fatalf("the first page: %d %s", c, b)
+	}
+	c, _, b = do(t, http.MethodGet, s.URL()+"/files/o/files/m?list=1&cursor="+page.NextCursor, nil, bearer)
+	page.NextCursor = ""
+	if c != http.StatusOK || json.Unmarshal(b, &page) != nil || len(page.Entries) != 1 || page.Entries[0].Path != "files/m/d/c.md" || page.Entries[0].Checksum != checksum([]byte("c")) ||
+		len(page.Prefixes) != 1 || page.Prefixes[0] != "files/m/d/" || page.NextCursor != "" {
+		t.Fatalf("the last page: %d %s", c, b)
+	}
+	if c, _, _ := do(t, http.MethodGet, s.URL()+"/files/o/files/m?list=1&limit=0", nil, bearer); c != http.StatusBadRequest {
+		t.Fatalf("a limit of 0: %d", c)
+	}
+	if c, _, b := do(t, http.MethodDelete, file, nil, map[string]string{"Authorization": "Bearer ok", "If-Match": tag}); c != http.StatusPreconditionFailed {
+		t.Fatalf("a delete naming an old version: %d %s", c, b)
+	}
+	if c, _, b := do(t, http.MethodDelete, file, nil, map[string]string{"Authorization": "Bearer ok", "If-Match": `"` + checksum([]byte("b")) + `"`}); c != http.StatusNoContent {
+		t.Fatalf("a delete to the trash: %d %s", c, b)
+	}
+	if o, ok := s.Trashed("o", "files/m/a.md"); !ok || string(o.Data) != "b" {
+		t.Fatalf("the trash holds %+v %t", o, ok)
+	}
+	s.Fail(OpList, Failure{Status: http.StatusForbidden, Code: "forbidden", Message: "No.", Detail: "memory_off: Off."})
+	c, _, b = do(t, http.MethodGet, s.URL()+"/files/o/files/m?list=1", nil, bearer)
+	if c != http.StatusForbidden || !strings.Contains(string(b), `"message":"No."`) || !strings.Contains(string(b), `"detail":"memory_off: Off."`) {
+		t.Fatalf("an injected failure: %d %s", c, b)
+	}
+}
