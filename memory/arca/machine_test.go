@@ -415,14 +415,20 @@ func checksum(s string) string {
 }
 
 // TestADetailNamesAReason: an envelope's detail names the authorizer's
-// reason as "<reason>: <words>" and nothing otherwise, and a path in a
+// reason as "<reason>: <words>", after the store's action or not, and
+// nothing otherwise, and a path in a
 // folder is clean only with no empty, "." or ".." segment.
 func TestADetailNamesAReason(t *testing.T) {
 	if reason, words := splitReason("memory_read_only: Read only here."); reason != "memory_read_only" || words != "Read only here." {
 		t.Errorf("a detail with a reason: %q %q", reason, words)
 	}
-	if reason, words := splitReason("past the bound"); reason != "" || words != "" {
-		t.Errorf("a detail with no reason: %q %q", reason, words)
+	if reason, words := splitReason("file.write: memory_name: Name it in lowercase."); reason != "memory_name" || words != "Name it in lowercase." {
+		t.Errorf("a detail with the action before the reason: %q %q", reason, words)
+	}
+	for _, detail := range []string{"past the bound", "file.write: memory_name"} {
+		if reason, words := splitReason(detail); reason != "" || words != "" {
+			t.Errorf("a detail with no reason's words %q: %q %q", detail, reason, words)
+		}
 	}
 	for _, rel := range []string{"a/./b", "a//b", "../a"} {
 		if cleanRel(rel) {

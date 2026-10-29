@@ -118,7 +118,9 @@ restore it.
 A `4xx` with an error body
 `{"error": {"code": "...", "message": "...", "details": {"detail": "..."}}}`
 is the call's result as `<path>: <message> <words>`, where `<words>`
-follow `<reason>: ` at the start of `details.detail`. The result's meta
+follow `<reason>: ` at the start of `details.detail`, or after the action
+the store names first, as Arca writes `file.write: <reason>: <words>`. The
+result's meta
 carries `refusal`: the reason, or the code when the detail names none. A
 detail that names no reason is left out of the text. Write the words for
 the agent, which reads them and acts on them:

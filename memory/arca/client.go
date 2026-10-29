@@ -285,13 +285,15 @@ func (m *Machine) list(ctx context.Context, f session.MemoryFolder) ([]listed, b
 	}
 }
 
-// reasoned is an envelope's detail that names the authorizer's reason.
-var reasoned = regexp.MustCompile(`(?s)^([a-z][a-z0-9_]*): (.*)$`)
+// reasoned is an envelope's detail that names the authorizer's reason,
+// after the action the store asked about when the store names it, as Arca
+// writes a refusal: "file.write: memory_name: <words>".
+var reasoned = regexp.MustCompile(`(?s)^(?:[a-z]+(?:\.[a-z_]+)+: )?([a-z][a-z0-9_]*): (.*)$`)
 
 // splitReason reads the authorizer's reason off an envelope's detail:
-// the reason and its words for "<reason>: <words>", and nothing for any
-// other detail, which is the store's developer detail and not a sentence
-// for the model.
+// the reason and its words for "<reason>: <words>", with or without the
+// action before them, and nothing for any other detail, which is the
+// store's developer detail and not a sentence for the model.
 func splitReason(detail string) (reason, words string) {
 	m := reasoned.FindStringSubmatch(detail)
 	if m == nil {
