@@ -107,7 +107,9 @@ func renameVersions(ctx context.Context, tx pgx.Tx, log *slog.Logger) (int, erro
 // renameSessionAgents gives every session whose agent's bundle names
 // spec.threads the renamed spec and bundle, and returns how many it gave
 // them. Sessions of one agent version share a bundle, which is renamed
-// once.
+// once. A session whose bundle the database does not hold, or holds
+// outside where this store reaches, is logged and passed by, since every
+// start would fail it alike.
 func (s *Store) renameSessionAgents(ctx context.Context, tx pgx.Tx, log *slog.Logger) (int, error) {
 	type header struct{ id, body string }
 	seen := map[session.Digest]*manifest.Renamed{}
@@ -136,6 +138,13 @@ func (s *Store) renameSessionAgents(ctx context.Context, tx pgx.Tx, log *slog.Lo
 			r, ok := seen[sess.Agent.Bundle]
 			if !ok {
 				b, err := s.blobIn(ctx, tx, h.id, sess.Agent.Bundle)
+				if errors.Is(err, session.ErrNotFound) || errors.Is(err, session.ErrCorrupt) {
+					// The session lost its bundle before the rename,
+					// which another start would not find either; another
+					// session of the same bundle may hold it.
+					log.WarnContext(ctx, "a session's agent cannot be read, so spec.threads is not renamed in it", slog.String("session", h.id), slog.String("error", err.Error()))
+					continue
+				}
 				if err != nil {
 					return 0, err
 				}
@@ -178,6 +187,9 @@ func (s *Store) blobIn(ctx context.Context, tx pgx.Tx, id string, d session.Dige
 	var body []byte
 	var location string
 	err := tx.QueryRow(ctx, `SELECT location, body FROM blobs WHERE session_id = $1 AND digest = $2`, id, string(d)).Scan(&location, &body)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: blob %s of %s", session.ErrNotFound, d, id)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("postgres: read blob %s of %s: %w", d, id, err)
 	}

@@ -699,6 +699,15 @@ func TestStoredAgentsRenameTheirSubagentLimits(t *testing.T) {
 	if err := first.Create(t.Context(), bare, nil); err != nil {
 		t.Fatal(err)
 	}
+	// A session whose header names a bundle the database lost is passed
+	// by, and the rename of the others goes on.
+	lost := storetest.NewSession()
+	gone := []byte("a bundle the database loses")
+	lost.Agent = sess.Agent
+	lost.Agent.Bundle = session.DigestOf(gone)
+	if err := first.Create(t.Context(), lost, map[session.Digest][]byte{digest: spec, lost.Agent.Bundle: gone}); err != nil {
+		t.Fatal(err)
+	}
 	first.Close()
 	conn, err := pgx.Connect(t.Context(), dsn)
 	if err != nil {
@@ -711,6 +720,9 @@ func TestStoredAgentsRenameTheirSubagentLimits(t *testing.T) {
 	})
 	// The data is as the release before left it: the rewrite is not done.
 	if _, err := conn.Exec(t.Context(), `DELETE FROM data_rewrites WHERE name = 'subagent_limits'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(t.Context(), `DELETE FROM blobs WHERE session_id = $1`, lost.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -742,10 +754,14 @@ func TestStoredAgentsRenameTheirSubagentLimits(t *testing.T) {
 	if b, err := again.Get(t.Context(), bare.ID); err != nil || b.Agent != bare.Agent {
 		t.Fatalf("a session of no manifest after the rename: %+v, %v", b.Agent, err)
 	}
+	if l, err := again.Get(t.Context(), lost.ID); err != nil || l.Agent != lost.Agent {
+		t.Fatalf("a session that lost its bundle after the rename: %+v, %v", l.Agent, err)
+	}
 	var stale int
 	if err := conn.QueryRow(t.Context(), `SELECT
 		(SELECT count(*) FROM agent_versions WHERE doc LIKE '%"threads"%' OR bundle LIKE '%"threads"%') +
-		(SELECT count(*) FROM sessions WHERE body LIKE '%"threads"%')`).Scan(&stale); err != nil || stale != 0 {
+		(SELECT count(*) FROM sessions WHERE body LIKE '%"threads"%') +
+		(SELECT count(*) FROM data_rewrites WHERE name = 'subagent_limits') - 1`).Scan(&stale); err != nil || stale != 0 {
 		t.Fatalf("%d documents still say threads: %v", stale, err)
 	}
 	for _, d := range []session.Digest{got.Agent.Digest, got.Agent.Bundle} {
