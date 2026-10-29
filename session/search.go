@@ -74,6 +74,20 @@ func Searched(e Event) bool {
 // event Searched does not read. A payload that does not decode holds no
 // text a person saw, and is searched as empty.
 func SearchText(e Event) (text string, ok bool) {
+	said, ok := SaidText(e)
+	if !ok {
+		return "", false
+	}
+	return plainText(said), true
+}
+
+// SaidText is what e says, as it was written: the text blocks of a
+// message, markdown and all, or the choices and the words of an answer,
+// each part apart by a blank line. ok is false for an event Searched does
+// not read, and a payload that does not decode says nothing. A search
+// reads it as plain text (SearchText); a folder of conversations writes
+// it as it is (spec 094).
+func SaidText(e Event) (text string, ok bool) {
 	if !Searched(e) {
 		return "", false
 	}
@@ -105,7 +119,7 @@ func SearchText(e Event) (text string, ok bool) {
 			}
 		}
 	}
-	return plainText(strings.Join(parts, "\n\n")), true
+	return strings.Join(parts, "\n\n"), true
 }
 
 // textBlocks is the text of a message's text blocks: no thinking, no

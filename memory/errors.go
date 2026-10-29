@@ -16,7 +16,8 @@ import (
 var ErrChanged = errors.New("memory: the file changed since it was read")
 
 // Refusal is a request the files store refused with its error envelope
-// (spec 093): Message is the store's sentence, and Reason and Detail the
+// (spec 093), or a list of a folder of conversations the authorizer
+// refused (spec 094): Message is the store's sentence, and Reason and Detail the
 // authorizer's reason and its words, when the envelope's detail names one
 // as "<reason>: <words>". The call's result is the sentence and the
 // words, which the model reads; its meta carries the reason, or the code
