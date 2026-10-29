@@ -136,6 +136,14 @@ func TestARemoteRunnerRunsASession(t *testing.T) {
 	if runnerKind != runner.KindRunner {
 		t.Fatalf("the session ran on a %q runner", runnerKind)
 	}
+	// A runner that stops hangs up on the claim it was waiting on, and the
+	// server learns of it only when it next looks: until then its queue can
+	// take the session's lease in the runner's name for the moment it
+	// checks the session for work. Closing the server waits for that
+	// claim's answer, so the lease read below is what the runner and the
+	// server left behind, and a claim the server kept for a runner that
+	// hung up would still hold it.
+	f.hs.Close()
 	if lease, err := f.st.Acquire(t.Context(), s.ID, session.Holder{Runner: "after"}); err != nil {
 		t.Fatalf("the claim was not released: %v", err)
 	} else if err := lease.Release(); err != nil {
