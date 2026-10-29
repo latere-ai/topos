@@ -156,6 +156,10 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if s.now == nil {
 		s.now = time.Now
 	}
+	if err := s.renameSubagentLimits(ctx, log); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	// The indexing outlives the open's context, which may be a start's
 	// deadline, and ends with Close.
 	index, stop := context.WithCancel(context.WithoutCancel(ctx))

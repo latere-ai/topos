@@ -6,8 +6,10 @@
 package postgres
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"maps"
 	"slices"
@@ -21,6 +23,9 @@ import (
 	"latere.ai/x/pkg/pgxmigrate"
 
 	"latere.ai/x/topos/internal/store"
+	objstoretest "latere.ai/x/topos/internal/store/storetest"
+	"latere.ai/x/topos/manifest"
+	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/storetest"
 )
@@ -664,5 +669,111 @@ func TestSubagentEventsMigrateInPlace(t *testing.T) {
 		if !strings.Contains(d, "subagent = ''") || strings.Contains(d, "thread") {
 			t.Fatalf("an index after the migration: %s", d)
 		}
+	}
+}
+
+// TestStoredAgentsRenameTheirSubagentLimits: a database whose agent
+// version and session a release before spec.subagentLimits wrote, each
+// spec's limits under threads, opens with both renamed, once. The version
+// reads with ReadBundle and its digest is the one a resolve of its
+// manifest computes now, so an unchanged apply keeps it; the session's
+// agent reads back through runner.Agent from the renamed blobs its header
+// names; a session that runs no manifest is passed by; no document, header
+// or blob in the database names threads; and the rewrite is recorded, so
+// a later open leaves what it finds (spec 013).
+func TestStoredAgentsRenameTheirSubagentLimits(t *testing.T) {
+	dsn := database(t)
+	first, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, before := objstoretest.ApplyBeforeLimits(t, first, "alice")
+	doc, bundle, spec, digest := before.Doc, before.Bundle, before.Spec, before.Digest
+	st := r.Agent.Status
+	sess := storetest.NewSession()
+	sess.Agent = session.AgentRef{ID: st.ID, Name: r.Name, Version: 1, Digest: digest, Bundle: session.DigestOf(bundle)}
+	if err := first.Create(t.Context(), sess, map[session.Digest][]byte{digest: spec, sess.Agent.Bundle: bundle}); err != nil {
+		t.Fatal(err)
+	}
+	bare := storetest.NewSession()
+	if err := first.Create(t.Context(), bare, nil); err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	// The data is as the release before left it: the rewrite is not done.
+	if _, err := conn.Exec(t.Context(), `DELETE FROM data_rewrites WHERE name = 'subagent_limits'`); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(again.Close)
+	objstoretest.RenamedLimits(t, again, "alice", r)
+	v, err := again.Version(t.Context(), st.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := manifest.ReadBundle(v.Bundle)
+	if err != nil || *read.Agent.Spec.SubagentLimits.MaxDepth != 3 || *read.Agent.Spec.Subagents[0].Spec.SubagentLimits.MaxConcurrent != 2 {
+		t.Fatalf("the renamed version reads %+v, %v", read.Agent, err)
+	}
+	got, err := again.Get(t.Context(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got.Agent.Digest) != r.Digest {
+		t.Fatalf("the session's agent digest is %s, want %s", got.Agent.Digest, r.Digest)
+	}
+	ran, ok, err := runner.Agent(t.Context(), again, got)
+	if err != nil || !ok || ran.Digest != r.Digest || *ran.Agent.Spec.SubagentLimits.MaxDepth != 3 {
+		t.Fatalf("the session's agent after the rename: %+v, %v, %v", ran.Agent, ok, err)
+	}
+	if b, err := again.Get(t.Context(), bare.ID); err != nil || b.Agent != bare.Agent {
+		t.Fatalf("a session of no manifest after the rename: %+v, %v", b.Agent, err)
+	}
+	var stale int
+	if err := conn.QueryRow(t.Context(), `SELECT
+		(SELECT count(*) FROM agent_versions WHERE doc LIKE '%"threads"%' OR bundle LIKE '%"threads"%') +
+		(SELECT count(*) FROM sessions WHERE body LIKE '%"threads"%')`).Scan(&stale); err != nil || stale != 0 {
+		t.Fatalf("%d documents still say threads: %v", stale, err)
+	}
+	for _, d := range []session.Digest{got.Agent.Digest, got.Agent.Bundle} {
+		rc, err := again.Blob(t.Context(), sess.ID, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(rc)
+		if err := errors.Join(err, rc.Close()); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(b, []byte(`"threads"`)) {
+			t.Fatalf("blob %s still says threads", d)
+		}
+	}
+
+	// The rewrite is recorded: a version written the old way afterwards is
+	// left as it is by the next open.
+	if _, err := conn.Exec(t.Context(), `UPDATE agent_versions SET doc = $2 WHERE agent_id = $1`, st.ID, string(doc)); err != nil {
+		t.Fatal(err)
+	}
+	third, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third.Close()
+	var left string
+	if err := conn.QueryRow(t.Context(), `SELECT doc FROM agent_versions WHERE agent_id = $1`, st.ID).Scan(&left); err != nil || left != string(doc) {
+		t.Fatalf("a later open rewrote the version again: %v", err)
 	}
 }
