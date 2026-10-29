@@ -147,6 +147,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [091](091-a-fork-of-the-conversation.md) | A fork of the conversation: the `agent` tool's `subagent: fork` starts a subagent that continues its caller's conversation on the caller's model and effort, with its tool definitions and system prompt byte for byte, so its first request reads the caller's cached prefix; narrowing when a call runs; one depth count; a subagent's own ceiling; a subagent that runs its caller's model; a trigger whose sessions start as a fork of the conversation that set it up | large | in-progress | 004, 005, 007, 008, 010, 012, 013, 017, 022, 038, 056, 086, 087 |
 | [092](092-a-persons-sessions-that-see-each-others-work.md) | A person's sessions that see each other's work: each open session's work read from its log, a `list_sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app, a `set_working_on` tool that says which paths this session is about to change, and `send_message` reaching another of the person's sessions with a message that arrives as data, starting nothing and never the person's word | large | drafted | 004, 006, 008, 010, 012, 013, 015, 018, 019, 058, 059, 073, 080, 086, 087, 090 |
 | [093](093-memory-folders-the-file-tools-reach.md) | Memory folders the file tools reach: an allow names folders of a files store, read, write, edit, glob and grep reach them at `/memory/<name>/` through the runner with the session's token, every write conditional on what the session last read, an empty write forgets, and a call that reaches memory alone opens no machine | medium | testing | 008, 010, 012, 018, 058, 068 |
+| [094](094-a-memory-folder-of-past-conversations.md) | A memory folder of past conversations: an allow names a read-only memory folder whose files are the initiator's other conversations in the session's context, kept by one metadata entry or by its absence, served from the server's log as one Markdown file each, with every list and read asked of the authorizer as the initiator and the session named as the question's origin | medium | testing | 015, 016, 050, 056, 057, 058, 077, 083, 086, 093 |
 
 ## Dependency graph
 
@@ -246,6 +247,7 @@ flowchart BT
   S091[091 a fork of the conversation]
   S092[092 sessions that see each other's work]
   S093[093 memory folders the file tools reach]
+  S094[094 a memory folder of past conversations]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -428,6 +430,11 @@ flowchart BT
   S092 --> S091
   S093 --> S058
   S093 --> S068
+  S094 --> S050
+  S094 --> S077
+  S094 --> S083
+  S094 --> S086
+  S094 --> S093
 ```
 
 ## Build order
