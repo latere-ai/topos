@@ -17,6 +17,11 @@ committed: the commit log already holds that.
 - **A write under `/memory/` says what it saved.** Its `agent.tool_result` meta carries `memory: {"folder", "path", "action"}`, the path in the folder and `saved` or `forgotten`, beside `path`.
 - **A memory call is decided as a memory.** A call whose every path is under `/memory/` scores 0.1 with the feature `memory`, and is allowed in `confirm` and `progressive` with the reason `a memory the person can review`; in `plan` a read is allowed and a write blocked. `always_confirm` naming `memory` asks the person about every memory call.
 
+### Changed
+
+- **A subagent's events are `subagent.started`, `subagent.message` and `subagent.ended`, and the field that names a subagent is `subagent`.** There is no compatibility: a reader of `thread.started`, `thread.message` and `thread.ended` and of the `thread` field must read `subagent.started`, `subagent.message`, `subagent.ended` and `subagent` from this release. The field is the id of the subagent whose conversation an event belongs to, absent for the session's own, with the value `thread` had; it is renamed on every event the events list and the stream answer, and on every delta of the stream, a reset included. A replay's step names its subagent as `subagent` too. A session written before reads as one written after: the Postgres store's migration renames the stored types and the `events.thread` column to `events.subagent`, and `toposd` renames a data directory's logs the first time it opens it. A replica of an earlier release cannot write to the migrated database, so every replica moves to this release together. The commit a subagent makes on its worktree branch is `topos subagent <id> turn <n>`, and the operator log's attribute for it is `subagent`.
+- **The `agent` tool's description says "a focused subagent"** where it said "a focused helper". New requests send `tools/agent-v2`.
+
 ## v0.59.0 - 2026-10-25
 
 ### Added
