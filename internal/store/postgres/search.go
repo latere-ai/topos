@@ -101,7 +101,7 @@ func tsquery(q session.Query) string {
 
 // eventColumns are the columns an event is read from, in readEvent's
 // order.
-const eventColumns = `session_id, seq, id, type, time, thread, turn, step, payload`
+const eventColumns = `session_id, seq, id, type, time, subagent, turn, step, payload`
 
 // readEvent reads one row of eventColumns.
 func readEvent(rows pgx.Rows) (session.Event, error) {
@@ -153,7 +153,7 @@ func (s *Store) Search(ctx context.Context, o session.SearchOptions) ([]session.
 		ids[i] = sess.ID
 	}
 	rows, err = s.pool.Query(ctx, `SELECT `+eventColumns+` FROM (
-		SELECT e.session_id, e.seq, e.id, e.type, e.time, e.thread, e.turn, e.step, e.payload,
+		SELECT e.session_id, e.seq, e.id, e.type, e.time, e.subagent, e.turn, e.step, e.payload,
 			row_number() OVER (PARTITION BY e.session_id ORDER BY e.seq DESC) AS nth
 		FROM events e WHERE e.session_id = ANY($1::text[]) AND NOT e.redacted AND e.search @@ to_tsquery('simple', $2)
 	) m WHERE nth <= $3 ORDER BY session_id, seq DESC`, ids, query, session.MaxSearchMatches)
@@ -187,7 +187,7 @@ func (s *Store) Search(ctx context.Context, o session.SearchOptions) ([]session.
 // events_unsearched index, whose condition it repeats word for word so
 // the planner reads that index. The types are session.SearchedTypes.
 const unsearched = `SELECT ` + eventColumns + ` FROM events
-	WHERE search IS NULL AND NOT redacted AND thread = ''
+	WHERE search IS NULL AND NOT redacted AND subagent = ''
 	AND type IN ('user.message', 'agent.message', 'user.answer')
 	AND (session_id, seq) > ($1, $2) ORDER BY session_id, seq LIMIT $3`
 

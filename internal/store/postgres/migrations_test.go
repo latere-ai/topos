@@ -548,3 +548,121 @@ func TestAFiringBeforeTheKeyColumnNamesNoKey(t *testing.T) {
 		t.Fatalf("the firings: %+v, %v", page, err)
 	}
 }
+
+// TestSubagentEventsMigrateInPlace: a database at migration 0020 holding a
+// session whose log has a subagent's events under their names before,
+// thread.started, thread.message and thread.ended in a thread column,
+// migrates to subagent.started, subagent.message and subagent.ended in a
+// subagent column. The store reads the events back under the new names
+// with the subagent each belongs to, the session's own events stay its
+// own, the fold renders the subagent's conversation apart, and the partial
+// indexes on the column name it subagent (spec 013).
+func TestSubagentEventsMigrateInPlace(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0020")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	sess := storetest.NewSession()
+	body, err := encode(sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(t.Context(), `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, turn, last_seq, created_at, updated_at, expires_at, body)
+		VALUES ($1, $2, 1, $3, $4, $5, 1, 5, $6, $6, $7, $8)`, sess.ID, sess.Agent.ID, sess.Initiator.Subject, sess.Runner, string(sess.Status), sess.CreatedAt, sess.ExpiresAt, body); err != nil {
+		t.Fatal(err)
+	}
+	sub := session.NewID(session.PrefixEvent)
+	at := time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC)
+	rows := []struct {
+		id, typ, thread, payload string
+	}{
+		{session.NewID(session.PrefixEvent), "user.message", "", `{"sender":{"subject":"usr_ada","kind":"person"},"content":[{"type":"text","text":"Review it."}]}`},
+		{sub, "thread.started", sub, `{"agent":{"name":"reviewer","version":0},"task":"Review the diff.","depth":1}`},
+		{session.NewID(session.PrefixEvent), "thread.message", sub, `{"to":"` + sub + `","from_name":"main","content":[{"type":"text","text":"Check line 9 too."}]}`},
+		{session.NewID(session.PrefixEvent), "agent.message", sub, `{"message":{"role":"assistant","blocks":[{"type":"text","text":"One issue."}]},"stop_reason":"end_turn"}`},
+		{session.NewID(session.PrefixEvent), "thread.ended", sub, `{"reason":"completed","final_text":"One issue."}`},
+	}
+	for i, r := range rows {
+		if _, err := conn.Exec(t.Context(), `INSERT INTO events (session_id, seq, id, type, time, thread, turn, step, payload, redacted) VALUES ($1, $2, $3, $4, $5, $6, 1, 0, $7, false)`,
+			sess.ID, i+1, r.id, r.typ, at, r.thread, r.payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	evs, err := st.Events(t.Context(), sess.ID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		typ      session.Type
+		subagent string
+	}{
+		{session.TypeUserMessage, ""},
+		{session.TypeSubagentStarted, sub},
+		{session.TypeSubagentMessage, sub},
+		{session.TypeAgentMessage, sub},
+		{session.TypeSubagentEnded, sub},
+	}
+	if len(evs) != len(want) {
+		t.Fatalf("the migrated log holds %d events, want %d", len(evs), len(want))
+	}
+	for i, w := range want {
+		if evs[i].Type != w.typ || evs[i].Subagent != w.subagent {
+			t.Fatalf("event %d migrated to %s in %q, want %s in %q", i+1, evs[i].Type, evs[i].Subagent, w.typ, w.subagent)
+		}
+		b, err := json.Marshal(evs[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), `"thread`) {
+			t.Fatalf("event %d still says thread: %s", i+1, b)
+		}
+	}
+	own, err := session.Fold(evs, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := session.Fold(evs, sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(own.Unknown)+len(theirs.Unknown) > 0 {
+		t.Fatalf("the fold reports types it does not know: %v, %v", own.Unknown, theirs.Unknown)
+	}
+	if len(own.Messages) != 1 || len(theirs.Messages) < 2 {
+		t.Fatalf("the fold of the session's own conversation has %d messages and the subagent's %d", len(own.Messages), len(theirs.Messages))
+	}
+
+	var stale int
+	if err := conn.QueryRow(t.Context(), `SELECT count(*) FROM events WHERE type LIKE 'thread.%'`).Scan(&stale); err != nil || stale != 0 {
+		t.Fatalf("%d events keep a type of before: %v", stale, err)
+	}
+	idx, err := conn.Query(t.Context(), `SELECT indexdef FROM pg_indexes WHERE tablename = 'events' AND indexname IN ('events_unsearched', 'events_activity') ORDER BY indexname`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defs, err := pgx.CollectRows(idx, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 2 {
+		t.Fatalf("the partial indexes after the migration: %v", defs)
+	}
+	for _, d := range defs {
+		if !strings.Contains(d, "subagent = ''") || strings.Contains(d, "thread") {
+			t.Fatalf("an index after the migration: %s", d)
+		}
+	}
+}

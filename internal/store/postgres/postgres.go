@@ -593,7 +593,7 @@ func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error 
 		if doc, ok := session.SearchDocument(e); ok {
 			search = &doc
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO events (session_id, seq, id, type, time, thread, turn, step, payload, redacted, search)
+		_, err := tx.Exec(ctx, `INSERT INTO events (session_id, seq, id, type, time, subagent, turn, step, payload, redacted, search)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, to_tsvector('simple', $11::text))`,
 			e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Subagent, e.Turn, e.Step, string(e.Payload), e.Redacted(), search)
 		if isUnique(err) {
@@ -644,7 +644,7 @@ func (s *Store) FileRecord(ctx context.Context, id string, d session.Digest) (se
 	if !d.Valid() {
 		return session.FileRecord{}, fmt.Errorf("%w: digest %q", session.ErrInvalid, d)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT seq, id, type, time, thread, turn, step, payload FROM events
+	rows, err := s.pool.Query(ctx, `SELECT seq, id, type, time, subagent, turn, step, payload FROM events
 		WHERE session_id = $1 AND type = ANY($2) AND NOT redacted AND strpos(payload, $3) > 0 ORDER BY seq`,
 		id, []string{string(session.TypeUserMessage), string(session.TypeFilesKept)}, string(d))
 	if err != nil {
@@ -719,7 +719,7 @@ func queryEvents(ctx context.Context, q querier, id string, from uint64, limit i
 	if limit > 0 {
 		lim = limit
 	}
-	rows, err := q.Query(ctx, `SELECT seq, id, type, time, thread, turn, step, payload FROM events
+	rows, err := q.Query(ctx, `SELECT seq, id, type, time, subagent, turn, step, payload FROM events
 		WHERE session_id = $1 AND seq >= $2 ORDER BY seq LIMIT $3`, id, int64(max(from, 1)), lim)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: read events of %s: %w", id, err)
@@ -728,7 +728,7 @@ func queryEvents(ctx context.Context, q querier, id string, from uint64, limit i
 }
 
 // scanEvents reads the events of the session id that rows selects as
-// seq, id, type, time, thread, turn, step and payload, and closes rows.
+// seq, id, type, time, subagent, turn, step and payload, and closes rows.
 func scanEvents(rows pgx.Rows, id string) ([]session.Event, error) {
 	out := []session.Event{}
 	for rows.Next() {

@@ -29,7 +29,7 @@ const (
 SELECT m.p->'sender'->>'subject', COALESCE(m.p->'sender'->>'client', ''), count(*)
   FROM (SELECT e.payload::jsonb AS p
           FROM events e JOIN sessions s ON s.id = e.session_id
-         WHERE e.type = 'user.message' AND e.thread = '' AND NOT e.redacted
+         WHERE e.type = 'user.message' AND e.subagent = '' AND NOT e.redacted
            AND e.time >= $1 AND e.time < $2 AND s.rollout IS NULL) m
  WHERE m.p->'sender'->>'kind' = 'person' AND COALESCE(m.p->>'firing_id', '') = ''
    AND ($3 = '' OR m.p->'sender'->>'subject' = $3) AND (m.p->'sender'->>'subject') COLLATE "C" > $4
@@ -47,13 +47,13 @@ SELECT s.b->'initiator'->>'subject', COALESCE(s.b->'initiator'->>'client', ''), 
 SELECT last.p->'sender'->>'subject', count(*)
   FROM (SELECT st.session_id, st.seq, st.payload::jsonb AS p
           FROM events st JOIN sessions s ON s.id = st.session_id
-         WHERE st.type = 'session.status' AND st.thread = '' AND NOT st.redacted AND st.turn > 0
+         WHERE st.type = 'session.status' AND st.subagent = '' AND NOT st.redacted AND st.turn > 0
            AND st.time >= $1 AND st.time < $2 AND s.rollout IS NULL) ended
  CROSS JOIN LATERAL (
        SELECT u.payload::jsonb AS p
          FROM events u
         WHERE u.session_id = ended.session_id AND u.seq < ended.seq
-          AND u.type = 'user.message' AND u.thread = ''
+          AND u.type = 'user.message' AND u.subagent = ''
         ORDER BY u.seq DESC LIMIT 1) last
  WHERE ((ended.p->>'status' = 'idle' AND ended.p->>'stop_reason' = 'end_turn')
         OR (ended.p->>'status' = 'ended' AND ended.p->>'stop_reason' = 'completed'))
