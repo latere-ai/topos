@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -31,6 +32,7 @@ import (
 	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/internal/runnerapi"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
@@ -230,6 +232,10 @@ func readError(resp *http.Response) error {
 	case runnerapi.CodeTriggerRefused:
 		code, _ := env.Error.Details["code"].(string)
 		return &runner.TriggerRefusal{Code: cmp.Or(code, runnerapi.CodeTriggerRefused), Message: msg}
+	case runnerapi.CodeConversationsRefused:
+		code, _ := env.Error.Details["code"].(string)
+		reason, _ := env.Error.Details["reason"].(string)
+		return &memory.Refusal{Op: "listing", Status: resp.StatusCode, Code: code, Message: msg, Reason: reason}
 	case runnerapi.CodeCredentialRefused:
 		code, _ := env.Error.Details["code"].(string)
 		detail, _ := env.Error.Details["detail"].(string)
@@ -569,3 +575,44 @@ func (l *lease) CancelWake(ctx context.Context, toolUseID string) (string, error
 }
 
 var _ runner.Triggers = (*lease)(nil)
+
+// conversations asks the server a read of a folder of conversations
+// (spec 094) under the lease's generation; lease_lost ends the lease, and
+// a file the server does not answer is fs.ErrNotExist.
+func (l *lease) conversations(ctx context.Context, action string, req runnerapi.ConversationsRequest) (runnerapi.ConversationsAnswer, error) {
+	var a runnerapi.ConversationsAnswer
+	req.Generation = l.gen
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/conversations/"+action, req, &a)
+	switch {
+	case errors.Is(err, session.ErrLeaseLost):
+		l.end()
+	case errors.Is(err, session.ErrNotFound):
+		err = fmt.Errorf("%w: %w", fs.ErrNotExist, err)
+	}
+	return a, err
+}
+
+// ListConversations asks the server for the files of the session's
+// folder of conversations named folder.
+func (l *lease) ListConversations(ctx context.Context, folder string) ([]memory.ConversationFile, bool, error) {
+	a, err := l.conversations(ctx, runnerapi.ConversationsList, runnerapi.ConversationsRequest{Folder: folder})
+	if err != nil {
+		return nil, false, err
+	}
+	return a.Files, a.More, nil
+}
+
+// ReadConversation asks the server for the file name of the session's
+// folder of conversations named folder.
+func (l *lease) ReadConversation(ctx context.Context, folder, name string) (memory.ConversationFile, []byte, error) {
+	a, err := l.conversations(ctx, runnerapi.ConversationsRead, runnerapi.ConversationsRequest{Folder: folder, File: name})
+	if err != nil {
+		return memory.ConversationFile{}, nil, err
+	}
+	if a.File == nil {
+		return memory.ConversationFile{}, nil, errors.New("runnerrole: the server answered a read of a conversation with no file")
+	}
+	return *a.File, []byte(a.Text), nil
+}
+
+var _ memory.Conversations = (*lease)(nil)

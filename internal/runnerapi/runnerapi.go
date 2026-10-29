@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -25,6 +26,7 @@ import (
 	"latere.ai/x/pkg/httpjson"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
@@ -69,6 +71,11 @@ const (
 	// server answered no (spec 086): details.code names the authorizer's
 	// reason or the API's error code, and the message is the detail.
 	CodeTriggerRefused = "trigger_refused"
+	// CodeConversationsRefused is a list of a folder of conversations the
+	// authorizer refused (spec 094): details.code names the API's code,
+	// details.reason the authorizer's reason, and the message is the
+	// sentence the model reads.
+	CodeConversationsRefused = "conversations_refused"
 )
 
 // ClaimRequest asks for sessions to run.
@@ -182,6 +189,31 @@ type TriggersAnswer struct {
 	Canceled string                 `json:"canceled,omitempty"`
 }
 
+// ConversationsRequest is a read of a session's folder of conversations
+// under the lease (spec 094): a list names the folder, a read the folder
+// and the file.
+type ConversationsRequest struct {
+	Generation int64  `json:"generation"`
+	Folder     string `json:"folder"`
+	File       string `json:"file,omitempty"`
+}
+
+// ConversationsAnswer answers a list with the folder's files and whether
+// its scope held more, and a read with the file and its text.
+type ConversationsAnswer struct {
+	Files []memory.ConversationFile `json:"files,omitempty"`
+	More  bool                      `json:"more,omitempty"`
+	File  *memory.ConversationFile  `json:"file,omitempty"`
+	Text  string                    `json:"text,omitempty"`
+}
+
+// The reads of a folder of conversations, the last segment of their
+// route.
+const (
+	ConversationsList = "list"
+	ConversationsRead = "read"
+)
+
 // Appended is the log's last sequence after an append.
 type Appended struct {
 	LastSeq uint64 `json:"last_seq"`
@@ -235,8 +267,13 @@ type Options struct {
 	// toposd's own. Nil answers every question of the trigger tool
 	// trigger_refused.
 	Triggers func(id string) runner.Triggers
-	Now      func() time.Time
-	Log      *slog.Logger
+	// Conversations is the session id's reach to its folders of
+	// conversations (spec 094), to a lease the route has checked the
+	// runner holds: toposd's own. Nil answers every read of such a folder
+	// as a folder that is not there.
+	Conversations func(id string) memory.Conversations
+	Now           func() time.Time
+	Log           *slog.Logger
 }
 
 // Server holds the claims of remote runners. A claim holds the store's
@@ -303,6 +340,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST "+Root+"/leases/{session}/failover", s.failover)
 	route("POST "+Root+"/leases/{session}/title", s.title)
 	route("POST "+Root+"/leases/{session}/triggers/{action}", s.triggers)
+	route("POST "+Root+"/leases/{session}/conversations/{action}", s.conversations)
 	route("POST "+Root+"/sessions/{session}/events", s.append)
 	route("GET "+Root+"/sessions/{session}", s.get)
 	route("GET "+Root+"/sessions/{session}/events", s.events)
@@ -639,6 +677,51 @@ func (s *Server) triggers(w http.ResponseWriter, r *http.Request) error {
 	return reply(w, http.StatusOK, a)
 }
 
+// conversations answers a read of a session's folder of conversations
+// under its lease (spec 094): a list of the folder, or a read of one of
+// its files.
+func (s *Server) conversations(w http.ResponseWriter, r *http.Request) error {
+	var req ConversationsRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	action := r.PathValue("action")
+	switch {
+	case action != ConversationsList && action != ConversationsRead:
+		return &wireError{CodeNotFound, http.StatusNotFound, fmt.Sprintf("a folder of conversations is read by %s or %s, not %q", ConversationsList, ConversationsRead, action)}
+	case req.Folder == "", (action == ConversationsRead) != (req.File != ""):
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a list names its folder, and a read its folder and its file"}
+	}
+	id := r.PathValue("session")
+	c, err := s.held(id, req.Generation)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-c.lease.Lost():
+		s.drop(id, c)
+		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
+	default:
+	}
+	if s.o.Conversations == nil {
+		return &wireError{CodeNotFound, http.StatusNotFound, "this server keeps no folders of conversations"}
+	}
+	reach := s.o.Conversations(id)
+	var a ConversationsAnswer
+	if action == ConversationsList {
+		if a.Files, a.More, err = reach.ListConversations(r.Context(), req.Folder); err != nil {
+			return err
+		}
+		return reply(w, http.StatusOK, a)
+	}
+	file, text, err := reach.ReadConversation(r.Context(), req.Folder, req.File)
+	if err != nil {
+		return err
+	}
+	a.File, a.Text = &file, string(text)
+	return reply(w, http.StatusOK, a)
+}
+
 // refusedTrigger is a refusal as the wire carries it, and any other error
 // as it is.
 func refusedTrigger(err error) error {
@@ -830,6 +913,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpjson.WriteError(w, http.StatusForbidden, httpjson.Error{Code: CodeTriggerRefused, Message: re.Message, Details: map[string]any{"code": re.Code}})
 		return
 	}
+	if mr, ok := errors.AsType[*memory.Refusal](err); ok {
+		httpjson.WriteError(w, http.StatusForbidden, httpjson.Error{Code: CodeConversationsRefused, Message: mr.Message, Details: map[string]any{"code": mr.Code, "reason": mr.Reason}})
+		return
+	}
 	if se, ok := errors.AsType[*runner.SetupError](err); ok {
 		detail := ""
 		if se.Err != nil {
@@ -846,7 +933,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		we = &wireError{CodeLeaseLost, http.StatusConflict, err.Error()}
 	case errors.Is(err, session.ErrSequenceConflict):
 		we = &wireError{CodeSequenceConflict, http.StatusConflict, err.Error()}
-	case errors.Is(err, session.ErrNotFound):
+	case errors.Is(err, session.ErrNotFound), errors.Is(err, fs.ErrNotExist):
 		we = &wireError{CodeNotFound, http.StatusNotFound, err.Error()}
 	case errors.Is(err, session.ErrInvalid), errors.Is(err, session.ErrBlobMismatch):
 		we = &wireError{CodeInvalidRequest, http.StatusBadRequest, err.Error()}

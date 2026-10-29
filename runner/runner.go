@@ -21,6 +21,7 @@ import (
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/machine"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner/checkpoint"
 	"latere.ai/x/topos/session"
@@ -97,6 +98,12 @@ type Options struct {
 	// with neither, the harness builder reads none and offers no trigger
 	// tool.
 	Triggers func(id string) Triggers
+	// Conversations is the session id's reach to its folders of
+	// conversations (spec 094): toposd's, for the leases of its own
+	// runners. A lease that is a memory.Conversations itself is asked
+	// instead; with neither, a session with such a folder cannot be
+	// driven.
+	Conversations func(id string) memory.Conversations
 	// Log receives a line for each title a drive or a pass asked for, and
 	// for each that it could not, with the session and the cause (spec
 	// 083). Nil discards them.
@@ -258,6 +265,9 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	built, tokens := r.tokens(ctx, id, lease)
 	if t := r.triggers(id, lease); t != nil {
 		built = WithTriggers(built, t)
+	}
+	if c := r.conversations(id, lease); c != nil {
+		built = WithConversations(built, c)
 	}
 	built = machine.WithWaiting(built, func(ctx context.Context, w machine.Waiting) error {
 		return r.waiting(ctx, log, w)

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -342,25 +343,45 @@ func (b builder) files(ctx context.Context, s session.Session) (harness.Files, e
 }
 
 // memory is the session's memory machine over the memory folders its
-// allow named (spec 093), reached with the session's own token for
-// FilesAudience and the workload session, asked of the drive's token
-// source at each request, so no token reaches the session's machine,
-// which holds the memory machine's spill files. Nil for a session with no
-// memory folders and for a rollout's run, which is isolated (spec 077). A
-// session with folders, on a runner with no audience or no token source,
-// is a setup error, as a session's folder is.
+// allow named (spec 093): a folder of a files store reached with the
+// session's own token for FilesAudience and the workload session, asked
+// of the drive's token source at each request, so no token reaches the
+// session's machine, which holds the memory machine's spill files; and a
+// folder of conversations through the drive's reach to the server (spec
+// 094). Nil for a session with no memory folders and for a rollout's run,
+// which is isolated (spec 077). A session with a folder its runner cannot
+// reach is a setup error, as a session's folder is.
 func (b builder) memory(ctx context.Context, s session.Session, m machine.Machine) (machine.Machine, error) {
 	if len(s.Memory) == 0 || s.Isolated() {
 		return nil, nil
 	}
-	src := runner.TokensFrom(ctx)
-	if b.o.FilesAudience == "" || src == nil {
-		return nil, setup(CodeFilesUnavailable, fmt.Errorf("session %s keeps memory folders in a files store, and this runner reaches none: TOPOS_FILES_AUDIENCE is unset or it mints no session token", s.ID))
+	stored := slices.ContainsFunc(s.Memory, func(f session.MemoryFolder) bool { return !f.Conversations() })
+	var (
+		token arca.Token
+		opts  []arca.Option
+	)
+	if stored {
+		src := runner.TokensFrom(ctx)
+		if b.o.FilesAudience == "" || src == nil {
+			return nil, setup(CodeFilesUnavailable, fmt.Errorf("session %s keeps memory folders in a files store, and this runner reaches none: TOPOS_FILES_AUDIENCE is unset or it mints no session token", s.ID))
+		}
+		token = func(ctx context.Context) (string, error) {
+			c, err := src.Token(ctx, b.o.FilesAudience, runner.WorkloadSession)
+			return c.Value, err
+		}
 	}
-	mem, err := arca.New(s.Memory, func(ctx context.Context) (string, error) {
-		c, err := src.Token(ctx, b.o.FilesAudience, runner.WorkloadSession)
-		return c.Value, err
-	}, otel.HTTPClient(), m)
+	if slices.ContainsFunc(s.Memory, session.MemoryFolder.Conversations) {
+		chats := runner.ConversationsFrom(ctx)
+		if chats == nil {
+			return nil, setup(CodeFilesUnavailable, fmt.Errorf("session %s has a memory folder of conversations, and this runner reaches no server that keeps them", s.ID))
+		}
+		opts = append(opts, arca.WithConversations(chats))
+	}
+	var client *http.Client
+	if stored {
+		client = otel.HTTPClient()
+	}
+	mem, err := arca.New(s.Memory, token, client, m, opts...)
 	if err != nil {
 		return nil, setup(CodeFilesUnavailable, err)
 	}

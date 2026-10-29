@@ -4,6 +4,7 @@
 package hosted
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"latere.ai/x/topos/machine/cella"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/arcastub"
@@ -129,6 +131,52 @@ func TestTheMemoryMachineOfASession(t *testing.T) {
 			use = t.Context()
 		}
 		_, err := c.b.memory(use, c.s, nil)
+		if se, ok := errors.AsType[*runner.SetupError](err); !ok || se.Code != CodeFilesUnavailable {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// oneConversation is a reach to a folder of conversations that holds one
+// file.
+type oneConversation struct{}
+
+func (oneConversation) ListConversations(context.Context, string) ([]memory.ConversationFile, bool, error) {
+	return []memory.ConversationFile{{Name: "2026-10-28-ses_2.md", Version: "v"}}, false, nil
+}
+
+func (oneConversation) ReadConversation(_ context.Context, _, name string) (memory.ConversationFile, []byte, error) {
+	return memory.ConversationFile{Name: name, Version: "v", Size: 6}, []byte("tides\n"), nil
+}
+
+// TestAFolderOfConversationsNeedsNoFilesAudience: a session whose only
+// memory folder is a folder of conversations gets a memory machine on a
+// runner with no files audience and no token source, reaching the folder
+// through the drive's reach to the server; with no such reach, or beside
+// a folder of a files store it cannot reach, it is files_unavailable
+// (spec 094).
+func TestAFolderOfConversationsNeedsNoFilesAudience(t *testing.T) {
+	chats := session.MemoryFolder{Name: "chats", Access: session.MemoryReadOnly, Sessions: &session.MemorySessions{}}
+	s := session.Session{ID: session.NewID(session.PrefixSession), Memory: []session.MemoryFolder{chats}}
+	ctx := runner.WithConversations(t.Context(), oneConversation{})
+	m, err := builder{}.memory(ctx, s, nil)
+	if err != nil || m == nil {
+		t.Fatalf("a session with a folder of conversations: %v %v", m, err)
+	}
+	entries, err := m.List(ctx, "/memory/chats")
+	if err != nil || len(entries) != 1 || entries[0].Path != "/memory/chats/2026-10-28-ses_2.md" {
+		t.Fatalf("the folder %+v, %v", entries, err)
+	}
+	both := s
+	both.Memory = []session.MemoryFolder{chats, {Name: "user", URL: "https://files.example.com/v1", Owner: "o", Path: "files/memory/you", Access: session.MemoryReadOnly}}
+	for name, c := range map[string]struct {
+		ctx context.Context
+		s   session.Session
+	}{
+		"no reach to the server":       {t.Context(), s},
+		"a store folder and no tokens": {ctx, both},
+	} {
+		_, err := builder{}.memory(c.ctx, c.s, nil)
 		if se, ok := errors.AsType[*runner.SetupError](err); !ok || se.Code != CodeFilesUnavailable {
 			t.Errorf("%s: %v", name, err)
 		}

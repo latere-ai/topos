@@ -6,6 +6,8 @@ package runnerrole
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	"latere.ai/x/topos/internal/runnerapi"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
@@ -127,6 +130,96 @@ func TestARemoteLeaseAsksTheTriggerQuestions(t *testing.T) {
 	held := claims[0].Lease.(*lease)
 	stale := &lease{c: c, id: s.ID, gen: held.gen + 1, lost: make(chan struct{}), stop: make(chan struct{})}
 	if _, err := stale.ListTriggers(ctx); !errors.Is(err, session.ErrLeaseLost) || len(asked) != 9 {
+		t.Fatalf("another generation: %v, %d questions", err, len(asked))
+	}
+	if err := claims[0].Lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// recordedConversations is a server's reach to a session's folders of
+// conversations that keeps who asked what and fails as fail says.
+type recordedConversations struct {
+	id    string
+	asked *[]string
+	fail  *error
+}
+
+func (r recordedConversations) ListConversations(_ context.Context, folder string) ([]memory.ConversationFile, bool, error) {
+	*r.asked = append(*r.asked, r.id+" list "+folder)
+	if *r.fail != nil {
+		return nil, false, *r.fail
+	}
+	return []memory.ConversationFile{{Name: "2026-10-28-ses_2.md", Version: "v2", Modified: time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)}}, true, nil
+}
+
+func (r recordedConversations) ReadConversation(_ context.Context, folder, name string) (memory.ConversationFile, []byte, error) {
+	*r.asked = append(*r.asked, r.id+" read "+folder+"/"+name)
+	if *r.fail != nil {
+		return memory.ConversationFile{}, nil, *r.fail
+	}
+	if name != "2026-10-28-ses_2.md" {
+		return memory.ConversationFile{}, nil, fmt.Errorf("%w: %s", fs.ErrNotExist, name)
+	}
+	return memory.ConversationFile{Name: name, Version: "v2", Size: 9}, []byte("# Tides\n潮\n"), nil
+}
+
+// TestTheLeaseReachesConversations: a remote runner's lease is the
+// session's reach to its server's folders of conversations (spec 094): a
+// list and a read reach the server's own for the session the lease holds,
+// a file the server does not answer is fs.ErrNotExist, a refused list
+// comes back as the *memory.Refusal the file tools say, and a stale
+// generation is lease_lost and asks nothing.
+func TestTheLeaseReachesConversations(t *testing.T) {
+	var asked []string
+	var fail error
+	st := session.NewMemoryStore()
+	srv, err := runnerapi.New(runnerapi.Options{Store: st, Queue: runner.NewQueue(st, 10*time.Millisecond), Tokens: []string{"runner-token"},
+		Conversations: func(id string) memory.Conversations { return recordedConversations{id: id, asked: &asked, fail: &fail} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hs := httptest.NewServer(srv.Handler())
+	t.Cleanup(hs.Close)
+	c, err := New(hs.URL, "runner-token", hs.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.SetRenewInterval(time.Hour)
+	ctx := t.Context()
+	s := hosted(t, st, "Go.")
+	claims, err := c.Claim(ctx, session.Holder{Runner: "r1"}, 1, time.Second)
+	if err != nil || len(claims) != 1 {
+		t.Fatalf("claim %+v %v", claims, err)
+	}
+	l, ok := claims[0].Lease.(memory.Conversations)
+	if !ok {
+		t.Fatal("a remote lease reaches no conversations")
+	}
+	files, more, err := l.ListConversations(ctx, "chats")
+	if err != nil || !more || len(files) != 1 || files[0].Name != "2026-10-28-ses_2.md" || files[0].Version != "v2" || !files[0].Modified.Equal(time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)) {
+		t.Fatalf("the list %+v, %v, %v", files, more, err)
+	}
+	file, text, err := l.ReadConversation(ctx, "chats", "2026-10-28-ses_2.md")
+	if err != nil || file.Name != "2026-10-28-ses_2.md" || file.Size != 9 || string(text) != "# Tides\n潮\n" {
+		t.Fatalf("the read %+v %q, %v", file, text, err)
+	}
+	if _, _, err := l.ReadConversation(ctx, "chats", "2026-10-27-ses_1.md"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("a file the server does not answer: %v", err)
+	}
+	fail = &memory.Refusal{Op: "listing", Status: 403, Code: "forbidden", Message: "This session may not read these conversations now.", Reason: "chats_off"}
+	_, _, err = l.ListConversations(ctx, "chats")
+	if re, ok := errors.AsType[*memory.Refusal](err); !ok || re.Code != "forbidden" || re.Reason != "chats_off" || re.Message != "This session may not read these conversations now." || re.Status != 403 {
+		t.Fatalf("a refused list: %v", err)
+	}
+	fail = nil
+	want := []string{s.ID + " list chats", s.ID + " read chats/2026-10-28-ses_2.md", s.ID + " read chats/2026-10-27-ses_1.md", s.ID + " list chats"}
+	if !slices.Equal(asked, want) {
+		t.Fatalf("the server was asked %q", asked)
+	}
+	held := claims[0].Lease.(*lease)
+	stale := &lease{c: c, id: s.ID, gen: held.gen + 1, lost: make(chan struct{}), stop: make(chan struct{})}
+	if _, _, err := stale.ListConversations(ctx, "chats"); !errors.Is(err, session.ErrLeaseLost) || len(asked) != len(want) {
 		t.Fatalf("another generation: %v, %d questions", err, len(asked))
 	}
 	if err := claims[0].Lease.Release(); err != nil {
