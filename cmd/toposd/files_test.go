@@ -25,8 +25,8 @@ import (
 // TestAFileTheAgentWroteIsReadThroughTheAPI: through toposd, a file the
 // agent wrote in its sandbox is read by the person over the API at the
 // path its write result names, with its size in that result, labeled a
-// download; once Cella stops the idle sandbox, the read is
-// file_unavailable and the sandbox stays stopped.
+// download; once the turn has ended and Cella stops the idle sandbox, the
+// read is file_unavailable and the sandbox stays stopped.
 func TestAFileTheAgentWroteIsReadThroughTheAPI(t *testing.T) {
 	page := "<!doctype html><title>A poem</title><p>Roses.</p>"
 	input, err := json.Marshal(map[string]string{"path": "poetry.html", "content": page})
@@ -86,7 +86,10 @@ func TestAFileTheAgentWroteIsReadThroughTheAPI(t *testing.T) {
 		t.Fatalf("the file: %d %v %q", code, header, body)
 	}
 	// Cella stops an idle sandbox; its files are not available until the
-	// session runs it again, and a read does not start it.
+	// session runs it again, and a read does not start it. The sandbox is
+	// idle once the turn has ended: the turn's checkpoint runs git in it
+	// after the write's result, and starts it again if it was stopped.
+	waitAnswered(t, publicURL, vars, s.ID)
 	name := cella.SandboxName(s.ID)
 	stub.Stop(name)
 	if code, body := send(http.MethodGet, "/v1/sessions/"+s.ID+"/files?path=poetry.html", ""); code != http.StatusConflict || !strings.Contains(body, `"file_unavailable"`) {
