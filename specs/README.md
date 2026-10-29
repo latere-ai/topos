@@ -149,6 +149,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [093](093-memory-folders-the-file-tools-reach.md) | Memory folders the file tools reach: an allow names folders of a files store, read, write, edit, glob and grep reach them at `/memory/<name>/` through the runner with the session's token, every write conditional on what the session last read, an empty write forgets, and a call that reaches memory alone opens no machine | medium | testing | 008, 010, 012, 018, 058, 068 |
 | [094](094-a-memory-folder-of-past-conversations.md) | A memory folder of past conversations: an allow names a read-only memory folder whose files are the initiator's other conversations in the session's context, kept by one metadata entry or by its absence, served from the server's log as one Markdown file each, with every list and read asked of the authorizer as the initiator and the session named as the question's origin | medium | testing | 015, 016, 050, 056, 057, 058, 077, 083, 086, 093 |
 | [095](095-a-triggers-reach-and-one-run-per-scope.md) | A trigger's reach and one run per scope: `spec.reach` names a kind the authorizer maps and, with `split: scope`, makes each firing ask `trigger.runs` which scopes are due before it starts anything, start one session for each with the scope and the time since which it reads, and record `skipped_nothing_new` when none is, so a night with nothing new starts no session and asks no model | medium | testing | 022, 086, 087, 088, 090, 093 |
+| [096](096-what-a-session-has-cost-so-far-and-how-far-its-to-do-list-is.md) | What a session has cost so far and how far its to-do list is: the budget counts the log through `last_seq` and each `model.request` and `tool.result` carries what it added, so no event of its own reports the spending; a `todo` call's result records the list, described as `TodoResultMeta`; and no progress count beyond the to-do list until workflow runs count their nodes | small | testing | 008, 023, 033, 047, 056, 082 |
 
 ## Dependency graph
 
@@ -250,6 +251,7 @@ flowchart BT
   S093[093 memory folders the file tools reach]
   S094[094 a memory folder of past conversations]
   S095[095 a trigger's reach and one run per scope]
+  S096[096 cost so far and the to-do list]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -439,6 +441,9 @@ flowchart BT
   S094 --> S093
   S095 --> S090
   S095 --> S093
+  S096 --> S033
+  S096 --> S056
+  S096 --> S082
 ```
 
 ## Build order
