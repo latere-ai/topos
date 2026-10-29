@@ -6,7 +6,7 @@ depends_on: [.archive/004-session-log.md, 005-harness-loop.md, .archive/007-mode
 affects: [harness/, harness/tools/, session/, manifest/v1/, manifest/, manifest/trigger/, internal/triggers/, internal/server/, internal/proposal/, prompts/tools/, prompts/results/threads/, prompts/threads/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -18,8 +18,8 @@ A fresh subagent of [[013-threads-and-subagents]] starts empty: its
 first request holds its own instructions, its own tools and the task,
 and nothing its caller knows. The caller writes what the subagent needs
 into the task, and what it leaves out is lost. A conversation that has
-read a repository for an hour cannot hand that reading to a helper
-except by retelling it.
+read a repository for an hour cannot hand that reading to a fresh
+subagent except by retelling it.
 
 This spec adds the other value of the `agent` tool's `subagent` input,
 `fork`, which starts a subagent that continues its caller's
@@ -43,8 +43,8 @@ it:
    with a code of its own.
 2. **A fork runs its caller's model and effort.** A provider's cache
    belongs to one model, and a change of effort or reasoning parameters
-   invalidates the cached conversation. A helper on a cheaper model is a
-   fresh subagent, not a fork.
+   invalidates the cached conversation. A subagent on a cheaper model is a
+   fresh one, not a fork.
 3. **Fresh subagents and forks share one depth count**, with 013's
    default of 2 and its limit of 4.
 4. **A subagent has a spending ceiling of its own** that counts every
@@ -124,7 +124,7 @@ it:
 | The default depth | 013's 2, kept; an agent names `spec.threads.maxDepth: 3` to nest three levels, as Latere Chat's agent does | 3 as the core's default: a default applies to every agent of every installation that never chose, so raising it changes what each of them may do on upgrade; depth is not where spending is bounded (concurrency and ceilings are), and each level is one more hop at which a subagent's work is cut to its final text |
 | Depth for fresh subagents and forks | one count: a subagent is one deeper than its caller, fresh or fork | two counts: a fork of a fresh subagent of a fork would escape both |
 | A subagent's ceiling | counts the subagent and every subagent under it | its own requests alone: a fork that forks again would spend past it |
-| A subagent with no model | runs its caller's model, connection and effort, at its first turn and at each later one (below) | routing every subagent's model through the authorizer: a new question at every start, and a helper most often needs only the model the person chose |
+| A subagent with no model | runs its caller's model, connection and effort, at its first turn and at each later one (below) | routing every subagent's model through the authorizer: a new question at every start, and a subagent most often needs only the model the person chose |
 | A routine's run from its conversation | a session fork of that conversation at the turn that set the routine up, every run | continuing the conversation (086's `session.target`): it grows by every run; a new session (today): it holds the ask and nothing the conversation established |
 | A proposal's default | `startFrom: ask`, today's new session; the agent asks for `conversation` when the run needs it | `conversation` by default: a run's first request pays for the whole conversation at the full input price, since no cache lives from one run to the next |
 | A conversation gone before a firing | the firing starts a new session and its message says so | skipping the run: the person deleted a conversation, not their routine |
@@ -325,7 +325,7 @@ to it:
 | Item | Recommended | Weighed against, and why not |
 |---|---|---|
 | The model at a later turn | the caller's model at that turn: it is always one the session may use, so following it reaches nothing the session does not hold, needs no second connection, and goes where the person or the authorizer moved the session | the model the subagent started on (built): after a failover within a turn ([[051-a-turn-moves-off-a-model-that-cannot-serve]]), a subagent started before it goes back to the model that failed; on the hosted runner, after the authorizer moves the session to another model, the old one cannot be connected once the session's key no longer lists it, and the call stops with an error. Falling back to the caller's model only when the old one fails to connect: two paths, and a model that failed over may still connect and fail again at its first request |
-| The effort | follows the caller's current effort, unrecorded, as built | recorded in `thread.started` and kept for the subagent's life: a member and a pin that keep a helper at a level the person has since changed, while its model already follows the caller |
+| The effort | follows the caller's current effort, unrecorded, as built | recorded in `thread.started` and kept for the subagent's life: a member and a pin that keep a subagent at a level the person has since changed, while its model already follows the caller |
 
 A change of model between a subagent's turns is encoded as
 [[007-models]] encodes a change of the session's model to another
@@ -433,7 +433,7 @@ Latere Chat the first caller:
 
 | Need | Why |
 |---|---|
-| The managed agent's definition carries subagents and `threads`, and a version names a helper that leaves its model out | step 1: subagents for an agent that runs on a routed name |
+| The managed agent's definition carries subagents and `threads`, and a version names a subagent that leaves its model out | step 1: subagents for an agent that runs on a routed name |
 | A later version names `agent` among its tools, so its subagents include `fork`, with instructions on when a fork beats a fresh subagent (the task needs what the conversation read) and when neither is worth it | step 2 |
 | The authorizer answers `session.fork` asked for a firing as it answers a firing's create | step 3 |
 
@@ -442,7 +442,7 @@ Latere Chat the first caller:
 | Need | Why |
 |---|---|
 | A routine's `startFrom`, read and written, and kept through a change | a client shows whether a routine's runs start from the conversation, and offers the choice |
-| A subagent's kind (fresh, or `fork` by `thread.started`'s `context`), its caller and its ceiling, read from `thread.started` | a client shows the helpers a conversation started and what each may spend |
+| A subagent's kind (fresh, or `fork` by `thread.started`'s `context`), its caller and its ceiling, read from `thread.started` | a client shows the subagents a conversation started and what each may spend |
 
 ## Not in this spec
 
