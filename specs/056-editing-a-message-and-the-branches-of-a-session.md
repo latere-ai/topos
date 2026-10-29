@@ -6,7 +6,7 @@ depends_on: [017-external-runners-handoff-fork.md, 038-routed-models.md]
 affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, authorizer/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -92,7 +92,7 @@ to `before_seq - 1` and the replacement takes the message's place.
 
 | Rule | Value |
 |---|---|
-| What `before_seq` names | a `user.message` of the session's own thread (no `thread`), whose sender's `kind` is `person`, and which opened a turn: no `session.status` of the session's own thread lies between it and the last one before it that is `idle`, or the log holds no status of the own thread before it |
+| What `before_seq` names | a `user.message` of the session's own thread (no `subagent`), whose sender's `kind` is `person`, and which opened a turn: no `session.status` of the session's own thread lies between it and the last one before it that is `idle`, or the log holds no status of the own thread before it |
 | What is copied | events 1 to `before_seq - 1`, verbatim, with the blobs they name and the agent's bundle, as [[017-external-runners-handoff-fork]] copies; this includes what lies between the last turn boundary and the message, such as a `session.model_changed` the person made before sending it |
 | The session's opening message | a message no status precedes copies nothing: the fork's `parent` is `{session_id, seq: 0}`, its log is empty, its status `idle` with no stop reason and its turn 0 |
 | Anything else | `invalid_fork_point`: a sequence that is not such a message, a message sent while a turn ran (it steered a turn and opened none), a trigger's or a service's message, an answer, a confirmation |

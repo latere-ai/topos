@@ -13,8 +13,8 @@ send the answer. Everything here is on the wire of `/v1`.
 
 An agent holds the tool when its manifest names it, and only on a
 server's hosted runner, which keeps triggers. A local `topos run` refuses
-an agent that names it. A subagent's thread never holds it: the thread
-that talks with the person offers.
+an agent that names it. A subagent never holds it: the agent that talks
+with the person offers.
 
 ```yaml
 spec:

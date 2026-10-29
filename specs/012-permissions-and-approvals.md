@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -294,7 +294,7 @@ a hook the agent could tamper with can only fail to narrow, which the
 boundary still bounds. It receives one JSON object on stdin:
 
 ```json
-{"event":"pre_tool_use","session_id":"ses_...","thread":null,"turn":3,"step":7,
+{"event":"pre_tool_use","session_id":"ses_...","subagent":null,"turn":3,"step":7,
  "tool":{"name":"bash","tool_use_id":"toolu_01","input":{"command":"make deploy"}},
  "risk":{"score":0.5,"source":"rules/1"},"verdict":"ask","mode":"progressive",
  "machine":{"kind":"host","workdir":"/home/p/src/app"}}

@@ -83,7 +83,7 @@ The agent asks for one of three reads:
   result returned is named by the file it was read from, not shown.
 - It reads events as they were written: a clearing or a summary changes
   nothing it returns, and a summary itself is left out.
-- It reads only the conversation of the thread that calls it, up to the
+- It reads only the conversation of the agent that calls it, up to the
   call. A subagent reads its own task and work, never the session's
   conversation.
 - An event removed from the session, such as a message holding a secret,

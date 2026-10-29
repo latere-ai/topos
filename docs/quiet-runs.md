@@ -12,7 +12,7 @@ A trigger says, in `spec.session.notify`, whether every turn its firings
 begin brings its result to the person (`always`, the default) or the
 agent decides (`judged`). A wake's turn is judged whatever its trigger
 says. An agent decides with the `notify` tool, which its manifest names
-and every runner offers to the session's own thread:
+and every runner offers to the session's own agent, not to a subagent:
 
 ```yaml
 spec:

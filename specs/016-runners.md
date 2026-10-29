@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -118,7 +118,7 @@ one (`ErrNotFound`).
    [[064-files-an-answer-links]]).
 6. Idle: `Release(false)` on the machine, then release the lease. A
    waiting session holds nothing.
-7. Ended: append `thread.ended` for each thread that has not ended,
+7. Ended: append `subagent.ended` for each thread that has not ended,
    `Release(true)` on the machine, then release the lease.
 
 ### Recovery of a step without results

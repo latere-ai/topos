@@ -6,7 +6,7 @@ depends_on: [005-harness-loop.md, 007-models.md, 008-tools.md, 039-questions.md,
 affects: [harness/, session/, prompts/, runner/, internal/runnerapi/, internal/server/, internal/hosted/, cmd/toposd/, authorizer/doc.go, api/openapi.yaml, docs/questions.md]
 effort: medium
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -221,7 +221,7 @@ holds a word of the response:
 | Attribute | Value |
 |---|---|
 | `msg` | `a response wrote a tool call as text` |
-| `session`, `thread`, `turn`, `step` | where it happened; `thread` empty on the session's own |
+| `session`, `subagent`, `turn`, `step` | where it happened; `subagent` empty on the session's own |
 | `model` | the model that wrote it |
 | `tool` | the offered tool it wrote a call of |
 | `action` | `reminded`, at info; `moved`, at info, with `to`, the model moved to; `kept`, at warn, with `why`, what kept the answer |

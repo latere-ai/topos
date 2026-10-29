@@ -6,7 +6,7 @@ depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, .archive/006
 affects: [harness/, harness/tools/, session/, manifest/v1/, manifest/, internal/server/, internal/store/, internal/runnerapi/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -57,7 +57,7 @@ the table that opens the design weighs each against its alternative.
   `too_many_threads` and is not queued, so a fan-out of fifty is
   batched by the model by hand.
 - A thread's cost is in the log: every `model.request` carries its
-  `thread` and `cost_usd_micro`, and `thread.ended` sums them. Nothing
+  `subagent` and `cost_usd_micro`, and `subagent.ended` sums them. Nothing
   indexes it across sessions. A trigger's runs are recorded with their
   cost ([[088-a-triggers-runs-and-fire-times-read-for-a-forecast]]);
   no other unit of work is.
@@ -166,7 +166,7 @@ most `MaxForkTask` characters ([[091-a-fork-of-the-conversation]]).
 
 A node of a phase that `returns: items` whose final text is not a JSON
 array of strings of at most the reading phase's `maxItems` is sent one
-`thread.message` of `prompts/results/workflow/items.md`, which says what
+`subagent.message` of `prompts/results/workflow/items.md`, which says what
 was wrong and asks for the array alone; a second failure records the
 node failed. An output longer than `MaxNodeOutput` (16 KiB) is cut where
 a combining node reads it, and the cut is said.
@@ -269,7 +269,7 @@ once, and ends when every node has an output or has failed.
 | `workflow.phase_ended` | the runner | `run`, `phase`, `ok`, `failed`, `items` (the items returned, for `returns: items`) |
 | `workflow.ended` | the runner | `run`, `reason`: `completed`, `budget`, `interrupted`, `timeout` or `failed`; `spent_usd_micro`; the counts |
 
-`run` is the id of `workflow.started`. Each node's `thread.started`
+`run` is the id of `workflow.started`. Each node's `subagent.started`
 gains `workflow: {run, phase, index, item?}`, and its depth is the
 calling thread's plus one, so a node may start subagents under the depth
 limit, and what that spends is the run's.

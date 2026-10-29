@@ -168,7 +168,7 @@ again. The session goes on in each case:
 While a session has an available connection, the system prompt lists
 each one, a line apiece, apart from the connected ones, and says the
 agent may ask the person to connect one when the task needs it. The
-agent of the session's own thread is offered the tool
+session's own agent, not a subagent, is offered the tool
 `request_connection`, with `name`, the service's name, and `reason`, a
 sentence of at most 200 characters that says what it needs the service
 for. A call appends `connection.requested` after its result:
@@ -187,8 +187,8 @@ answers an error naming the ones that are, and appends nothing.
 
 A session on a host machine is not told of an available `http`
 connection, since connecting it would give the session nothing, and is
-not offered the tool for it. A thread the agent started works from its
-task and is told of no available service; the agent that holds the
+not offered the tool for it. A subagent the agent started works from
+its task and is told of no available service; the agent that holds the
 conversation asks.
 
 ## What the installation lets its identity provider mint

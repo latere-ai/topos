@@ -83,7 +83,7 @@ it:
   read it: nothing reads `budget` until the ceiling below is built. No
   thread has a ceiling of its own: the harness checks the session's
   spend against the session's ceiling before each request
-  (`checkBudget`), whichever thread sends it. `thread.started` has a
+  (`checkBudget`), whichever thread sends it. `subagent.started` has a
   `budget` member that nothing writes.
 - Through v0.58.0 every subagent's spec had to name `model.name`, and
   the subagent's model was connected by that name when the drive
@@ -152,7 +152,7 @@ none to choose: it runs its caller's. The tool's description says, in
 one sentence each, that a fork continues this conversation on its
 model and that a fork's `tools` narrow what it runs.
 
-An `agent` call with `subagent: fork` appends `thread.started` with the
+An `agent` call with `subagent: fork` appends `subagent.started` with the
 members 013 gives it and three more:
 
 | Member | Meaning |
@@ -234,8 +234,8 @@ is:
 1. its caller's fold through the event at `from.seq`, by the caller's
    rules, with the caller's clearings and summaries whose range ends at
    or before `from.seq`;
-2. the opening message, rendered from `thread.started`;
-3. the events whose `thread` is the fork's, by the rules of any thread.
+2. the opening message, rendered from `subagent.started`;
+3. the events whose `subagent` is the fork's, by the rules of any thread.
 
 Nothing is copied. A compaction of the fork's own thread
 ([[010-context]]) may cover the events it inherited, by sequence, as it
@@ -290,14 +290,14 @@ A subagent may have a ceiling of its own, in USD micros, the least of:
 | the caller's ceiling, when it has one | what is left of it when the subagent starts |
 
 A thread's spend is the cost of every `model.request`, and every tool
-result a service charged for ([[007-models]]), whose `thread` is the
-thread or a thread under it. Before each request, the harness checks
+result a service charged for ([[007-models]]), whose `subagent` is the
+subagent or one under it. Before each request, the harness checks
 the thread and each thread above it that has a ceiling: its spend, plus
 the next request's input estimate of 007's check, against its ceiling.
 At a ceiling, the requesting thread's turn ends with stop reason
 `budget` and detail `subagent_budget`, and the call that drove it is
 answered with the error that names it. The session's own ceiling still
-holds over every thread. `thread.started` records the ceiling as
+holds over every thread. `subagent.started` records the ceiling as
 `budget: {max_cost_usd_micro}`, absent when the thread has none.
 
 The rule is the same for fresh subagents and forks, and is the one
@@ -310,7 +310,7 @@ caller's thread stands on, with that thread's connection, figures and
 effort. The session's permissions already name that model, so its
 create's question is unchanged. A referenced agent keeps its own model,
 and a subagent that names a model is connected by that name, as today.
-`thread.started` records the model the subagent started on in `model`
+`subagent.started` records the model the subagent started on in `model`
 and records no effort; each `model.request` records the model it was
 sent with, and the request it keeps holds the effort.
 
@@ -325,7 +325,7 @@ to it:
 | Item | Recommended | Weighed against, and why not |
 |---|---|---|
 | The model at a later turn | the caller's model at that turn: it is always one the session may use, so following it reaches nothing the session does not hold, needs no second connection, and goes where the person or the authorizer moved the session | the model the subagent started on (built): after a failover within a turn ([[051-a-turn-moves-off-a-model-that-cannot-serve]]), a subagent started before it goes back to the model that failed; on the hosted runner, after the authorizer moves the session to another model, the old one cannot be connected once the session's key no longer lists it, and the call stops with an error. Falling back to the caller's model only when the old one fails to connect: two paths, and a model that failed over may still connect and fail again at its first request |
-| The effort | follows the caller's current effort, unrecorded, as built | recorded in `thread.started` and kept for the subagent's life: a member and a pin that keep a subagent at a level the person has since changed, while its model already follows the caller |
+| The effort | follows the caller's current effort, unrecorded, as built | recorded in `subagent.started` and kept for the subagent's life: a member and a pin that keep a subagent at a level the person has since changed, while its model already follows the caller |
 
 A change of model between a subagent's turns is encoded as
 [[007-models]] encodes a change of the session's model to another
@@ -395,8 +395,8 @@ the conversation established and the ask cannot carry it.
 | Name | Kind | Defined here |
 |---|---|---|
 | `subagent: fork` | a value of the `agent` tool's input ([[013-threads-and-subagents]]) | its inputs and result |
-| `thread.started.context`, `.from`, `.grant` | event members | a fork's |
-| `thread.started.budget` | event member, written from now | a subagent's ceiling |
+| `subagent.started.context`, `.from`, `.grant` | event members | a fork's |
+| `subagent.started.budget` | event member, written from now | a subagent's ceiling |
 | `subagent_budget` | `detail` of stop reason `budget` | a subagent's ceiling reached |
 | `withheld_from_fork` | error code | a fork's call of a tool outside its grant |
 | `MaxForkTask` | constant, 8000 | the most characters a fork's `task` holds, which the `agent` tool's check holds it to |
@@ -442,7 +442,7 @@ Latere Chat the first caller:
 | Need | Why |
 |---|---|
 | A routine's `startFrom`, read and written, and kept through a change | a client shows whether a routine's runs start from the conversation, and offers the choice |
-| A subagent's kind (fresh, or `fork` by `thread.started`'s `context`), its caller and its ceiling, read from `thread.started` | a client shows the subagents a conversation started and what each may spend |
+| A subagent's kind (fresh, or `fork` by `subagent.started`'s `context`), its caller and its ceiling, read from `subagent.started` | a client shows the subagents a conversation started and what each may spend |
 
 ## Not in this spec
 
@@ -475,4 +475,4 @@ a runner; the words a client shows.
 | `subagent` holds `fork` only for an agent whose `spec.tools` names `agent`, which is offered the tool with no subagents too | `harness.TestForkIsOfferedWhenTheAgentNamesTheTool` | not built |
 | The `agent` tool's description names `fork` beside the subagents, says in one sentence each that a fork continues the conversation on its model and that its `tools` narrow what it runs, holds to `MaxForkTask`, and names the tools a fork does not run; a fork's longer task is `invalid_input`, and a fresh subagent's task has no such bound | `harness.TestForkTextsReadTheirBounds`, `harness.TestAForksTaskIsBounded` | not built |
 | An instruction task: a task that splits into parts that each need what the conversation read is forked per part and combined; a part that needs nothing of it goes to a fresh subagent or is done directly | `test/tasks/instructions/fork/` on the task suite's pinned model ([[025-task-suite]]) | not built |
-| The OpenAPI document describes the Trigger's fields and `thread.started`'s members | `internal/server.TestTheDocumentDescribesSpec091` | not built |
+| The OpenAPI document describes the Trigger's fields and `subagent.started`'s members | `internal/server.TestTheDocumentDescribesSpec091` | not built |

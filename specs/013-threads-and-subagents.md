@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, harness/tools/, manifest/, prompts/advisor/, prompts/harness/, prompts/results/threads/, prompts/tools/, test/tasks/threads/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -70,38 +70,39 @@ calls `agent`.
 
 ### Subagents in the log
 
-In the log a subagent's conversation is a **thread**, and this design
-says thread where it means that record. A thread is identified by the
-id of its `thread.started` event, whose own `thread` field names it; the
-session's own conversation is the thread with none
-([[004-session-log]]). An event's `thread` is the thread whose
-transcript it renders into: a thread's own events carry its id, and a
-`thread.message` carries the receiving thread's. The events of threads
-running at once interleave in sequence order, and each thread's
-transcript is folded from its own events.
+A subagent is identified by the id of its `subagent.started` event,
+whose own `subagent` field names it; the session's own conversation has
+none ([[004-session-log]]). An event's `subagent` is the subagent whose
+transcript it renders into: a subagent's own events carry its id, and a
+`subagent.message` carries the receiving subagent's. The events of
+subagents running at once interleave in sequence order, and each
+subagent's transcript is folded from its own events.
 
-The event types `thread.started`, `thread.message` and `thread.ended`,
-the `thread` member of every event, and the manifest's `spec.threads`
-keep their names. Every stored session's log holds them, a fold and a
-replay read them byte for byte, the SDK and every client read them, and
-no model reads an event's type or a manifest's field names: the fold
-renders a subagent's events into its transcript as messages and calls.
-Renaming them would change no word a model reads and would need a
-migration of every log.
+The event types are `subagent.started`, `subagent.message` and
+`subagent.ended`, and the member of every event and of every stream
+delta that names its subagent is `subagent`, after the names Claude
+Code's hooks give the same moments, `SubagentStart` and `SubagentStop`.
+Through v0.59.0 they were `thread.started`, `thread.message`,
+`thread.ended` and `thread`, a word for how a runtime works and not
+for what a reader sees. They are renamed with no compatibility: no
+reader takes the old names, and the stores rename what they hold, the
+Postgres store with a migration of its events and a data directory the
+first time `toposd` opens it, so a log written before reads and replays
+as one written after. The manifest's `spec.threads` keeps its name.
 
-A thread's status is derived from the log:
+A subagent's status is derived from the log:
 
 | Status | When |
 |---|---|
-| `running` | between a `thread.started` or `thread.message` addressed to it and the `tool.result` of the caller's call that drove it |
+| `running` | between a `subagent.started` or `subagent.message` addressed to it and the `tool.result` of the caller's call that drove it |
 | `idle` | after that result, waiting for a message |
-| `ended` | after its `thread.ended` |
+| `ended` | after its `subagent.ended` |
 
 ### Which subagents an agent may start
 
-A thread may start only the subagents its agent's `spec.subagents`
-names ([[003-manifest]]), each a reference to another agent or an
-inline definition. The harness offers `agent` to a thread below the
+An agent may start only the subagents its `spec.subagents` names
+([[003-manifest]]), each a reference to another agent or an inline
+definition. The harness offers `agent` to a conversation below the
 depth limit whose agent names at least one subagent. When the agent's
 `spec.tools` names `agent`, the tool's `subagent` input holds `fork`
 beside the subagents' names, and the tool is offered to an agent with
@@ -110,14 +111,14 @@ does not name it starts fresh subagents alone. `fork` is that value and
 no subagent's name: a manifest whose `spec.subagents` names `fork` is
 refused at resolve.
 
-A subagent is a thread of the session, never a second principal in
+A subagent is a conversation of the session, never a second principal in
 it: it acts with the session's credentials and spends the session's
 budget, whoever owns the agent it names. A referenced agent contributes
 its instructions, tools, model, approvals, hooks, skills, subagents,
 advisor, threads and context settings, each narrowed as the table below
 says. Its `identity`, `permissions`, `model.credential`, `connections`,
 `memoryStores`, `repositories` and `machine` are not used, and
-`thread.started` lists the ones the referenced agent declares in
+`subagent.started` lists the ones the referenced agent declares in
 `ignored`, so a reader of the log sees that the subagent did not act as
 that agent. Reaching another agent's own authority is starting a
 session of that agent, which the installation's authorizer decides and
@@ -140,8 +141,8 @@ The names follow the tool Claude Code gives a model for the same work,
 `Agent`, whose `subagent_type` names a defined subagent or `fork`
 ([[008-tools]]).
 
-An `agent` call appends `thread.started` with the subagent's agent, its
-caller's thread as `parent`, the call's `tool_use_id`, the task, the
+An `agent` call appends `subagent.started` with the subagent's agent, its
+caller's id as `parent`, empty for the session's own conversation, the call's `tool_use_id`, the task, the
 isolation, its working directory and branch, its depth, its model and
 the tools and budget it holds after narrowing, then runs the
 subagent's first turn with the same loop ([[005-harness-loop]]) on the
@@ -163,7 +164,7 @@ caller's call waits with it.
 
 `to` and `message` are the inputs of Claude Code's `SendMessage`, which
 reaches a subagent and another session alike. A `send_message` call to
-a subagent appends `thread.message` from the caller to the subagent and
+a subagent appends `subagent.message` from the caller to the subagent and
 runs the subagent's next turn; the call's result is the subagent's
 final text. A subagent receives messages only from the one that started
 it; messages between siblings are not built. A message to another of
@@ -172,7 +173,7 @@ turn and returns at once; when the tool may send one and how such a
 call is decided are
 [[092-a-persons-sessions-that-see-each-others-work]]. A message is
 data: it changes nothing the receiving subagent may do. With `end`, or
-when the session ends, the runner appends `thread.ended` with the
+when the session ends, the runner appends `subagent.ended` with the
 subagent's final text, usage and cost.
 
 ### The names before `agent` and `send_message`
@@ -211,7 +212,7 @@ harness's tool of that name.
 With `isolation: worktree` the subagent works in a git worktree of its
 own on the session's machine, branched from the HEAD commit of the
 caller's working directory, on the branch
-`agents/<agent>/<session>.<thread>`, created as [[009-machines]]
+`agents/<agent>/<session>.<subagent>`, created as [[009-machines]]
 creates a session's. The caller's uncommitted changes are not in it,
 and the call's result says so when there are any. At the end of each
 of the subagent's turns the harness commits the worktree's changes to
@@ -229,10 +230,10 @@ refuses `worktree` with `isolation_unavailable`.
 | tools | the intersection of the caller's tools, the subagent's declared tools, and the call's `tools`; an empty intersection is no tools. A fork narrows what it may run instead ([[091-a-fork-of-the-conversation]]) |
 | permission mode | the stricter of the caller's and the subagent's, strictest first `plan`, `confirm`, `progressive` |
 | lists and thresholds | an `always_allow` within the caller's, an `always_confirm` that contains the caller's, thresholds no higher than the caller's ([[012-permissions-and-approvals]]) |
-| budget | at most the caller's remaining budget, and the call's `budget` or the subagent's `budget.maxCost` when lower; its spend counts toward every caller above it and is attributed to the thread by its id in the ledger ([[023-events-and-observability]]) |
+| budget | at most the caller's remaining budget, and the call's `budget` or the subagent's `budget.maxCost` when lower; its spend counts toward every caller above it and is attributed to the subagent by its id in the ledger ([[023-events-and-observability]]) |
 | machine | the caller's; a subagent cannot get another machine |
 | credentials | the session's; a subagent acts with nothing the session does not hold, and a referenced agent's identity, permissions, credential and connections are ignored ([[018-credentials-and-secrets]]) |
-| model | the subagent's own, whose family the thread pins when it starts ([[007-models]]) |
+| model | the subagent's own, whose family the subagent pins when it starts ([[007-models]]) |
 
 A subagent cannot call a tool it was not granted, whatever the model
 asks: the call is answered `unknown_tool` and nothing runs.
@@ -255,9 +256,9 @@ instructions on these tools.
 
 An agent whose `spec.advisor` names a model is offered the `advisor`
 tool, with one optional input, `question`. The first call appends a
-`thread.started` for the advisor: the agent `advisor`, isolation
+`subagent.started` for the advisor: the agent `advisor`, isolation
 `shared`, no tools, the named model and the advisor's instructions.
-Each call sends the advisor one `thread.message` holding the caller's
+Each call sends the advisor one `subagent.message` holding the caller's
 transcript rendered as text and the question, runs its turn, and
 returns its answer. The advisor sees what the caller has done and acts
 on nothing; its cost counts toward the session's budget.
@@ -282,7 +283,9 @@ The descriptions of the tools are files of `prompts/tools/`:
 `agent-v1` and `send_message-v1` replace `spawn-v1` and `message-v1`
 in every request from the rename on, and the old files stay embedded,
 so a replay rebuilds a request that carried them
-([[011-instructions-and-skills]]). `advisor-v1` is unchanged. The
+([[011-instructions-and-skills]]). `agent-v2` says "a focused subagent"
+where `agent-v1` says "a focused helper", and replaces it in every
+request after v0.59.0. `advisor-v1` is unchanged. The
 harness prompt's section on subagents is `prompts/harness/threads-v2`,
 after `threads-v1`, which names spawn and message; harness prompt
 versions 3 and 4 hold it ([[011-instructions-and-skills]]). The advisor's
@@ -314,17 +317,17 @@ subagents ([[011-instructions-and-skills]]).
 | A subagent cannot call a tool its caller lacks, with the tool neither offered nor run when the model asks for it | `TestSubagentCannotCallToolParentLacks` | not built |
 | A subagent receives a second message after its first task, continues from its own transcript, and answers it | `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | A subagent's mode, lists, thresholds and budget are never looser than its caller's | `TestNarrowingFromCallerToSubagent` as a table test | not built |
-| A subagent that names an agent with its own identity and permissions acts with the session's credentials, and its `thread.started` lists them in `ignored` | `harness.TestASubagentActsWithTheSessionsCredentials`, `manifest.TestIgnoredFieldsNameWhatAThreadDoesNotUse` | built |
+| A subagent that names an agent with its own identity and permissions acts with the session's credentials, and its `subagent.started` lists them in `ignored` | `harness.TestASubagentActsWithTheSessionsCredentials`, `manifest.TestIgnoredFieldsNameWhatAThreadDoesNotUse` | built |
 | A subagent at the depth limit is offered neither the tool that starts subagents nor the one that messages them, and a call's `tools` narrows the subagent's set | `harness.TestTheDepthLimitWithholdsSpawn` | built |
 | A forced call that starts a subagent past the limit is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `harness.TestSpawnRefusesAnUnknownSubagentAndTheDepthLimit`, `manifest.TestStrictDecodingCollectsEveryProblem` | built |
 | Several calls that start subagents in one step run concurrently, at most `maxConcurrent` at once, and each subagent's transcript holds only its own conversation | `harness.TestParallelSpawnsAndTheConcurrencyCap`, `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
-| A subagent started with `isolation: worktree` works in its own worktree on `agents/<agent>/<session>.<thread>`, each of its turns is a commit on that branch, the caller's checkout is untouched and told of its uncommitted changes, and a machine without worktrees refuses with `isolation_unavailable` | `harness.TestAnIsolatedThreadWorksOnItsOwnBranch`, `harness.TestWorktreeIsolationNeedsAMachineThatKeepsThem`, `machine/host.TestWorktrees` | built |
+| A subagent started with `isolation: worktree` works in its own worktree on `agents/<agent>/<session>.<subagent>`, each of its turns is a commit on that branch, the caller's checkout is untouched and told of its uncommitted changes, and a machine without worktrees refuses with `isolation_unavailable` | `harness.TestAnIsolatedThreadWorksOnItsOwnBranch`, `harness.TestWorktreeIsolationNeedsAMachineThatKeepsThem`, `machine/host.TestWorktrees` | built |
 | Two subagents started with `isolation: worktree` write the same file on two branches, and the caller merges both | `TestIsolatedSubagentsReturnBranches` | not built |
 | A subagent that reaches an ask pauses the session `tool_confirmation`, and after the confirmation the subagent and then its caller continue, through the call that started it and through a message, however many times it pauses | `harness.TestAPausedThreadPausesTheSessionAndResumes`, `harness.TestAPausedMessageResumes`, `harness.TestAThreadCanPauseAgainAfterResuming` | built |
 | The advisor gets the caller's transcript, has no tools, runs on the configured model, keeps one conversation across calls, and its requests count in the meter every subagent shares | `harness.TestTheAdvisorSeesTheConversationAndActsOnNothing`, `harness.TestAnAdvisorCallResumes`, `harness.TestSubagentsDoNotInheritTheAdvisor` | built |
 | A call whose subagent finished before the runner stopped yields its final text without running it again, and a call that started no subagent is closed `unknown_effect` | `harness.TestAThreadThatFinishedBeforeACrashIsNotRunAgain` | built |
 | A session whose runner is lost while two subagents run resumes both from the log on another runner | `TestSubagentsResumeAfterRunnerLoss` | not built |
-| The tools are offered as `agent`, with `subagent`, `task`, `isolation`, `tools` and `budget`, and `send_message`, with `to`, `message` and `end`, described by `tools/agent-v1` and `tools/send_message-v1`, answering `too_many_subagents` and `subagent_not_found` and the next versions of the result texts | `harness.TestTheAgentAndSendMessageTools` | built |
+| The tools are offered as `agent`, with `subagent`, `task`, `isolation`, `tools` and `budget`, and `send_message`, with `to`, `message` and `end`, described by `tools/agent-v2` and `tools/send_message-v1`, answering `too_many_subagents` and `subagent_not_found` and the next versions of the result texts | `harness.TestTheAgentAndSendMessageTools` | built |
 | Through the release that renames them, a call named `spawn` or `message` with the old inputs runs as the new tool and its `agent.tool_use` records the call as written; a call recorded under an old name and held or left open resumes as the new tool; a pattern naming an old name matches the new tool's calls; a client tool of an old name stays the client's; and an agent with subagents may not name a client tool `agent` or `send_message` | `harness.TestTheOldToolNamesRunForOneRelease`, `harness.TestACallRecordedUnderAnOldNameResumes`, `harness.TestAConfirmedCallOfAnOldNameRuns`, `harness.TestAPatternOfAnOldNameMatchesTheRenamedTool`, `harness.TestAToolOfAnOldNameIsItsOwn`, `manifest.TestAPatternNamingSpawnMatchesAgent`, `manifest.TestAClientToolMayNotTakeASubagentToolsName` | built |
 | A subagent named `fork` is refused at resolve | `manifest.TestForkIsNoSubagentsName` | not built |
 | The release after the rename refuses a call, a pattern and a recorded call of `spawn` or `message` as it refuses any unknown name | `harness.TestTheOldToolNamesAreRefused` | not built |
@@ -339,6 +342,14 @@ session, and the advisor.
 
 After v0.58.0, in no release yet: the names `agent` and `send_message`,
 their inputs, codes and texts, and the old names read for one release.
+
+After v0.59.0, in no release yet: the events `subagent.started`,
+`subagent.message` and `subagent.ended` and the `subagent` member of an
+event and a delta in place of `thread.*` and `thread`, the stored logs
+renamed in place (`internal/store/postgres` migration 0021,
+`session/dir`), and `tools/agent-v2`. The criterion is
+`internal/store/postgres.TestSubagentEventsMigrateInPlace` and
+`session/dir.TestADirectoryOfThreadEventsOpensAsSubagentEvents`.
 
 Open: the table test of narrowing from caller to subagent, the refusal
 of a tool the caller lacks, two isolated subagents merged by their

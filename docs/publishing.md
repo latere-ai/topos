@@ -216,7 +216,7 @@ refused `app_not_attached`. A release that names neither `app` nor
 `path` is refused `app_required` while previews of several apps stand,
 and in a session given apps that has published none. Each of these is
 refused before the call is decided, so nobody is asked to approve it.
-The thread keeps a standing preview per app, so releasing one app never
+The agent keeps a standing preview per app, so releasing one app never
 takes another's.
 
 An attached app is given to a session by its slug, which also names its

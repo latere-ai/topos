@@ -22,8 +22,7 @@ A turn the person's answer or confirmation resumes is theirs again.
 ## What the log records
 
 `agent.tool_use` and `approval.requested` carry `attended`: `false` on a
-turn a trigger's message began and in a subagent's thread that turn
-drove, `true` on a turn a person began. Events written before this field
+turn a trigger's message began and in a subagent that turn drove, `true` on a turn a person began. Events written before this field
 carry none.
 
 A decision service is told the same in the action it predicts and

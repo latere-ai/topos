@@ -37,10 +37,10 @@ to 20.
 - A message matches when it holds every word of `q`.
 
 What is searched is the text a person sees in the conversation: the text
-of a message's blocks and of an answer, on the session's own thread,
+of a message's blocks and of an answer, in the session's own conversation,
 read as rendered markdown, so `**bold**` is "bold" and a link is its
 label without its address. A message is searched in its first 64 KiB. A
-tool's output, the model's thinking, a subagent's thread, a file and a
+tool's output, the model's thinking, a subagent's conversation, a file and a
 redacted message are never searched.
 
 ## The answer

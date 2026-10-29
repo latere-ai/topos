@@ -6,7 +6,7 @@ depends_on: [016-runners.md, 044-reading-a-sessions-files.md]
 affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -83,7 +83,7 @@ sequenceDiagram
 ### Which images
 
 The runner reads the text blocks of each `agent.message` of the
-session's own thread (no `thread`) with a CommonMark parser, so a
+session's own thread (no `subagent`) with a CommonMark parser, so a
 reference inside a code span or a fenced block is text and not an
 image.
 

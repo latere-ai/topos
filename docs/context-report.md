@@ -32,7 +32,7 @@ a model for the session's title records none.
 ## On the session
 
 The Session's `context_report` is the `context` of the latest request of
-the session's own thread, absent before any. A subagent's requests and a
+the session's own conversation, absent before any. A subagent's requests and a
 title's leave it. It is not the Session's `context`, which holds the
 text an allow attached at create. The sessions list answers it as it
 answers every Session field.

@@ -6,7 +6,7 @@ depends_on: [.archive/004-session-log.md, 008-tools.md, 010-context.md, 013-thre
 affects: [harness/, harness/tools/, session/, prompts/, manifest/, test/tasks/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-19
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -159,7 +159,7 @@ build differs from the design as written, or adds to it:
 - **A thread holds it as it holds a built-in.** The session's own thread
   holds it, and a fresh subagent when the names it was started with do,
   which a subagent's tools and an `agent` call's `tools` narrow, and
-  which its `thread.started` records. The advisor holds none. A client
+  which its `subagent.started` records. The advisor holds none. A client
   tool of the name, which an agent stored before the name was reserved
   may hold, stays the client's, and its thread reads every text as
   without the tool. A history call a runner stopped under is run again
@@ -169,7 +169,7 @@ build differs from the design as written, or adds to it:
   read and none of their results, however the step's calls run.
 - **A subagent's task and its caller's messages are entries.** The
   spec's list names a person's messages; a subagent's conversation opens
-  with its `thread.started` task and goes on with `thread.message`, so
+  with its `subagent.started` task and goes on with `subagent.message`, so
   both read back, headed "The agent that started you as its subagent
   gave you this task:" (`results/history/head-v2`, after v0.58.0;
   `head-v1` said "The thread that started you") and "<agent> wrote:".

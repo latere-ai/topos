@@ -53,9 +53,9 @@ Each item is one sender, in subject order:
 
 | Count | What it counts |
 |---|---|
-| `messages` | the messages a person sent that day on a session's own thread, by the client that sent each; a trigger's message, a subagent's and one later redacted are not counted |
+| `messages` | the messages a person sent that day in a session's own conversation, by the client that sent each; a trigger's message, a subagent's and one later redacted are not counted |
 | `sessions` | the sessions a person created that day, by the client that created each; a session a trigger started is not counted, and a fork is one its caller created |
-| `answers` | the turns of the day that ended normally on a session's own thread, each counted for the person whose message the turn answered; a turn that stopped on an error, a limit, an interrupt, a question or an approval is not counted |
+| `answers` | the turns of the day that ended normally in a session's own conversation, each counted for the person whose message the turn answered; a turn that stopped on an error, a limit, an interrupt, a question or an approval is not counted |
 
 A rollout's runs count for no one. A sender with none of the three that
 day is not on the page.

@@ -6,7 +6,7 @@ depends_on: [.archive/004-session-log.md, .archive/006-identity.md, .archive/014
 affects: [session/, authorizer/, internal/auth/, internal/server/, internal/store/postgres/, api/openapi.yaml, docs/configuration.md, docs/activity.md]
 effort: medium
 created: 2026-10-21
-updated: 2026-10-21
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -38,12 +38,12 @@ caller the authorizer allows.
   sender. `internal/auth.Caller.Claims` holds the token's claims
   verbatim and nothing reads a client from them.
 - A trigger's message has a sender of kind `trigger` and a `firing_id`
-  (spec 022). A message of a session's own subagent threads has a
-  `thread`.
+  (spec 022). A message of one of the session's subagents has a
+  `subagent`.
 - A turn ends with a `session.status` on the session's thread: `idle`
   with a stop reason, or `ended` with `completed` for an agent that ends
   on idle.
-- The Postgres store keeps events with `type`, `time`, `thread` and the
+- The Postgres store keeps events with `type`, `time`, `subagent` and the
   payload as text, keyed by session and sequence, with no index on time.
 
 ## Design
@@ -87,7 +87,7 @@ request, like the sender's subject.
 ```
 
 - **messages** counts the `user.message` events of the day on a
-  session's own thread (`thread` empty) whose sender is of kind
+  session's own thread (`subagent` empty) whose sender is of kind
   `person`, that carry no `firing_id` and are not redacted, by the
   sender's client. A message of a trigger, of a subagent's thread, or
   one later redacted is not a message a person sent that day.

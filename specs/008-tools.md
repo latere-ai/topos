@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
@@ -259,7 +259,7 @@ tool, or a tool renamed, is named by these rules, in order:
 `history`, `advisor` and `trigger`. A renamed tool's old name keeps
 working for one release, as [[013-threads-and-subagents]] keeps `spawn`
 and `message`. A word of the log or the API that stays
-(`thread.started`, a Session's `writer`) is explained where its spec
+(a Session's `writer`) is explained where its spec
 names it, and no text a model reads uses it. The descriptions
 `read-v2` and `read-v3`, `write-v2`, `edit-v2`, `bash-v2` and `todo-v1`
 said "this thread"; their next versions, `read-v4` and `read-v5`,

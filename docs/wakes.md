@@ -12,8 +12,8 @@ the wire of `/v1`.
 
 An agent holds the tool when its manifest names it, and only on a
 server's hosted runner, which keeps the trigger a wake is. A local
-`topos run` refuses an agent that names it, and a subagent's thread never
-holds it.
+`topos run` refuses an agent that names it, and a subagent never holds
+it.
 
 ```yaml
 spec:
