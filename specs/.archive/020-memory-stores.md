@@ -1,16 +1,22 @@
 ---
 title: "Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts"
-status: drafted
+status: superseded
 track: core
 depends_on: [002-scaffold-and-configuration.md, 003-manifest.md, 004-session-log.md, 008-tools.md, 009-machines.md, 018-credentials-and-secrets.md]
 affects: [memory/, memory/dir/, memory/arca/, runner/, harness/tools/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-29
 author: changkun
 ---
 
 # Memory stores
+
+> Superseded on 2026-10-29 by [[093-memory-folders-the-file-tools-reach]],
+> never built. Memory is folders of a files store that an allow names and
+> the file tools reach through the runner, so nothing is synced into a
+> machine and no store resource exists. A developer's store resource can
+> return later as a layer that names such folders.
 
 ## Overview
 

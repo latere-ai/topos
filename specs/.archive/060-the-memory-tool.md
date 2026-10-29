@@ -1,16 +1,21 @@
 ---
 title: "The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the session's start through its allow's context"
-status: drafted
+status: superseded
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 008-tools.md, 012-permissions-and-approvals.md, 016-runners.md, 018-credentials-and-secrets.md, 020-memory-stores.md, 025-task-suite.md, 047-web-search.md, 058-what-a-create-allow-attaches.md]
 affects: [harness/tools/, harness/memory/, internal/memoryservice/, harness/, session/, manifest/, prompts/, internal/hosted/, internal/config/, internal/toposcli/, cmd/toposd/, test/tasks/, docs/]
 effort: medium
 created: 2026-10-07
-updated: 2026-10-25
+updated: 2026-10-29
 author: changkun
 ---
 
 # The memory tool
+
+> Superseded on 2026-10-29 by [[093-memory-folders-the-file-tools-reach]],
+> never built. Memory is files the file tools reach, not entries behind a
+> service, and the session reads what the installation puts in a
+> `context` part at its start, as this spec had it.
 
 ## Overview
 

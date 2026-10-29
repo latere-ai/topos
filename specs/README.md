@@ -76,7 +76,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [017](017-external-runners-handoff-fork.md) | External runners, handoff and fork: the append route, one program appending to a session at a time, the messages waiting for it, and moving a session between a developer's program and the hosted runners | large | in-progress | 004, 016, 034 |
 | [018](018-credentials-and-secrets.md) | Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope | large | in-progress | 001, 002, 003, 004, 006, 009 |
 | [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | in-progress | 001, 002, 004, 009, 018 |
-| [020](020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | drafted | 002, 003, 004, 008, 009, 018 |
+| [020](.archive/020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | superseded by 093 | 002, 003, 004, 008, 009, 018 |
 | [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | in-progress | 003, 008, 009, 012, 018 |
 | [022](.archive/022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | complete | 003, 004, 006, 014 |
 | [023](023-events-and-observability.md) | Events and observability: the content-free sink, spans derived from the log, metrics | medium | drafted | 002, 004, 006, 014, 015 |
@@ -115,7 +115,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [057](057-a-sessions-metadata-in-its-questions-and-lists.md) | A session's metadata in its questions and lists: the create and fork questions carry it, a list filters by one entry, and a PATCH merge files a session elsewhere with no event | small | testing | 004, 006, 014, 015, 023, 054, 056 |
 | [058](058-what-a-create-allow-attaches.md) | What a create's allow attaches: repositories with the app each publishes, checked out at the app's live commit, read-only files the runner fetches with the session's token, and context text, each fixed for the session's life | medium | in-progress | 004, 006, 010, 011, 015, 016, 018, 019, 043, 053, 057 |
 | [059](059-publishing-to-a-chosen-app.md) | Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work it lacks, a standing preview per app, and a change put live with one approval | medium | testing | 008, 012, 019, 043, 058 |
-| [060](060-the-memory-tool.md) | The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the start through the allow's context | medium | drafted | 003, 004, 008, 012, 016, 018, 020, 025, 047, 058 |
+| [060](.archive/060-the-memory-tool.md) | The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the start through the allow's context | medium | superseded by 093 | 003, 004, 008, 012, 016, 018, 020, 025, 047, 058 |
 | [061](061-a-messages-shape-and-the-route-an-allow-names.md) | A message's shape and the route an allow names: a send tells the authorizer how long the message is, what it attaches and links, and whether the last turn ran a tool, and an allow may name the routed name it chose on the way to the model, which the session keeps beside it | small | testing | 004, 006, 015, 038, 051, 056 |
 | [062](062-a-tool-call-written-as-text.md) | A tool call written as text: a response that writes a call of an offered tool into its text instead of calling it is not kept, its model is reminded once, a routed turn whose model does it again moves once, and the log says which | medium | testing | 005, 007, 008, 039, 051 |
 | [063](063-a-messages-opening-for-an-authorizer-that-routes-by-it.md) | A message's opening for an authorizer that routes by it: an allow may ask for each later message's opening, which the session keeps beside its route under the operator's ceiling; and a message may say its client shows an authorizer's ask, and name the ask it answers | medium | testing | 006, 015, 038, 056, 061 |
@@ -146,6 +146,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [090](090-a-trigger-that-fires-at-a-list-of-times.md) | A trigger that fires at a list of times: `spec.times` lists 1 to `MaxTimes` instants, each fired once as a trigger's single `at` is, late past `maxAge` or once the next listed time comes, a refusal that resets waiting no later than the next time, the latest time's firing spending the trigger, past times kept and never fired, the runs read answering `fires_on: times`, and the trigger tool keeping the list | medium | testing | 022, 086, 087, 088 |
 | [091](091-a-fork-of-the-conversation.md) | A fork of the conversation: the `agent` tool's `subagent: fork` starts a subagent that continues its caller's conversation on the caller's model and effort, with its tool definitions and system prompt byte for byte, so its first request reads the caller's cached prefix; narrowing when a call runs; one depth count; a subagent's own ceiling; a subagent that runs its caller's model; a trigger whose sessions start as a fork of the conversation that set it up | large | in-progress | 004, 005, 007, 008, 010, 012, 013, 017, 022, 038, 056, 086, 087 |
 | [092](092-a-persons-sessions-that-see-each-others-work.md) | A person's sessions that see each other's work: each open session's work read from its log, a `list_sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app, a `set_working_on` tool that says which paths this session is about to change, and `send_message` reaching another of the person's sessions with a message that arrives as data, starting nothing and never the person's word | large | drafted | 004, 006, 008, 010, 012, 013, 015, 018, 019, 058, 059, 073, 080, 086, 087, 090 |
+| [093](093-memory-folders-the-file-tools-reach.md) | Memory folders the file tools reach: an allow names folders of a files store, read, write, edit, glob and grep reach them at `/memory/<name>/` through the runner with the session's token, every write conditional on what the session last read, an empty write forgets, and a call that reaches memory alone opens no machine | medium | drafted | 008, 010, 012, 018, 058, 068 |
 
 ## Dependency graph
 
@@ -244,6 +245,7 @@ flowchart BT
   S090[090 a trigger that fires at a list of times]
   S091[091 a fork of the conversation]
   S092[092 sessions that see each other's work]
+  S093[093 memory folders the file tools reach]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -424,6 +426,8 @@ flowchart BT
   S092 --> S059
   S092 --> S080
   S092 --> S091
+  S093 --> S058
+  S093 --> S068
 ```
 
 ## Build order
