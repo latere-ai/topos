@@ -10,6 +10,13 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A session can keep memory folders across sessions.** An authorizer's allow of `session.create` or `session.fork` may name `memory`: up to 4 folders of a files service, each `{"name", "url", "owner", "path", "access"}` with `access` `read_only` or `read_write`. `read`, `write`, `edit`, `glob` and `grep` reach each one at `/memory/<name>/`, and a second session with the same folder reads what the first wrote. The runner carries every such call with the session's own token for `TOPOS_FILES_AUDIENCE`, so no sandbox holds a credential, and a call whose every path is under `/memory/` opens no sandbox: a session that only talks and remembers never has one. Every write is conditional on the version the session last read (`If-Match`, or `If-None-Match: *` for a new file), and one the folder changed under reads as the file tools' changed text and overwrites nothing. A write of no content, or an edit that leaves the file empty, forgets the file with a conditional `DELETE` that leaves it in the trash, and reads `Forgot <path>.` A `read_only` folder refuses a change before any request; a rename and a command under `/memory/` are refused; a file holds at most 1 MiB. A refusal of the files service reads as `<path>: <message> <words>`, with the words that follow `<reason>: ` in its `details.detail` and the reason as the meta's `refusal`; a service that does not answer reads `Memory could not be reached: <detail>.` A session's folders are answered as `memory: [{"name", "access"}]`, and a fork's are its own allow's. A list that breaks a rule, or any list on a server with no `TOPOS_FILES_AUDIENCE`, refuses the request `authorizer_unavailable`. A rollout's run gets none. See `docs/memory-folders.md`.
+- **The attachments block names the memory folders.** A session with memory folders renders `context/attachments-v2`, which names each folder and its access after the session's apps, on every request; a session without them renders `context/attachments-v1` byte for byte as before.
+- **A write under `/memory/` says what it saved.** Its `agent.tool_result` meta carries `memory: {"folder", "path", "action"}`, the path in the folder and `saved` or `forgotten`, beside `path`.
+- **A memory call is decided as a memory.** A call whose every path is under `/memory/` scores 0.1 with the feature `memory`, and is allowed in `confirm` and `progressive` with the reason `a memory the person can review`; in `plan` a read is allowed and a write blocked. `always_confirm` naming `memory` asks the person about every memory call.
+
 ## v0.59.0 - 2026-10-25
 
 ### Added

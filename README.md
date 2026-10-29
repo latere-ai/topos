@@ -178,6 +178,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   reasoning level a trigger's runs start on, in place of the agent's.
 - [docs/trigger-times.md](docs/trigger-times.md): a trigger that fires at
   a list of times, each once, for times no schedule names.
+- [docs/memory-folders.md](docs/memory-folders.md): folders of a files
+  service a session keeps across sessions, which its file tools reach at
+  `/memory/<name>/` with no sandbox.
 
 ## Contributing
 
