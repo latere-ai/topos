@@ -349,6 +349,11 @@ type Session struct {
 	// written; nil keeps them as blobs. It is fixed at the create, and
 	// Stored is set by the first event that records a file there.
 	Folder *Folder `json:"folder,omitempty"`
+	// Memory are the memory folders the allow of the session's create or
+	// fork named (spec 093), which its file tools reach at
+	// /memory/<name>/; fixed at the create, and a fork's are its own
+	// allow's.
+	Memory []MemoryFolder `json:"memory,omitempty"`
 	// Wake is the session's pending wake (spec 086), folded from its
 	// session.wake_set and cleared by its session.wake_cleared or by the
 	// message its firing sent; nil when none is pending.

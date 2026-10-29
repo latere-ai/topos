@@ -31,6 +31,15 @@ const FolderRule = "The authorizer's allow of session.create or session.fork may
 	"An allow that names a folder on a server that keeps no files store, or a folder that is not an http or https URL with no user, query or fragment, an owner, and a clean path of two segments or more, is authorizer_unavailable. " +
 	"A file the files service does not take or give is files_unavailable."
 
+// MemoryRule is the create route's sentence on the memory folders an
+// allow names (spec 093).
+var MemoryRule = fmt.Sprintf("The authorizer's allow of session.create or session.fork may name memory, at most %d folders of an Arca-compatible files API, each {name, url, owner, path, access}: "+
+	"name a lowercase letter and at most 31 more lowercase letters, digits or -, unique, url the API's root, owner the space of 1 to %d bytes, path the folder in that space of at most %d bytes with no empty, . or .. segment, and access read_only or read_write. "+
+	"The session's read, write, edit, glob and grep reach each folder at /memory/<name>/, with the session's own token, and its commands do not; a write of empty content forgets a file. "+
+	"A fork's memory folders are its own allow's, and a rollout's run has none. The session answers memory [{name, access}], without the API's address, the space or the path. "+
+	"An allow that names memory on a server that keeps no files store, or memory that breaks a rule, is authorizer_unavailable.",
+	session.MaxMemoryFolders, session.MaxMemoryOwner, session.MaxMemoryPath)
+
 // filesRefused is the refusal of a files store call that failed: a write
 // the files service refused for its size as tooLarge, when one is given,
 // and any other failure as files_unavailable.
@@ -54,6 +63,20 @@ func (s *Server) folderOf(f *session.Folder) (*session.Folder, error) {
 	out := *f
 	out.Stored = false
 	return &out, nil
+}
+
+// memoryOf is the memory folders an allow of a create or a fork names for
+// the session (spec 093): none for none, and a refusal when this server
+// keeps no files store, since the runner would have no credential to
+// reach them with.
+func (s *Server) memoryOf(fs []session.MemoryFolder) ([]session.MemoryFolder, error) {
+	if len(fs) == 0 {
+		return nil, nil
+	}
+	if s.o.Files == nil {
+		return nil, &apiError{code: auth.CodeAuthorizerUnavailable, detail: "limits.memory names folders of a files store, and this server keeps none: TOPOS_FILES_AUDIENCE is unset"}
+	}
+	return slices.Clone(fs), nil
 }
 
 // folderAnswer is a session's folder as the API answers it (spec 068):

@@ -625,12 +625,12 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// Its network, its folder and the repositories its request names are
 	// its allow's and its request's, as any session's.
 	if in.rollout != "" {
-		if limits.Instructions != "" || len(limits.Context) > 0 || len(limits.Repositories) > 0 || len(limits.Connections) > 0 {
-			s.o.Log.InfoContext(ctx, "a rollout's run takes none of the instructions, context, repositories or connections its allow names",
+		if limits.Instructions != "" || len(limits.Context) > 0 || len(limits.Repositories) > 0 || len(limits.Connections) > 0 || len(limits.Memory) > 0 {
+			s.o.Log.InfoContext(ctx, "a rollout's run takes none of the instructions, context, repositories, connections or memory its allow names",
 				"session", id, "rollout", in.rollout, "instructions", limits.Instructions != "", "context", len(limits.Context),
-				"repositories", len(limits.Repositories), "connections", len(limits.Connections))
+				"repositories", len(limits.Repositories), "connections", len(limits.Connections), "memory", len(limits.Memory))
 		}
-		limits.Instructions, limits.Context, limits.Repositories, limits.Connections = "", nil, nil, nil
+		limits.Instructions, limits.Context, limits.Repositories, limits.Connections, limits.Memory = "", nil, nil, nil, nil
 	}
 	sess.Instructions = limits.Instructions
 	// The allow's repositories follow the request's and the agent's, and
@@ -649,6 +649,12 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// The folder of the files store the allow names keeps the session's
 	// attachments and kept files, fixed for its life (spec 068).
 	if sess.Folder, err = s.folderOf(limits.Folder); err != nil {
+		return session.Session{}, err
+	}
+	// The memory folders the allow names are the session's file tools'
+	// at /memory/<name>/, fixed for its life; a fork's are its own
+	// allow's and never its parent's (spec 093).
+	if sess.Memory, err = s.memoryOf(limits.Memory); err != nil {
 		return session.Session{}, err
 	}
 	if f := in.fork; f != nil {

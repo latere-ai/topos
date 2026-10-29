@@ -404,6 +404,7 @@ func cloneSession(s Session) Session {
 		f := *s.Folder
 		s.Folder = &f
 	}
+	s.Memory = slices.Clone(s.Memory)
 	if s.ArchivedAt != nil {
 		t := *s.ArchivedAt
 		s.ArchivedAt = &t

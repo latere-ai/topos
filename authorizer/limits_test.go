@@ -448,3 +448,64 @@ func TestAnAllowNamesAFolder(t *testing.T) {
 		}
 	}
 }
+
+// TestTheMemoryMember: an allow's memory folders are decoded as they are
+// written and kept in order; an allow with none has none; one past
+// session.MaxMemoryFolders, or with a folder that breaks a rule, does not
+// decode, and the error names the member (spec 093).
+func TestTheMemoryMember(t *testing.T) {
+	user := session.MemoryFolder{Name: "user", URL: "https://files.example.com/v1", Owner: "https://issuer.example|ada", Path: "files/memory/you", Access: session.MemoryReadOnly}
+	project := session.MemoryFolder{Name: "project", URL: user.URL, Owner: user.Owner, Path: "files/memory/projects/p1", Access: session.MemoryReadWrite}
+	l, err := DecodeLimits(decision(t, map[string]any{"memory": []session.MemoryFolder{user, project}}))
+	if err != nil || !slices.Equal(l.Memory, []session.MemoryFolder{user, project}) {
+		t.Fatalf("the memory %+v, %v", l.Memory, err)
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{})); err != nil || l.Memory != nil {
+		t.Fatalf("an allow with no memory: %+v, %v", l.Memory, err)
+	}
+	with := func(mut func(*session.MemoryFolder)) []session.MemoryFolder {
+		f := project
+		mut(&f)
+		return []session.MemoryFolder{f}
+	}
+	five := make([]session.MemoryFolder, session.MaxMemoryFolders+1)
+	for i := range five {
+		five[i] = project
+		five[i].Name = fmt.Sprintf("f%d", i)
+	}
+	for name, fs := range map[string][]session.MemoryFolder{
+		"too many":         five,
+		"a name twice":     {user, user},
+		"no name":          with(func(f *session.MemoryFolder) { f.Name = "" }),
+		"an upper name":    with(func(f *session.MemoryFolder) { f.Name = "User" }),
+		"a digit first":    with(func(f *session.MemoryFolder) { f.Name = "1st" }),
+		"a long name":      with(func(f *session.MemoryFolder) { f.Name = "a" + strings.Repeat("b", 32) }),
+		"a slash in name":  with(func(f *session.MemoryFolder) { f.Name = "a/b" }),
+		"no scheme":        with(func(f *session.MemoryFolder) { f.URL = "files.example.com/v1" }),
+		"another scheme":   with(func(f *session.MemoryFolder) { f.URL = "ftp://files.example.com/v1" }),
+		"a user":           with(func(f *session.MemoryFolder) { f.URL = "https://u:p@files.example.com/v1" }),
+		"a query":          with(func(f *session.MemoryFolder) { f.URL = "https://files.example.com/v1?x=1" }),
+		"a fragment":       with(func(f *session.MemoryFolder) { f.URL = "https://files.example.com/v1#x" }),
+		"no owner":         with(func(f *session.MemoryFolder) { f.Owner = "" }),
+		"a long owner":     with(func(f *session.MemoryFolder) { f.Owner = strings.Repeat("o", session.MaxMemoryOwner+1) }),
+		"a control owner":  with(func(f *session.MemoryFolder) { f.Owner = "a\nb" }),
+		"no path":          with(func(f *session.MemoryFolder) { f.Path = "" }),
+		"a long path":      with(func(f *session.MemoryFolder) { f.Path = strings.Repeat("p", session.MaxMemoryPath+1) }),
+		"a parent":         with(func(f *session.MemoryFolder) { f.Path = "files/../x" }),
+		"absolute":         with(func(f *session.MemoryFolder) { f.Path = "/files/x" }),
+		"an empty segment": with(func(f *session.MemoryFolder) { f.Path = "files//x" }),
+		"a dot":            with(func(f *session.MemoryFolder) { f.Path = "files/./x" }),
+		"a control path":   with(func(f *session.MemoryFolder) { f.Path = "files/x\x00" }),
+		"no access":        with(func(f *session.MemoryFolder) { f.Access = "" }),
+		"another access":   with(func(f *session.MemoryFolder) { f.Access = "write" }),
+	} {
+		if _, err := DecodeLimits(decision(t, map[string]any{"memory": fs})); err == nil || !strings.Contains(err.Error(), "limits.memory") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// A path of one segment is a folder too: the core reads nothing into
+	// the installation's layout.
+	if _, err := DecodeLimits(decision(t, map[string]any{"memory": with(func(f *session.MemoryFolder) { f.Path = "memory" })})); err != nil {
+		t.Fatalf("one segment: %v", err)
+	}
+}

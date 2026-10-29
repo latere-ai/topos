@@ -426,7 +426,7 @@ var opDescriptions = map[string]string{
 	"deleteAgent": "Delete an agent and every version, for good; applying its name again creates a new agent. An agent that still has a session, of any status, is conflict: delete its sessions first. " +
 		"The agent's identity at the installation's identity provider is archived first, and disabled once the agent is deleted; one the provider no longer holds is taken as gone. " +
 		"A trigger that names the agent stays, and its firings are refused.",
-	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " + FolderRule + " " +
+	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " + FolderRule + " " + MemoryRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. " +
 		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it, and never its opening, since the session has no allow yet. " +

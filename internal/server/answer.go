@@ -84,13 +84,15 @@ func asAnswer(v any) (any, error) {
 }
 
 // sessionAnswer is a session with its model's level under reasoning,
-// and its folder of the files store as folderAnswer answers it.
+// its folder of the files store as folderAnswer answers it, and its
+// memory folders by name and access alone (spec 093).
 func sessionAnswer(s session.Session) session.Session {
 	if s.Model != nil {
 		m := s.Model.Answered()
 		s.Model = &m
 	}
 	s.Folder = folderAnswer(s.Folder)
+	s.Memory = session.MemoryAnswer(s.Memory)
 	return s
 }
 

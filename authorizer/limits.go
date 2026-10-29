@@ -143,6 +143,11 @@ type Limits struct {
 	// allow of session.create and session.fork (spec 068); nil keeps them
 	// as blobs. The core reads nothing into its parts.
 	Folder *session.Folder
+	// Memory are the session's memory folders, read on an allow of
+	// session.create and session.fork (spec 093): folders of a files store
+	// the session's file tools reach at /memory/<name>/, with the
+	// session's own token. The core reads nothing into their parts.
+	Memory []session.MemoryFolder
 }
 
 // WireFolder is a folder an allow names (spec 068): the root of an
@@ -167,25 +172,26 @@ type WireRepository struct {
 // authorizer renders its answer through the type toposd decodes. Every
 // member is optional and a member left nil is left out.
 type WireLimits struct {
-	AlwaysConfirm  []string              `json:"always_confirm,omitempty"`
-	AlwaysAllow    []string              `json:"always_allow,omitempty"`
-	Thresholds     *Thresholds           `json:"thresholds,omitempty"`
-	BudgetUSDMicro *int64                `json:"budget_usd_micro,omitempty"`
-	TurnTimeout    string                `json:"turn_timeout,omitempty"`
-	MaxAge         string                `json:"max_age,omitempty"`
-	Scope          []json.RawMessage     `json:"scope,omitempty"`
-	Retention      string                `json:"retention,omitempty"`
-	Owner          *Owner                `json:"owner,omitempty"`
-	Model          string                `json:"model,omitempty"`
-	Reasoning      *string               `json:"reasoning,omitempty"`
-	Network        *Network              `json:"network,omitempty"`
-	Instructions   string                `json:"instructions,omitempty"`
-	Repositories   []WireRepository      `json:"repositories,omitempty"`
-	Context        []session.ContextPart `json:"context,omitempty"`
-	Route          string                `json:"route,omitempty"`
-	MessageText    bool                  `json:"message_text,omitempty"`
-	Connections    []session.Connection  `json:"connections,omitempty"`
-	Folder         *WireFolder           `json:"folder,omitempty"`
+	AlwaysConfirm  []string               `json:"always_confirm,omitempty"`
+	AlwaysAllow    []string               `json:"always_allow,omitempty"`
+	Thresholds     *Thresholds            `json:"thresholds,omitempty"`
+	BudgetUSDMicro *int64                 `json:"budget_usd_micro,omitempty"`
+	TurnTimeout    string                 `json:"turn_timeout,omitempty"`
+	MaxAge         string                 `json:"max_age,omitempty"`
+	Scope          []json.RawMessage      `json:"scope,omitempty"`
+	Retention      string                 `json:"retention,omitempty"`
+	Owner          *Owner                 `json:"owner,omitempty"`
+	Model          string                 `json:"model,omitempty"`
+	Reasoning      *string                `json:"reasoning,omitempty"`
+	Network        *Network               `json:"network,omitempty"`
+	Instructions   string                 `json:"instructions,omitempty"`
+	Repositories   []WireRepository       `json:"repositories,omitempty"`
+	Context        []session.ContextPart  `json:"context,omitempty"`
+	Route          string                 `json:"route,omitempty"`
+	MessageText    bool                   `json:"message_text,omitempty"`
+	Connections    []session.Connection   `json:"connections,omitempty"`
+	Folder         *WireFolder            `json:"folder,omitempty"`
+	Memory         []session.MemoryFolder `json:"memory,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -319,6 +325,10 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		}
 		l.Folder = &session.Folder{URL: f.URL, Owner: f.Owner, Path: f.Path}
 	}
+	if err := session.CheckMemory(w.Memory); err != nil {
+		return Limits{}, fmt.Errorf("limits.%w", err)
+	}
+	l.Memory = w.Memory
 	return l, nil
 }
 
