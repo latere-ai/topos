@@ -60,6 +60,10 @@ type SearchRequest struct {
 type SearchResult struct {
 	Lines     []string
 	Truncated bool
+	// Unlisted reports that the search left files it covers unread: a
+	// memory folder that holds more files than a listing reads (spec
+	// 093).
+	Unlisted bool
 }
 
 // SearchFS runs q over fsys, whose names are relative to base, the
