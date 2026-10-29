@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"latere.ai/x/topos/session"
@@ -128,43 +127,45 @@ func renameLines(b []byte) ([]byte, bool, error) {
 }
 
 // renameLine is ln renamed and encoded as the store writes a line, or nil
-// when ln is a torn tail, does not decode, or names nothing renamed.
+// when ln is a torn tail, is not a line of the log, or names nothing
+// renamed.
 func renameLine(ln []byte) ([]byte, error) {
 	body, whole := bytes.CutSuffix(ln, []byte("\n"))
 	if !whole {
 		return nil, nil
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(body, &fields) != nil {
+	l, thread, ok := oldLine(body)
+	if !ok {
 		return nil, nil
 	}
-	changed := false
-	if v, ok := fields["thread"]; ok {
-		delete(fields, "thread")
-		fields["subagent"] = v
-		changed = true
-	}
-	var typ string
-	if json.Unmarshal(fields["type"], &typ) == nil {
-		if now, ok := renamedTypes[typ]; ok {
-			fields["type"] = json.RawMessage(strconv.Quote(string(now)))
-			changed = true
-		}
-	}
-	if !changed {
+	now, renamed := renamedTypes[string(l.Type)]
+	if thread == nil && !renamed {
 		return nil, nil
 	}
-	raw, err := json.Marshal(fields)
-	if err != nil {
-		return nil, err
+	if thread != nil {
+		l.Subagent = *thread
 	}
-	var l line
-	if err := json.Unmarshal(raw, &l); err != nil {
-		return nil, err
+	if renamed {
+		l.Type = now
 	}
 	enc, err := session.Marshal(l)
 	if err != nil {
 		return nil, err
 	}
 	return append(enc, '\n'), nil
+}
+
+// oldLine decodes body as a line of the log, with the thread field a line
+// written before a subagent's events were named subagent.* holds, nil when
+// it holds none. It reports false when body is not a line of the log,
+// which is kept as it is for the scan that reads the log to judge.
+func oldLine(body []byte) (line, *string, bool) {
+	var l line
+	var old struct {
+		Thread *string `json:"thread"`
+	}
+	if json.Unmarshal(body, &l) != nil || json.Unmarshal(body, &old) != nil {
+		return line{}, nil, false
+	}
+	return l, old.Thread, true
 }

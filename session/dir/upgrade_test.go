@@ -5,6 +5,7 @@ package dir
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,12 @@ func TestADirectoryOfThreadEventsOpensAsSubagentEvents(t *testing.T) {
 	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A log that says thread only in what a person wrote is left as it is.
+	quoted := newSession(ctx, t, st)
+	said := `{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0009","seq":1,"session_id":"` + quoted.ID + `","type":"user.message","time":"2026-09-27T10:00:01Z","turn":1,"payload":{"sender":{"subject":"usr_ada","kind":"person"},"content":[{"type":"text","text":"Name it \"thread\"."}]},"batch":1}` + "\n"
+	if err := os.WriteFile(st.eventsPath(quoted.ID), []byte(said), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(filepath.Join(data, "sessions", subagentMarker)); err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +59,9 @@ func TestADirectoryOfThreadEventsOpensAsSubagentEvents(t *testing.T) {
 	}
 	if bytes.Contains(b, []byte(`"thread`)) {
 		t.Fatalf("the log still says thread:\n%s", b)
+	}
+	if kept, err := os.ReadFile(st.eventsPath(quoted.ID)); err != nil || string(kept) != said {
+		t.Fatalf("a log that renames nothing changed: %q, %v", kept, err)
 	}
 	evs, err := st.Events(ctx, s.ID, 1, 0)
 	if err != nil {
@@ -111,10 +121,101 @@ func TestRenameLinesKeepsWhatItCannotRead(t *testing.T) {
 	torn := `{"id":"evt_1","type":"thread.started","thread":"evt_1"`
 	junk := "\x00\x00\n"
 	plain := `{"id":"evt_2","seq":1,"type":"user.message","payload":{"text":"\"thread\" in a message"}}` + "\n"
-	for name, in := range map[string]string{"torn tail": plain + torn, "undecodable line": junk + plain, "nothing renamed": plain} {
+	mistyped := `{"id":"evt_3","seq":"two","type":"thread.ended","thread":"evt_1","payload":{}}` + "\n"
+	for name, in := range map[string]string{"torn tail": plain + torn, "undecodable line": junk + plain, "nothing renamed": plain, "not a line of the log": mistyped} {
 		out, changed, err := renameLines([]byte(in))
 		if err != nil || changed || string(out) != in {
 			t.Fatalf("%s: %q, changed %v, %v", name, out, changed, err)
 		}
+	}
+}
+
+// TestRenamingASessionAnotherProcessHoldsFailsTheOpen: a log that needs
+// renaming while another open file holds the session's lock is not
+// rewritten under it, Open says which session is held, and the next Open
+// once it is free renames it. A file and a hidden directory under
+// sessions/, and a session without a log, are passed over.
+func TestRenamingASessionAnotherProcessHoldsFailsTheOpen(t *testing.T) {
+	ctx := t.Context()
+	data := t.TempDir()
+	st := open(t, data)
+	s := newSession(ctx, t, st)
+	bare := newSession(ctx, t, st)
+	path := st.eventsPath(s.ID)
+	line := `{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0002","seq":1,"session_id":"` + s.ID + `","type":"thread.started","time":"2026-09-27T10:00:02Z","turn":1,"thread":"evt_01J9Z3Q4W8KX6T0M2V5N7R0002","payload":{"agent":{"name":"reviewer","version":0},"task":"t","depth":1},"batch":1}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(st.eventsPath(bare.ID)); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(data, "sessions")
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".ses_hidden"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, subagentMarker)); err != nil {
+		t.Fatal(err)
+	}
+	held, err := st.lockFile(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := tryLock(held); err != nil || !ok {
+		t.Fatalf("take the lock: %v, %v", ok, err)
+	}
+	var locked *session.LockedError
+	if _, err := Open(data); !errors.As(err, &locked) || !strings.Contains(err.Error(), s.ID) {
+		t.Fatalf("Open while the session is held: %v", err)
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != line {
+		t.Fatalf("the held log was rewritten: %v", err)
+	}
+	if err := errors.Join(unlock(held), held.Close()); err != nil {
+		t.Fatal(err)
+	}
+	st = open(t, data)
+	evs, err := st.Events(ctx, s.ID, 1, 0)
+	if err != nil || len(evs) != 1 || evs[0].Type != session.TypeSubagentStarted || evs[0].Subagent == "" {
+		t.Fatalf("the log once free: %+v, %v", evs, err)
+	}
+}
+
+// TestARenameThatCannotReadASessionFailsTheOpen: a log or a lock that is
+// not a file fails the Open that would rename the log, naming what it
+// could not read, rather than leaving the log unrenamed.
+func TestARenameThatCannotReadASessionFailsTheOpen(t *testing.T) {
+	for name, path := range map[string]func(st *Store, id string) string{
+		"the log": (*Store).eventsPath,
+		"the lock": func(st *Store, id string) string {
+			if err := os.WriteFile(st.eventsPath(id), []byte(`{"thread":"evt_1"}`+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return st.lockPath(id)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			data := t.TempDir()
+			st := open(t, data)
+			s := newSession(t.Context(), t, st)
+			p := path(st, s.ID)
+			if err := os.Remove(p); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(p, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(data, "sessions", subagentMarker)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Open(data); err == nil {
+				t.Fatalf("Open renamed over %s that is a directory", name)
+			}
+			if _, err := os.Stat(filepath.Join(data, "sessions", subagentMarker)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("the marker after a failed rename: %v", err)
+			}
+		})
 	}
 }
