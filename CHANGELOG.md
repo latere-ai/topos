@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A session handed to a runner that has stopped waiting goes back at once.** A runner in the runner role that hung up on its claim while `toposd` was handing it a session never received the session, which stayed held for that runner, with nobody driving it, until the claim expired about a minute later. `toposd` now releases the session as soon as it sees the runner gone, and the next claim takes it.
+
 ## v0.60.0 - 2026-10-29
 
 ### Added
