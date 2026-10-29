@@ -52,7 +52,7 @@ func TestMemoryAcrossSessions(t *testing.T) {
 	s.az.SetRules(stub.Rule{Action: authorizer.ActionSessionCreate, Allow: true, Limits: memory})
 	vars["TOPOS_RUNNER_CAPACITY"] = "1"
 	vars["TOPOS_FILES_AUDIENCE"] = "arca"
-	publicURL, _, _ := startServe(t, vars)
+	publicURL, _, stop := startServe(t, vars)
 	send := apiClient(t, publicURL, vars)
 	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: keeper\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  tools: [read, write, edit, glob, grep]\n  machine: {kind: cella}\n"
 	if code, body := send(http.MethodPut, "/v1/agents/keeper", manifest); code != http.StatusCreated {
@@ -124,5 +124,8 @@ func TestMemoryAcrossSessions(t *testing.T) {
 	}
 	if n := s.cella.Count(cellastub.OpCreate); n != 0 {
 		t.Fatalf("sessions that only remember created %d sandboxes", n)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("serve exited %d", code)
 	}
 }
