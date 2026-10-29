@@ -37,8 +37,10 @@ The authorizer names the folders in the limits of its allow of
 
 At most 4 folders. A list that breaks a rule refuses the request with
 `authorizer_unavailable`, naming the member in the developer detail, and
-so does a list on a server with no `TOPOS_FILES_AUDIENCE`, which reaches
-no files service. A fork's folders are its own allow's, not the session's
+so does a folder of a files service on a server with no
+`TOPOS_FILES_AUDIENCE`, which reaches none. A folder can also hold the
+person's past conversations in place of files; see
+[A folder of past conversations](#a-folder-of-past-conversations). A fork's folders are its own allow's, not the session's
 it continues. A run of a rollout is isolated and gets none.
 
 The session answers its folders by name and access alone, so a client
@@ -112,6 +114,74 @@ the file again and writes on the new version.
 A files service that does not honor `If-Match` on `DELETE` forgets the
 file whatever version it holds: the trash keeps it, and the person can
 restore it.
+
+## A folder of past conversations
+
+A folder may hold the person's other conversations, served by the server
+from its own log, so the agent finds and reads what was said before with
+the same `glob`, `grep` and `read`. It names `sessions` in place of
+`url`, `owner` and `path`:
+
+```json
+{"name": "chats", "access": "read_only", "sessions": {"metadata": {"project": "p1"}}}
+```
+
+| Member | Meaning |
+|---|---|
+| `sessions` | the folder holds conversations; `url`, `owner` and `path` are absent |
+| `sessions.metadata` | at most one entry: a string keeps the sessions whose metadata holds the key with that value, `null` keeps those without the key, and none keeps every one. The key and value follow the metadata rules |
+| `access` | `read_only`, and no other |
+
+The folder holds the sessions of the session's own initiator, of the
+agents of its context, that the entry keeps: one per fork tree, the
+tree's newest, never a run of a rollout and never the reading session's
+own tree. They are listed newest first, at most 2,000, as any folder is.
+No `TOPOS_FILES_AUDIENCE` is needed; the runner reaches the server, over
+its lease when it runs on its own.
+
+Each conversation is a file `/memory/<name>/<yyyy-mm-dd>-<session id>.md`,
+named by the day it started in UTC, so the name holds while its title
+changes:
+
+```markdown
+# Tide tables
+
+Session ses_01JA, started 2026-10-28 09:00 UTC, last changed 2026-10-28 10:12 UTC.
+
+## User, 2026-10-28 09:00 UTC
+
+What time is high tide at Kiel tomorrow?
+
+## Agent, 2026-10-28 09:01 UTC
+
+High tide at Kiel tomorrow is at 14:12.
+```
+
+A file holds what the person and the agent said on the session's own
+thread, as session search reads it: messages and answers, never a tool's
+output, a thinking block, a subagent's thread or a redacted event. A file
+holds at most 256 KiB; a longer conversation keeps its messages in order
+up to the bound, and its last line says how many were left out. A grep
+reads a conversation again only once it has changed.
+
+Every list asks `session.list`, and every conversation listed or read
+asks `session.read`, as the session's initiator in its context. Both name
+the reading session as their origin, and a read names the conversation's
+metadata:
+
+```json
+{"origin": {"kind": "memory", "session_id": "ses_01JB", "folder": "chats"},
+ "metadata": {"project": "p1"}}
+```
+
+A denied read leaves the conversation out of the folder and reads as a
+file that is not there. A denied list is the call's result, with the
+deny's reason as `refusal`:
+`/memory/chats: This session may not read these conversations now.` An
+authorizer that reads `origin` decides, at every call, whether the person
+lets their conversations be read at all and which ones. A folder of
+conversations is read only: a write, an edit or a forget there is refused
+before anything is asked.
 
 ## Refusals
 
