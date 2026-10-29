@@ -62,10 +62,13 @@ func CheckMetadata(m map[string]string) error {
 }
 
 // MetadataEntry is one metadata entry a List keeps sessions by: those
-// whose metadata holds Key with exactly Value (spec 057).
+// whose metadata holds Key with exactly Value (spec 057), or, when Absent,
+// those whose metadata does not hold Key at all (spec 094).
 type MetadataEntry struct {
 	Key   string
 	Value string
+	// Absent keeps the sessions without Key; Value is then ignored.
+	Absent bool
 }
 
 // MergeMetadata answers m with change applied, a value setting its key

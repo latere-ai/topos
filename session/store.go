@@ -139,7 +139,8 @@ type ListOptions struct {
 	// tree.
 	Group Group
 	// Metadata, when set, keeps the sessions whose metadata holds its key
-	// with exactly its value (spec 057).
+	// with exactly its value (spec 057), or those without the key when it
+	// is Absent (spec 094).
 	Metadata *MetadataEntry
 	// Trigger, when set, keeps the sessions the trigger of that id
 	// started, those whose TriggerID it is (spec 072).
@@ -270,18 +271,21 @@ func (o ListOptions) keeps(s Session) bool {
 		o.Archived.Keeps(s) &&
 		(o.Root == "" || s.ID == o.Root || s.Root == o.Root) &&
 		(o.Parent == "" || s.Parent != nil && s.Parent.SessionID == o.Parent) &&
-		o.Metadata.keeps(s) &&
+		o.Metadata.Keeps(s) &&
 		(o.Trigger == "" || s.TriggerID == o.Trigger) &&
 		o.keepsRollout(s)
 }
 
-// keeps reports whether s's metadata holds the entry; a nil entry keeps
-// every session.
-func (e *MetadataEntry) keeps(s Session) bool {
+// Keeps reports whether s's metadata holds the entry, or lacks its key
+// for an absent entry; a nil entry keeps every session.
+func (e *MetadataEntry) Keeps(s Session) bool {
 	if e == nil {
 		return true
 	}
 	v, ok := s.Metadata[e.Key]
+	if e.Absent {
+		return !ok
+	}
 	return ok && v == e.Value
 }
 

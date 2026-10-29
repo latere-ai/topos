@@ -57,7 +57,11 @@ func filters(alias string, o session.ListOptions, args *[]any) string {
 	if o.Parent != "" {
 		conds = append(conds, alias+"parent_id = "+arg(args, o.Parent))
 	}
-	if e := o.Metadata; e != nil {
+	switch e := o.Metadata; {
+	case e == nil:
+	case e.Absent:
+		conds = append(conds, "NOT EXISTS (SELECT 1 FROM session_metadata sm WHERE sm.session_id = "+alias+"id AND sm.key = "+arg(args, e.Key)+")")
+	default:
 		conds = append(conds, "EXISTS (SELECT 1 FROM session_metadata sm WHERE sm.session_id = "+alias+"id AND sm.key = "+arg(args, e.Key)+" AND sm.value = "+arg(args, e.Value)+")")
 	}
 	if o.Trigger != "" {

@@ -40,7 +40,8 @@ func labeled(t *testing.T, st session.Store, labels []struct {
 }
 
 // testListByMetadata holds a store to spec 057's filter: a list keeps the
-// sessions whose metadata holds the entry, exactly, beside every other
+// sessions whose metadata holds the entry, exactly, or lacks its key for
+// an absent entry (spec 094), beside every other
 // filter and under a grouping by tree, a summary counts the same set, and
 // a change of a session's metadata moves it between lists at once.
 func testListByMetadata(t *testing.T, st session.Store) {
@@ -69,6 +70,9 @@ func testListByMetadata(t *testing.T, st session.Store) {
 		{"within a tree", session.ListOptions{Metadata: entry("folder", "f1"), Root: s["e"].ID}, []string{"f"}},
 		{"grouped by tree", session.ListOptions{Metadata: entry("folder", "f1"), Group: session.GroupTree}, []string{"f(e 1)", "b(b 1)", "a1(a1 1)"}},
 		{"no session holds it", session.ListOptions{Metadata: entry("folder", "f9")}, []string{}},
+		{"without the key", session.ListOptions{Metadata: &session.MetadataEntry{Key: "folder", Absent: true}}, []string{"g", "e"}},
+		{"without the key, a value ignored", session.ListOptions{Metadata: &session.MetadataEntry{Key: "folder", Value: "f1", Absent: true}}, []string{"g", "e"}},
+		{"without a key nobody holds", session.ListOptions{Metadata: &session.MetadataEntry{Key: "nobody", Absent: true}}, []string{"g", "f", "e", "c", "a2", "b", "a1"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := listed(t, st, c.o, s); !slices.Equal(got, c.want) {
@@ -94,6 +98,9 @@ func testListByMetadata(t *testing.T, st session.Store) {
 	}
 	if got := listed(t, st, session.ListOptions{Metadata: entry("folder", "f1")}, s); !slices.Equal(got, []string{"f", "a2", "a1"}) {
 		t.Fatalf("after a2 moved in and b out, listed %v", got)
+	}
+	if got := listed(t, st, session.ListOptions{Metadata: &session.MetadataEntry{Key: "folder", Absent: true}}, s); !slices.Equal(got, []string{"g", "e", "b"}) {
+		t.Fatalf("after b moved out of every folder, the sessions without one are %v", got)
 	}
 }
 
