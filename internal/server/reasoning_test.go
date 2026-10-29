@@ -20,6 +20,7 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
+	"latere.ai/x/topos/manifest"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 )
@@ -46,7 +47,10 @@ type storedBefore struct {
 }
 
 // putStoredBefore stores the version v0.16.0 stored into f's objects, as
-// the store an upgraded server opens holds it.
+// the store an upgraded server opens holds it: with its spec.threads
+// renamed to spec.subagentLimits and each digest the renamed spec's, as
+// every store does at its first open of this release (spec 013), and
+// each level still under effort.
 func (f *fixture) putStoredBefore() storedBefore {
 	f.t.Helper()
 	b, err := os.ReadFile("testdata/agent-stored-by-v0.16.0.json")
@@ -57,6 +61,18 @@ func (f *fixture) putStoredBefore() storedBefore {
 	if err := json.Unmarshal(b, &s); err != nil {
 		f.t.Fatal(err)
 	}
+	doc, err := manifest.RenameSubagentLimits([]byte(s.Version.Doc))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	bundle, err := manifest.RenameSubagentLimits([]byte(s.Version.Bundle))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if !doc.Changed || !bundle.Changed || doc.Digest != bundle.Digest {
+		f.t.Fatalf("the version v0.16.0 stored renames to %s and %s", doc.Digest, bundle.Digest)
+	}
+	s.Version.Doc, s.Version.Bundle, s.Version.Digest = string(doc.Stream), string(bundle.Stream), doc.Digest
 	a := store.Agent{ID: s.Agent.ID, Name: s.Agent.Name, Owner: s.Agent.Owner, OwnerType: s.Agent.OwnerType, CreatedAt: s.Agent.CreatedAt}
 	v := store.AgentVersion{AgentID: s.Agent.ID, Version: s.Version.Version, Digest: s.Version.Digest, Doc: []byte(s.Version.Doc), Bundle: []byte(s.Version.Bundle),
 		CreatedBy: s.Version.CreatedBy, CreatedAt: s.Version.CreatedAt}

@@ -75,13 +75,13 @@ type AgentSpec struct {
 	InstructionsFile string `json:"instructionsFile,omitempty"`
 	// Tools absent is every built-in; an empty list is none. The
 	// resolved spec always lists them.
-	Tools       []Tool       `json:"tools"`
-	Permissions []Permission `json:"permissions,omitempty"`
-	Approvals   Approvals    `json:"approvals"`
-	Hooks       []Hook       `json:"hooks,omitempty"`
-	Subagents   []Subagent   `json:"subagents,omitempty"`
-	Threads     Threads      `json:"threads"`
-	Advisor     *Advisor     `json:"advisor,omitempty"`
+	Tools          []Tool         `json:"tools"`
+	Permissions    []Permission   `json:"permissions,omitempty"`
+	Approvals      Approvals      `json:"approvals"`
+	Hooks          []Hook         `json:"hooks,omitempty"`
+	Subagents      []Subagent     `json:"subagents,omitempty"`
+	SubagentLimits SubagentLimits `json:"subagentLimits"`
+	Advisor        *Advisor       `json:"advisor,omitempty"`
 	// Title turns on the title that follows the conversation (spec 083);
 	// nil leaves the session's title to its create and its people.
 	Title        *Title           `json:"title,omitempty"`
@@ -256,8 +256,9 @@ type Subagent struct {
 	Spec  *AgentSpec `json:"spec,omitempty"`
 }
 
-// Threads bound the session's graph of threads (spec 013).
-type Threads struct {
+// SubagentLimits bound the subagents a session runs (spec 013): how deep
+// they nest below the session's own conversation and how many run at once.
+type SubagentLimits struct {
 	MaxDepth      *int `json:"maxDepth"`
 	MaxConcurrent *int `json:"maxConcurrent"`
 }

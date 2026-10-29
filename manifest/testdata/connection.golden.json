@@ -27,7 +27,7 @@
     "status": {
       "id": "agent_00000000000000000000000001",
       "version": 1,
-      "digest": "sha256:baae97f8be4ee44aae13b761475e54695570df1bc6383f3e964919923a85d1a4",
+      "digest": "sha256:f17fab40ef5de86870b5a7eff8cbc804271ee3d0d02ae0767652d67930d990f3",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -57,7 +57,7 @@
           "blockAt": 0.9
         }
       },
-      "threads": {
+      "subagentLimits": {
         "maxDepth": 1,
         "maxConcurrent": 4
       },

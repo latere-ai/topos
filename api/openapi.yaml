@@ -88,7 +88,7 @@ paths:
                       flagAt: 0.3
                       askAt: 0.5
                       blockAt: 0.9
-                  threads:
+                  subagentLimits:
                     maxDepth: 2
                     maxConcurrent: 8
                   machine:
@@ -135,7 +135,7 @@ paths:
                       flagAt: 0.3
                       askAt: 0.5
                       blockAt: 0.9
-                  threads:
+                  subagentLimits:
                     maxDepth: 2
                     maxConcurrent: 8
                   machine:
@@ -221,7 +221,7 @@ paths:
                           flagAt: 0.3
                           askAt: 0.5
                           blockAt: 0.9
-                      threads:
+                      subagentLimits:
                         maxDepth: 2
                         maxConcurrent: 8
                       machine:
@@ -286,7 +286,7 @@ paths:
                       flagAt: 0.3
                       askAt: 0.5
                       blockAt: 0.9
-                  threads:
+                  subagentLimits:
                     maxDepth: 2
                     maxConcurrent: 8
                   machine:
@@ -425,7 +425,7 @@ paths:
                       flagAt: 0.3
                       askAt: 0.5
                       blockAt: 0.9
-                  threads:
+                  subagentLimits:
                     maxDepth: 2
                     maxConcurrent: 8
                   machine:
@@ -502,7 +502,7 @@ paths:
                       flagAt: 0.3
                       askAt: 0.5
                       blockAt: 0.9
-                  threads:
+                  subagentLimits:
                     maxDepth: 2
                     maxConcurrent: 8
                   machine:
@@ -2468,7 +2468,7 @@ components:
         - instructions
         - tools
         - approvals
-        - threads
+        - subagentLimits
         - machine
         - limits
         - context
@@ -2502,8 +2502,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Subagent"
-        threads:
-          $ref: "#/components/schemas/Threads"
+        subagentLimits:
+          $ref: "#/components/schemas/SubagentLimits"
         advisor:
           $ref: "#/components/schemas/Advisor"
         title:
@@ -5260,6 +5260,20 @@ components:
           $ref: "#/components/schemas/Usage"
         cost_usd_micro:
           type: integer
+    SubagentLimits:
+      type: object
+      required:
+        - maxDepth
+        - maxConcurrent
+      properties:
+        maxDepth:
+          anyOf:
+            - type: integer
+            - type: "null"
+        maxConcurrent:
+          anyOf:
+            - type: integer
+            - type: "null"
     SubagentMessage:
       type: object
       required:
@@ -5356,20 +5370,6 @@ components:
           $ref: "#/components/schemas/Counts"
         agents:
           type: integer
-    Threads:
-      type: object
-      required:
-        - maxDepth
-        - maxConcurrent
-      properties:
-        maxDepth:
-          anyOf:
-            - type: integer
-            - type: "null"
-        maxConcurrent:
-          anyOf:
-            - type: integer
-            - type: "null"
     Title:
       type: object
       properties:

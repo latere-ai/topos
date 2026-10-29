@@ -73,7 +73,7 @@ type Resolved struct {
 	MemoryStore *v1.MemoryStore
 	Connection  *v1.Connection
 	// Pinned are, for an Agent, the agents its subagents reference, and
-	// theirs in turn down to its threads.maxDepth, by pinned reference
+	// theirs in turn down to its subagentLimits.maxDepth, by pinned reference
 	// agent_<ulid>@<n>. They are what AgentConfig builds the subagents
 	// from.
 	Pinned map[string]*v1.Agent
@@ -620,7 +620,7 @@ func (r *resolver) credential(ctx context.Context, at, ref string) (string, erro
 // walk is bounded by depth, not by what it has seen.
 func (r *resolver) pinnedOf(ctx context.Context, root v1.AgentSpec) (map[string]*v1.Agent, error) {
 	out := map[string]*v1.Agent{}
-	limit := *root.Threads.MaxDepth
+	limit := *root.SubagentLimits.MaxDepth
 	var walk func(s v1.AgentSpec, level int) error
 	walk = func(s v1.AgentSpec, level int) error {
 		if level > limit {

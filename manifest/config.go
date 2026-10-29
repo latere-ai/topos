@@ -85,7 +85,7 @@ func (r Resolved) AgentConfig(connect Connect) (AgentConfig, error) {
 	c := AgentConfig{
 		Name: r.Agent.Metadata.Name, Instructions: s.Instructions, Tools: toolNames(s.Tools),
 		Policy: policy(s), Model: s.Model, Overlay: overlay, Effort: s.Model.Level(),
-		MaxDepth: *s.Threads.MaxDepth, MaxConcurrent: *s.Threads.MaxConcurrent, CompactAt: *s.Context.CompactAt,
+		MaxDepth: *s.SubagentLimits.MaxDepth, MaxConcurrent: *s.SubagentLimits.MaxConcurrent, CompactAt: *s.Context.CompactAt,
 		Machine: s.Machine,
 	}
 	if c.TurnTimeout, err = time.ParseDuration(s.Limits.TurnTimeout); err != nil {
@@ -114,7 +114,7 @@ func (r Resolved) AgentConfig(connect Connect) (AgentConfig, error) {
 // spec and bundle.
 func defaulted(s v1.AgentSpec) bool {
 	t := s.Approvals.Thresholds
-	return s.Threads.MaxDepth != nil && s.Threads.MaxConcurrent != nil && s.Context.CompactAt != nil &&
+	return s.SubagentLimits.MaxDepth != nil && s.SubagentLimits.MaxConcurrent != nil && s.Context.CompactAt != nil &&
 		t.FlagAt != nil && t.AskAt != nil && t.BlockAt != nil
 }
 

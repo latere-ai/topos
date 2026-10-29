@@ -28,7 +28,7 @@ spec:
         model: {name: claude-haiku-4-5}
         instructions: Explain one lint rule in two sentences, with an example.
         tools: [read]
-  threads: {maxDepth: 2, maxConcurrent: 4}
+  subagentLimits: {maxDepth: 2, maxConcurrent: 4}
   advisor:
     model: {name: claude-opus-4-1}
     instructions: Check that each fix keeps the behavior the tests describe.

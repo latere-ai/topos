@@ -267,11 +267,11 @@ func (v *validator) agent(at string, s v1.AgentSpec, inline bool) {
 		v.duration(hp+".timeout", h.Timeout)
 	}
 	v.subagents(at+".subagents", s.Subagents)
-	if d := *s.Threads.MaxDepth; d < 1 || d > harness.MaxDepthLimit {
-		v.add(at+".threads.maxDepth", fmt.Sprintf("%d is outside 1 to %d", d, harness.MaxDepthLimit))
+	if d := *s.SubagentLimits.MaxDepth; d < 1 || d > harness.MaxDepthLimit {
+		v.add(at+".subagentLimits.maxDepth", fmt.Sprintf("%d is outside 1 to %d", d, harness.MaxDepthLimit))
 	}
-	if c := *s.Threads.MaxConcurrent; c < 1 || c > MaxConcurrentLimit {
-		v.add(at+".threads.maxConcurrent", fmt.Sprintf("%d is outside 1 to %d", c, MaxConcurrentLimit))
+	if c := *s.SubagentLimits.MaxConcurrent; c < 1 || c > MaxConcurrentLimit {
+		v.add(at+".subagentLimits.maxConcurrent", fmt.Sprintf("%d is outside 1 to %d", c, MaxConcurrentLimit))
 	}
 	if a := s.Advisor; a != nil {
 		v.model(at+".advisor.model", a.Model)

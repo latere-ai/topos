@@ -28,6 +28,6 @@ spec:
   mcpServers:
     - {name: github, url: "https://api.github.com/mcp", connection: github}
   connections: [github]
-  threads: {maxDepth: 1, maxConcurrent: 4}
+  subagentLimits: {maxDepth: 1, maxConcurrent: 4}
   limits: {turnTimeout: 30m}
   context: {compactAt: 0.7}

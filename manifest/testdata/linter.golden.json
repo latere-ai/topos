@@ -5,7 +5,7 @@
     "status": {
       "id": "agent_00000000000000000000000001",
       "version": 1,
-      "digest": "sha256:e3981805f15b70e0fabfea12fa204902eee586e849c43d7a274a7058fbecb949",
+      "digest": "sha256:a2a2b7bd67d969f03a2de6a72d664d7c759fe7edef9b7e799dc1953a58ea8bac",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -27,7 +27,7 @@
           "blockAt": 0.9
         }
       },
-      "threads": {
+      "subagentLimits": {
         "maxDepth": 2,
         "maxConcurrent": 8
       },
@@ -49,7 +49,7 @@
     "status": {
       "id": "agent_00000000000000000000000002",
       "version": 1,
-      "digest": "sha256:71587d75adedd173dd5a66452c954ac7f034269dfbf713db279740992158297a",
+      "digest": "sha256:676909e82db361ec53e56df08bfd1ce502f388ce0444baf93d93ad7e71b0740d",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -112,7 +112,7 @@
                 "blockAt": 0.9
               }
             },
-            "threads": {
+            "subagentLimits": {
               "maxDepth": 2,
               "maxConcurrent": 8
             },
@@ -129,7 +129,7 @@
           }
         }
       ],
-      "threads": {
+      "subagentLimits": {
         "maxDepth": 2,
         "maxConcurrent": 4
       },

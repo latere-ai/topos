@@ -44,7 +44,7 @@ spec:
   subagents:
     - {name: tester, agent: tester}
     - {name: scout, spec: {model: {name: claude-haiku-4-5}, instructions: Look around., tools: [], approvals: {mode: plan}}}
-  threads: {maxDepth: 2, maxConcurrent: 3}
+  subagentLimits: {maxDepth: 2, maxConcurrent: 3}
   machine: {egress: [proxy.golang.org], roots: [/srv/shared]}
   budget: {maxCost: "2.50"}
   limits: {turnTimeout: 45m, maxAge: 24h}

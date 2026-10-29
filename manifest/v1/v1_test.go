@@ -50,7 +50,7 @@ func TestTheResolvedFormWritesFixedDefaultsAndOmitsTheRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(b)
-	for _, want := range []string{`"apiVersion":"topos.latere.ai/v1"`, `"kind":"Agent"`, `"instructions":""`, `"tools":null`, `"threads":{"maxDepth":null,"maxConcurrent":null}`, `"limits":{"turnTimeout":"","maxAge":""}`} {
+	for _, want := range []string{`"apiVersion":"topos.latere.ai/v1"`, `"kind":"Agent"`, `"instructions":""`, `"tools":null`, `"subagentLimits":{"maxDepth":null,"maxConcurrent":null}`, `"limits":{"turnTimeout":"","maxAge":""}`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%s lacks %s", got, want)
 		}

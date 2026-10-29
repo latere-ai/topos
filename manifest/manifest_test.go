@@ -25,15 +25,15 @@ func TestStrictDecodingCollectsEveryProblem(t *testing.T) {
 		"model: {name: claude-haiku-4-5}",
 		"token: sk-this-field-does-not-exist",
 		"tools: read",
-		"threads: {maxDepth: 5, maxConcurrent: many}",
+		"subagentLimits: {maxDepth: 5, maxConcurrent: many}",
 		"approvals: {mode: yolo}",
 	)
 	e := refused(t, CodeInvalidManifest, body, Options{})
 	for _, want := range []struct{ path, detail string }{
 		{"spec.token", "unknown field"},
 		{"spec.tools", "want a list, got a string"},
-		{"spec.threads.maxConcurrent", "want an integer, got a string"},
-		{"spec.threads.maxDepth", "5 is outside 1 to 4"},
+		{"spec.subagentLimits.maxConcurrent", "want an integer, got a string"},
+		{"spec.subagentLimits.maxDepth", "5 is outside 1 to 4"},
 		{"spec.approvals.mode", "not one of plan, confirm, progressive"},
 	} {
 		if !hasProblem(e, want.path, want.detail) {
@@ -51,7 +51,7 @@ func TestStrictDecodingCollectsEveryProblem(t *testing.T) {
 	}
 
 	// The same manifest in JSON is refused with the same paths.
-	js := `{"apiVersion":"topos.latere.ai/v1","kind":"Agent","metadata":{"name":"reviewer"},"spec":{"model":{"name":"m"},"token":"x","tools":"read","threads":{"maxDepth":5,"maxConcurrent":"many"},"approvals":{"mode":"yolo"}}}`
+	js := `{"apiVersion":"topos.latere.ai/v1","kind":"Agent","metadata":{"name":"reviewer"},"spec":{"model":{"name":"m"},"token":"x","tools":"read","subagentLimits":{"maxDepth":5,"maxConcurrent":"many"},"approvals":{"mode":"yolo"}}}`
 	ej := refused(t, CodeInvalidManifest, js, Options{})
 	if ej.Detail() != e.Detail() {
 		t.Fatalf("JSON detail\n%s\nYAML detail\n%s", ej.Detail(), e.Detail())
@@ -121,7 +121,7 @@ func TestDefaultsAreWrittenOut(t *testing.T) {
 	}
 	want := map[string]string{
 		v1.KindAgent: `{"model":{"name":"claude-haiku-4-5"},"instructions":"","tools":["read","write","edit","bash","grep","glob","web_fetch","todo"],` +
-			`"approvals":{"mode":"confirm","thresholds":{"flagAt":0.3,"askAt":0.5,"blockAt":0.9}},"threads":{"maxDepth":2,"maxConcurrent":8},` +
+			`"approvals":{"mode":"confirm","thresholds":{"flagAt":0.3,"askAt":0.5,"blockAt":0.9}},"subagentLimits":{"maxDepth":2,"maxConcurrent":8},` +
 			`"machine":{"kind":"cella","image":"base"},"limits":{"turnTimeout":"2h","maxAge":"168h"},"context":{"compactAt":0.8}}`,
 		v1.KindTrigger:     `{"agent":"agent_00000000000000000000000001","schedule":"@daily","timeZone":"UTC","session":{"message":"Review.","endOnIdle":true},"skipIfActive":true,"maxAge":"1h","suspend":false}`,
 		v1.KindConnection:  `{"service":"http","mode":"person","hosts":["example.com"],"inject":{"header":"Authorization","format":"Bearer {value}"}}`,
@@ -288,8 +288,8 @@ func TestAnAgentNamesItsRepositories(t *testing.T) {
 }
 
 func TestValidationRules(t *testing.T) {
-	e := refused(t, CodeInvalidManifest, agent("deep", "model: {name: m}", "threads: {maxDepth: 5}"), Options{})
-	if !hasProblem(e, "spec.threads.maxDepth", "outside 1 to 4") {
+	e := refused(t, CodeInvalidManifest, agent("deep", "model: {name: m}", "subagentLimits: {maxDepth: 5}"), Options{})
+	if !hasProblem(e, "spec.subagentLimits.maxDepth", "outside 1 to 4") {
 		t.Fatalf("maxDepth: %s", e.Detail())
 	}
 	conn := "apiVersion: topos.latere.ai/v1\nkind: Connection\nmetadata: {name: c}\nspec: {service: github, mode: person, hosts: [api.github.com], credential: bot}\n"
@@ -351,8 +351,8 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "subagents: [{name: s, agent: agent_x}]"), "spec.subagents[0].agent", "not a agent_<ulid> id"},
 		{agent("a", m, "subagents: [{name: s, agent: agent_00000000000000000000000001@0}]"), "spec.subagents[0].agent", "@<n> from 1"},
 		{agent("a", m, "subagents: [{name: s, spec: {model: {name: m}, identity: agent}}]"), "spec.subagents[0].spec.identity", "removed: the agent's owner"},
-		{agent("a", m, "threads: {maxConcurrent: 33}"), "spec.threads.maxConcurrent", "outside 1 to 32"},
-		{agent("a", m, "threads: {maxDepth: 0}"), "spec.threads.maxDepth", "0 is outside 1 to 4"},
+		{agent("a", m, "subagentLimits: {maxConcurrent: 33}"), "spec.subagentLimits.maxConcurrent", "outside 1 to 32"},
+		{agent("a", m, "subagentLimits: {maxDepth: 0}"), "spec.subagentLimits.maxDepth", "0 is outside 1 to 4"},
 		{agent("a", m, "advisor: {model: {effort: max}}"), "spec.advisor.model.name", "required"},
 		{agent("a", m, "skills: [{}]"), "spec.skills[0]", "set path, or git"},
 		{agent("a", m, "skills: [{path: x, ref: main}]"), "spec.skills[0].ref", "a ref needs git"},

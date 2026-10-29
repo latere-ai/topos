@@ -77,8 +77,8 @@ func (d *defaulter) agent(path string, s *v1.AgentSpec) {
 	setFloat(&t.FlagAt, harness.DefaultThresholds.FlagAt)
 	setFloat(&t.AskAt, harness.DefaultThresholds.AskAt)
 	setFloat(&t.BlockAt, harness.DefaultThresholds.BlockAt)
-	setInt(&s.Threads.MaxDepth, harness.DefaultMaxDepth)
-	setInt(&s.Threads.MaxConcurrent, harness.DefaultMaxConcurrent)
+	setInt(&s.SubagentLimits.MaxDepth, harness.DefaultMaxDepth)
+	setInt(&s.SubagentLimits.MaxConcurrent, harness.DefaultMaxConcurrent)
 	if s.Machine.Kind == "" {
 		s.Machine.Kind = v1.MachineHost
 	}

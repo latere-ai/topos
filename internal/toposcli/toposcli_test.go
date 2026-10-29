@@ -85,7 +85,7 @@ func toolUse(id, name, args string) ir.Block {
 
 func (f *fixture) sessions() []session.Session {
 	f.t.Helper()
-	st, err := dir.Open(f.vars["TOPOS_DATA_DIR"])
+	st, err := dir.Open(f.t.Context(), f.vars["TOPOS_DATA_DIR"])
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestRunAnAgentManifest(t *testing.T) {
 	if s.Budget.MaxCostUSDMicro == nil || *s.Budget.MaxCostUSDMicro != 1_500_000 || s.Limits.TurnTimeout != "30m" || s.Limits.MaxAge != "48h" || !s.ExpiresAt.Equal(s.CreatedAt.Add(48*time.Hour)) {
 		t.Fatalf("budget %v, limits %+v, expires %v", s.Budget.MaxCostUSDMicro, s.Limits, s.ExpiresAt)
 	}
-	st, err := dir.Open(f.vars["TOPOS_DATA_DIR"])
+	st, err := dir.Open(f.t.Context(), f.vars["TOPOS_DATA_DIR"])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +546,7 @@ spec:
   instructions: You lead.
   tools: [read, glob]
   subagents: [{name: tester, agent: tester}]
-  threads: {maxDepth: 1, maxConcurrent: 2}
+  subagentLimits: {maxDepth: 1, maxConcurrent: 2}
 ---
 apiVersion: topos.latere.ai/v1
 kind: Agent
@@ -635,7 +635,7 @@ func TestAgentManifestRefusals(t *testing.T) {
 	for name, c := range map[string]struct {
 		body, want string
 	}{
-		"invalid":      {agent("  threads: {maxDepth: 5}\n"), "invalid_manifest"},
+		"invalid":      {agent("  subagentLimits: {maxDepth: 5}\n"), "invalid_manifest"},
 		"secret":       {agent("  instructions: use sk-ant-api03-Zq8vXk2Lr9TnB4wYc7HdM1pF\n"), "manifest_holds_secret"},
 		"unknown":      {agent("  subagents: [{name: g, agent: ghost}]\n"), "unknown_reference"},
 		"hooks":        {agent("  hooks: [{event: turn_end, command: 'true'}]\n"), "does not apply spec.hooks yet"},

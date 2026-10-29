@@ -80,7 +80,7 @@ spec:
 	exampleAgentResolved = `{"apiVersion":"topos.latere.ai/v1","kind":"Agent","metadata":{"name":"release-notes","displayName":"Release notes"},` +
 		`"spec":{"model":{"name":"claude-haiku-4-5"},"instructions":"Write the release notes for a tag from the pull requests merged since the tag before it.",` +
 		`"tools":["read","write","edit","bash","grep","glob","web_fetch","todo"],"approvals":{"mode":"confirm","thresholds":{"flagAt":0.3,"askAt":0.5,"blockAt":0.9}},` +
-		`"threads":{"maxDepth":2,"maxConcurrent":8},"machine":{"kind":"cella","image":"base"},"limits":{"turnTimeout":"2h","maxAge":"168h"},"context":{"compactAt":0.8}}}`
+		`"subagentLimits":{"maxDepth":2,"maxConcurrent":8},"machine":{"kind":"cella","image":"base"},"limits":{"turnTimeout":"2h","maxAge":"168h"},"context":{"compactAt":0.8}}}`
 )
 
 // exampleTriggerManifest is the Trigger a caller applies, as JSON and as
