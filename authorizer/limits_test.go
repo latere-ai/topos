@@ -452,7 +452,8 @@ func TestAnAllowNamesAFolder(t *testing.T) {
 // TestTheMemoryMember: an allow's memory folders are decoded as they are
 // written and kept in order; an allow with none has none; one past
 // session.MaxMemoryFolders, or with a folder that breaks a rule, does not
-// decode, and the error names the member (spec 093).
+// decode, and the error names the member (spec 093); a folder of
+// conversations decodes by its own rules (spec 094).
 func TestTheMemoryMember(t *testing.T) {
 	user := session.MemoryFolder{Name: "user", URL: "https://files.example.com/v1", Owner: "https://issuer.example|ada", Path: "files/memory/you", Access: session.MemoryReadOnly}
 	project := session.MemoryFolder{Name: "project", URL: user.URL, Owner: user.Owner, Path: "files/memory/projects/p1", Access: session.MemoryReadWrite}
@@ -507,5 +508,22 @@ func TestTheMemoryMember(t *testing.T) {
 	// the installation's layout.
 	if _, err := DecodeLimits(decision(t, map[string]any{"memory": with(func(f *session.MemoryFolder) { f.Path = "memory" })})); err != nil {
 		t.Fatalf("one segment: %v", err)
+	}
+	// A folder of conversations names sessions in place of a store's
+	// address, read only, its entry's null value kept as null (spec 094).
+	chats := map[string]any{"name": "chats", "access": "read_only", "sessions": map[string]any{"metadata": map[string]any{"project": nil}}}
+	l, err = DecodeLimits(decision(t, map[string]any{"memory": []any{user, chats}}))
+	if err != nil || len(l.Memory) != 2 || !l.Memory[1].Conversations() || l.Memory[1].Sessions.Entry() == nil || !l.Memory[1].Sessions.Entry().Absent {
+		t.Fatalf("a folder of conversations %+v, %v", l.Memory, err)
+	}
+	for name, f := range map[string]map[string]any{
+		"writable":      {"name": "chats", "access": "read_write", "sessions": map[string]any{}},
+		"a store's url": {"name": "chats", "access": "read_only", "url": user.URL, "sessions": map[string]any{}},
+		"two entries":   {"name": "chats", "access": "read_only", "sessions": map[string]any{"metadata": map[string]any{"project": "p1", "folder": "f1"}}},
+		"a number":      {"name": "chats", "access": "read_only", "sessions": map[string]any{"metadata": map[string]any{"project": 1}}},
+	} {
+		if _, err := DecodeLimits(decision(t, map[string]any{"memory": []any{f}})); err == nil || !strings.Contains(err.Error(), "memory") {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
