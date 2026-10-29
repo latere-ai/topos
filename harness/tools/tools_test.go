@@ -144,7 +144,7 @@ func TestStateOfFoldsMetas(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Thread = thread
+		e.Subagent = thread
 		return e
 	}
 	todos := []Todo{{ID: "1", Content: "c", Status: TodoPending}}
@@ -152,7 +152,7 @@ func TestStateOfFoldsMetas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other.Thread = "thr_a"
+	other.Subagent = "thr_a"
 	redacted := ev(t, "thr_a", Meta{Path: "/w/r", SHA256: "rr"})
 	redacted.Payload = json.RawMessage(`{"tombstone":true}`)
 	broken := ev(t, "thr_a", nil)

@@ -18,12 +18,12 @@ import (
 // without what the session gives it when it is written, its id, its
 // session and its sequence.
 type logLine struct {
-	Type    session.Type    `json:"type"`
-	Time    *time.Time      `json:"time"`
-	Turn    int             `json:"turn"`
-	Step    int             `json:"step"`
-	Thread  string          `json:"thread"`
-	Payload json.RawMessage `json:"payload"`
+	Type     session.Type    `json:"type"`
+	Time     *time.Time      `json:"time"`
+	Turn     int             `json:"turn"`
+	Step     int             `json:"step"`
+	Subagent string          `json:"subagent"`
+	Payload  json.RawMessage `json:"payload"`
 }
 
 // readLog reads a task's log, with its placeholders replaced: one event
@@ -61,7 +61,7 @@ func readLog(path, workdir, serveURL string, now time.Time) ([]session.Event, er
 			at = *l.Time
 		}
 		out = append(out, session.Event{
-			ID: session.NewID(session.PrefixEvent), Type: l.Type, Time: at.UTC(), Turn: l.Turn, Step: l.Step, Thread: l.Thread, Payload: l.Payload,
+			ID: session.NewID(session.PrefixEvent), Type: l.Type, Time: at.UTC(), Turn: l.Turn, Step: l.Step, Subagent: l.Subagent, Payload: l.Payload,
 		})
 	}
 	if err := sc.Err(); err != nil {

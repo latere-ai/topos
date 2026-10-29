@@ -158,7 +158,7 @@ func TestCheckpointsInACheckoutLeaveHeadAndIndexAlone(t *testing.T) {
 	defer func() { maxFileBytes = old }()
 	write(t, filepath.Join(work, "big.dat"), strings.Repeat("x", 4096))
 
-	c := &Checkpointer{Machine: h, SessionID: "ses_2", AgentID: "agent_1", Thread: "evt_t"}
+	c := &Checkpointer{Machine: h, SessionID: "ses_2", AgentID: "agent_1", Subagent: "evt_t"}
 	cp, err := c.Take(t.Context(), 1, "")
 	if err != nil {
 		t.Fatal(err)
@@ -565,7 +565,7 @@ func TestACheckpointIsKeptAtItsRepository(t *testing.T) {
 		t.Fatalf("the plain repository's latest is %s, want %s", got, third.Commit)
 	}
 
-	thread := &Checkpointer{Machine: h, SessionID: "ses_k", Thread: "evt_t", Remote: url}
+	thread := &Checkpointer{Machine: h, SessionID: "ses_k", Subagent: "evt_t", Remote: url}
 	if cp, err := thread.Take(t.Context(), 1, ""); err != nil || cp.Remote != "" {
 		t.Fatalf("a thread's checkpoint: %+v, %v; want it kept on the machine", cp, err)
 	}

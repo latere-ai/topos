@@ -127,8 +127,8 @@ func TestATitleRequestNamesTheConversation(t *testing.T) {
 	if c.By != (session.Sender{Subject: session.HarnessSubject, Kind: session.SenderService}) || c.Old != "" || c.New != "Release note for v1.4" {
 		t.Fatalf("the title change %+v", c)
 	}
-	if mr.Thread != "" || mr.Turn != s.Turn || changed.Turn != s.Turn {
-		t.Fatalf("the title's events are on thread %q at turns %d and %d, want the session's turn %d", mr.Thread, mr.Turn, changed.Turn, s.Turn)
+	if mr.Subagent != "" || mr.Turn != s.Turn || changed.Turn != s.Turn {
+		t.Fatalf("the title's events are on thread %q at turns %d and %d, want the session's turn %d", mr.Subagent, mr.Turn, changed.Turn, s.Turn)
 	}
 	if after.Title != "Release note for v1.4" || !after.UpdatedAt.Equal(s.UpdatedAt) || after.Budget.SpentCostUSDMicro != s.Budget.SpentCostUSDMicro+230 || after.Status != session.StatusIdle {
 		t.Fatalf("the header after the title %+v", after)
@@ -312,7 +312,7 @@ func TestTheTitleWindow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Thread = thread
+		e.Subagent = thread
 		return e
 	}
 	person := session.Sender{Subject: "usr_ada", Kind: session.SenderPerson}

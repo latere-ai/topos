@@ -504,7 +504,7 @@ func CheckBatch(id string, last, afterSeq uint64, events []Event, stored func(fr
 // the same payload up to insignificant whitespace.
 func SameEvent(a, b Event) bool {
 	if a.ID != b.ID || a.Seq != b.Seq || a.SessionID != b.SessionID || a.Type != b.Type ||
-		!a.Time.Equal(b.Time) || a.Turn != b.Turn || a.Step != b.Step || a.Thread != b.Thread {
+		!a.Time.Equal(b.Time) || a.Turn != b.Turn || a.Step != b.Step || a.Subagent != b.Subagent {
 		return false
 	}
 	var ca, cb bytes.Buffer
@@ -639,7 +639,7 @@ func ApplyBatch(s *Session, events []Event) {
 // request that records none. A fork's copied request reports the context
 // of the conversation the fork holds, so it is read as any other.
 func contextOf(e Event) *ContextReport {
-	if e.Type != TypeModelRequest || e.Thread != "" || e.Redacted() {
+	if e.Type != TypeModelRequest || e.Subagent != "" || e.Redacted() {
 		return nil
 	}
 	var p ModelRequest

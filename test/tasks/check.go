@@ -105,7 +105,7 @@ func (o *OutcomeCheck) eval(evs []session.Event) string {
 	got := ""
 	for _, e := range evs {
 		var p session.SessionStatus
-		if e.Type == session.TypeSessionStatus && e.Thread == "" && e.Decode(&p) == nil && p.Status != session.StatusRunning {
+		if e.Type == session.TypeSessionStatus && e.Subagent == "" && e.Decode(&p) == nil && p.Status != session.StatusRunning {
 			got = p.Outcome
 		}
 	}
@@ -405,7 +405,7 @@ func (f *FinalMessageCheck) eval(evs []session.Event) string {
 	text := ""
 	for _, e := range evs {
 		var m session.AgentMessage
-		if e.Type != session.TypeAgentMessage || e.Thread != "" || e.Redacted() || e.Decode(&m) != nil {
+		if e.Type != session.TypeAgentMessage || e.Subagent != "" || e.Redacted() || e.Decode(&m) != nil {
 			continue
 		}
 		var parts []string
@@ -707,14 +707,14 @@ func Calls(evs []session.Event) []Call {
 			if e.Decode(&u) != nil {
 				continue
 			}
-			at[e.Thread+"\x00"+u.ToolUseID] = len(out)
-			out = append(out, Call{Thread: e.Thread, ID: u.ToolUseID, Name: u.Name, Input: u.Input})
+			at[e.Subagent+"\x00"+u.ToolUseID] = len(out)
+			out = append(out, Call{Thread: e.Subagent, ID: u.ToolUseID, Name: u.Name, Input: u.Input})
 		case session.TypeToolResult:
 			var r session.ToolResult
 			if e.Decode(&r) != nil {
 				continue
 			}
-			i, ok := at[e.Thread+"\x00"+r.ToolUseID]
+			i, ok := at[e.Subagent+"\x00"+r.ToolUseID]
 			if !ok {
 				continue
 			}

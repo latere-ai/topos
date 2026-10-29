@@ -247,7 +247,7 @@ func event(t *testing.T, typ session.Type, thread string, payload any) session.E
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Thread = thread
+	e.Subagent = thread
 	return e
 }
 

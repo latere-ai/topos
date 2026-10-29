@@ -48,17 +48,17 @@ func (b *logb) add(typ session.Type, thread string, turn int, p any) string {
 	}
 	e := session.Event{
 		ID: b.id(n), Seq: uint64(n), SessionID: sessionID, Type: typ,
-		Time: t0.Add(time.Duration(n) * time.Second), Turn: turn, Thread: thread, Payload: raw,
+		Time: t0.Add(time.Duration(n) * time.Second), Turn: turn, Subagent: thread, Payload: raw,
 	}
 	b.events = append(b.events, e)
 	return e.ID
 }
 
-// thread starts a thread whose id is its thread.started event's id.
+// thread starts a thread whose id is its subagent.started event's id.
 func (b *logb) thread(parent, task string, turn int) string {
 	n := len(b.events) + 1
 	id := b.id(n)
-	b.add(session.TypeThreadStarted, id, turn, session.ThreadStarted{
+	b.add(session.TypeSubagentStarted, id, turn, session.SubagentStarted{
 		Agent:  session.AgentRef{ID: "agent_01J9Z3Q4W8KX6T0M2V5N7R0000", Name: "reviewer", Version: 1},
 		Parent: parent, Task: task, Depth: 1,
 	})
@@ -210,9 +210,9 @@ var foldCases = []struct {
 		th := b.thread("", "Review the diff in main.go.", 1)
 		b.result("", 1, "toolu_spawn", "started "+b.id(4))
 		b.assistant(th, 1, false, txt("One issue on line 3."))
-		b.add(session.TypeThreadMessage, "", 1, session.ThreadMessage{From: th, FromName: "reviewer", Content: []lux.Block{txt("Line 3 leaks a file.")}})
-		b.add(session.TypeThreadMessage, th, 1, session.ThreadMessage{To: th, FromName: "builder", Content: []lux.Block{txt("Check line 9 too.")}})
-		b.add(session.TypeThreadEnded, th, 1, session.ThreadEnded{Reason: "completed", FinalText: "done"})
+		b.add(session.TypeSubagentMessage, "", 1, session.SubagentMessage{From: th, FromName: "reviewer", Content: []lux.Block{txt("Line 3 leaks a file.")}})
+		b.add(session.TypeSubagentMessage, th, 1, session.SubagentMessage{To: th, FromName: "builder", Content: []lux.Block{txt("Check line 9 too.")}})
+		b.add(session.TypeSubagentEnded, th, 1, session.SubagentEnded{Reason: "completed", FinalText: "done"})
 		return []string{"", th}
 	}, nil},
 	{"system_parts", func(b *logb) []string {

@@ -494,7 +494,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 			Instructions:  r.t.Agent.Instructions,
 			Subagents:     subs,
 			TurnTimeout:   r.t.Timeout,
-			Prompt:        prompts.HarnessOptions{Host: m.Info().Kind == machine.KindHost, Device: r.o.Device, Threads: len(subs) > 0},
+			Prompt:        prompts.HarnessOptions{Host: m.Info().Kind == machine.KindHost, Device: r.o.Device, Subagents: len(subs) > 0},
 			PromptVersion: r.o.promptVersion(),
 		}, nil
 	}

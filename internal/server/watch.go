@@ -12,16 +12,16 @@ import (
 
 // ContextRule is how a session's log and header say how full its context
 // is (spec 087), which the event routes' descriptions carry.
-var ContextRule = fmt.Sprintf("Each model.request of a thread's step or a compaction records context {window, used, source, parts}: window the model's input window from the catalog, 0 when it names none; "+
+var ContextRule = fmt.Sprintf("Each model.request of a step, the session's own or a subagent's, or of a compaction records context {window, used, source, parts}: window the model's input window from the catalog, 0 when it names none; "+
 	"used the input tokens the request used, source %s when the response counted its prompt tokens and %s when it did not, as a failed or cut request, where used is the harness's estimate; "+
 	"and parts [{part, tokens}] in the order %s, %s, %s, %s, %s, %s, each the harness's estimate scaled so the parts but %s sum to used, and %s the window less used. "+
-	"A title's request records none. The session folds the latest of its own thread's as context_report.",
+	"A title's request records none. The session folds the latest of its own conversation's as context_report.",
 	session.ContextFromProvider, session.ContextFromEstimate,
 	session.ReportInstructions, session.ReportTools, session.ReportMessages, session.ReportFiles, session.ReportSummary, session.ReportFree, session.ReportFree, session.ReportFree)
 
 // WatchedRule is how the log says whether a person watched a decision
 // (spec 087), which the event routes' descriptions carry.
-const WatchedRule = "agent.tool_use and approval.requested record attended: false on a turn a trigger's message began, a wake's included, and in a subagent's thread that turn drove; " +
+const WatchedRule = "agent.tool_use and approval.requested record attended: false on a turn a trigger's message began, a wake's included, and in a subagent that turn drove; " +
 	"true on a turn a person's message, answer or confirmation began. Such a turn decides without the patterns the session's confirmations remembered; " +
 	"always_allow, always_confirm, the mode and a decision service decide as on any turn, and a decision service reads attended in the action's attributes."
 

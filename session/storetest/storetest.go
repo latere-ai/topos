@@ -475,7 +475,7 @@ wait:
 	}
 	want := []session.Delta{
 		{Turn: 1, Step: 2, Block: 0, Kind: session.DeltaThinking, Text: "Let me see."},
-		{Thread: "evt_thread", Turn: 1, Step: 2, Block: 1, Kind: session.DeltaToolInput, Text: `{"path":`},
+		{Subagent: "evt_thread", Turn: 1, Step: 2, Block: 1, Kind: session.DeltaToolInput, Text: `{"path":`},
 		{Turn: 1, Step: 2, Reset: true},
 		{Turn: 1, Step: 2, Block: 0, Kind: session.DeltaText, Text: "Hello <there> & \u2028 \"you\"."},
 	}

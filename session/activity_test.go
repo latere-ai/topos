@@ -41,7 +41,7 @@ func TestTheActivityRules(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Thread = thread
+		e.Subagent = thread
 		return e
 	}
 	if _, ok := PersonMessage(msg(SenderPerson, "", "")); !ok {
@@ -62,7 +62,7 @@ func TestTheActivityRules(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Turn, e.Thread = turn, thread
+		e.Turn, e.Subagent = turn, thread
 		return e
 	}
 	for _, c := range []struct {

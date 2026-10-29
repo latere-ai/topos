@@ -404,7 +404,7 @@ func TestASendTellsHowLongTheSessionHasBeenQuiet(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Turn, e.Thread = 1, thread
+		e.Turn, e.Subagent = 1, thread
 		return e
 	}
 	batch := []session.Event{request("", now), request("thr_1", now.Add(30*time.Second))}

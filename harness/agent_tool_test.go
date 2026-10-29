@@ -38,7 +38,7 @@ func (e *env) usedNames(thread string) []string {
 	e.t.Helper()
 	var out []string
 	for _, ev := range e.all() {
-		if ev.Type != session.TypeAgentToolUse || ev.Thread != thread {
+		if ev.Type != session.TypeAgentToolUse || ev.Subagent != thread {
 			continue
 		}
 		var p session.AgentToolUse
@@ -140,12 +140,12 @@ func TestTheOldToolNamesRunForOneRelease(t *testing.T) {
 	}
 	id, started := e.thread(e.all())
 	if started.Agent.Name != "reviewer" || started.Task != "Review main.go." {
-		t.Fatalf("thread.started %+v", started)
+		t.Fatalf("subagent.started %+v", started)
 	}
 	for _, ev := range e.all() {
-		var p session.ThreadMessage
-		if ev.Type == session.TypeThreadMessage && (ev.Decode(&p) != nil || p.To != id || p.Content[0].Text != "Check line 9 too.") {
-			t.Fatalf("thread.message %+v", p)
+		var p session.SubagentMessage
+		if ev.Type == session.TypeSubagentMessage && (ev.Decode(&p) != nil || p.To != id || p.Content[0].Text != "Check line 9 too.") {
+			t.Fatalf("subagent.message %+v", p)
 		}
 	}
 	res := e.parentResults(t)
@@ -209,16 +209,16 @@ func TestACallRecordedUnderAnOldNameResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, err := session.NewEvent(session.TypeThreadStarted, session.ThreadStarted{Agent: session.AgentRef{Name: "reviewer"}, ToolUseID: "toolu_s", Task: "t", Depth: 1, Model: reviewerModel, Tools: []string{"echo"}}, t0)
+	started, err := session.NewEvent(session.TypeSubagentStarted, session.SubagentStarted{Agent: session.AgentRef{Name: "reviewer"}, ToolUseID: "toolu_s", Task: "t", Depth: 1, Model: reviewerModel, Tools: []string{"echo"}}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	started.Thread = started.ID
+	started.Subagent = started.ID
 	answer, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: "Already reviewed."}}}, StopReason: ir.StopEndTurn}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer.Thread = started.ID
+	answer.Subagent = started.ID
 	e.appendEvents(ctx, msg, use, started, answer)
 	e.running(ctx)
 	e.stub.Script(model, reply(ir.StopEndTurn, text("done")))
@@ -284,7 +284,7 @@ func TestAConfirmedCallOfAnOldNameRuns(t *testing.T) {
 	}
 	_, started := e.thread(e.all())
 	if started.Agent.Name != "reviewer" || started.Task != "Review main.go." {
-		t.Fatalf("thread.started %+v", started)
+		t.Fatalf("subagent.started %+v", started)
 	}
 	if res := e.parentResults(t); len(res) != 1 || res[0].Outcome != tools.OutcomeOK || !strings.Contains(res[0].Content[0].Text, "Line 3 leaks a file.") {
 		t.Fatalf("results %+v", res)
@@ -332,7 +332,7 @@ func (e *env) helperModels(ctx context.Context, thread string) []string {
 		if err := ev.Decode(&p); err != nil {
 			e.t.Fatal(err)
 		}
-		if ev.Thread == thread {
+		if ev.Subagent == thread {
 			out = append(out, p.Model)
 		}
 	}
@@ -381,14 +381,14 @@ func TestASubagentWithoutAModelRunsItsCallers(t *testing.T) {
 	}
 	id, started := e.thread(e.all())
 	if started.Model != routed || started.Agent.Name != "helper" {
-		t.Fatalf("thread.started %+v, want the helper on %s", started, routed)
+		t.Fatalf("subagent.started %+v, want the helper on %s", started, routed)
 	}
 	for _, ev := range e.events(ctx, session.TypeModelRequest) {
 		var p session.ModelRequest
 		if err := ev.Decode(&p); err != nil {
 			t.Fatal(err)
 		}
-		if ev.Thread == id && (p.Model != routed || p.CostUSDMicro == nil || *p.CostUSDMicro != 300) {
+		if ev.Subagent == id && (p.Model != routed || p.CostUSDMicro == nil || *p.CostUSDMicro != 300) {
 			t.Fatalf("the helper's model.request %+v, want %s priced at 300 micro-USD", p, routed)
 		}
 	}
@@ -459,7 +459,7 @@ func TestASubagentWithoutAModelFollowsItsCaller(t *testing.T) {
 	}
 	id, started := e.thread(e.all())
 	if started.Model != model {
-		t.Fatalf("thread.started %+v, want the helper started on %s", started, model)
+		t.Fatalf("subagent.started %+v, want the helper started on %s", started, model)
 	}
 	if ran := e.helperModels(ctx, id); !slices.Equal(ran, []string{model, moved}) {
 		t.Fatalf("the helper ran %v, want %s and then %s", ran, model, moved)

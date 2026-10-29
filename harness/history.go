@@ -50,7 +50,7 @@ func (t *turn) history(_ context.Context, c tools.Call, r tools.HistoryRead) (st
 	}
 	for _, e := range evs {
 		var p session.AgentToolUse
-		if e.Type == session.TypeAgentToolUse && e.Thread == t.thread && !e.Redacted() && e.Decode(&p) == nil && p.ToolUseID == c.ID {
+		if e.Type == session.TypeAgentToolUse && e.Subagent == t.thread && !e.Redacted() && e.Decode(&p) == nil && p.ToolUseID == c.ID {
 			before = e.Seq
 			break
 		}

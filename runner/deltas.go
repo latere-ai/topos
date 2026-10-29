@@ -76,10 +76,10 @@ func (f *forwarder) OnDelta(d harness.Delta) {
 		return
 	}
 	i := slices.IndexFunc(f.pending, func(p session.Delta) bool {
-		return p.Thread == d.Thread && p.Turn == d.Turn && p.Step == d.Step && p.Block == ev.Index && p.Kind == kind
+		return p.Subagent == d.Subagent && p.Turn == d.Turn && p.Step == d.Step && p.Block == ev.Index && p.Kind == kind
 	})
 	if i < 0 {
-		f.pending = append(f.pending, session.Delta{Thread: d.Thread, Turn: d.Turn, Step: d.Step, Block: ev.Index, Kind: kind})
+		f.pending = append(f.pending, session.Delta{Subagent: d.Subagent, Turn: d.Turn, Step: d.Step, Block: ev.Index, Kind: kind})
 		i = len(f.pending) - 1
 	}
 	f.pending[i].Text += ev.Delta
@@ -103,9 +103,9 @@ func (f *forwarder) OnReset(thread string, turn, step int) {
 		return
 	}
 	f.pending = slices.DeleteFunc(f.pending, func(p session.Delta) bool {
-		return p.Thread == thread && p.Turn == turn && p.Step == step
+		return p.Subagent == thread && p.Turn == turn && p.Step == step
 	})
-	f.pub.PublishDelta(f.id, session.Delta{Thread: thread, Turn: turn, Step: step, Reset: true})
+	f.pub.PublishDelta(f.id, session.Delta{Subagent: thread, Turn: turn, Step: step, Reset: true})
 }
 
 // tick publishes what the interval held.

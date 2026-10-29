@@ -65,7 +65,7 @@ var SearchedTypes = []Type{TypeUserMessage, TypeAgentMessage, TypeUserAnswer}
 // on the session's own thread that is not redacted. A subagent's thread,
 // a tool's output, a file and a redacted event are never searched.
 func Searched(e Event) bool {
-	return slices.Contains(SearchedTypes, e.Type) && e.Thread == "" && !e.Redacted()
+	return slices.Contains(SearchedTypes, e.Type) && e.Subagent == "" && !e.Redacted()
 }
 
 // SearchText is the text a search reads of e: the text blocks of a

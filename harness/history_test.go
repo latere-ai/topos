@@ -43,7 +43,7 @@ func (l *numbered) add(typ session.Type, thread string, p any) uint64 {
 	if err != nil {
 		l.t.Fatal(err)
 	}
-	e.Seq, e.Thread = uint64(n), thread
+	e.Seq, e.Subagent = uint64(n), thread
 	l.evs = append(l.evs, e)
 	return e.Seq
 }

@@ -741,7 +741,7 @@ func (t *turn) keepResumed(ctx context.Context, open []pendingCall) error {
 		if e.Seq >= open[0].seq {
 			break
 		}
-		if e.Type == session.TypeAgentMessage && e.Thread == "" {
+		if e.Type == session.TypeAgentMessage && e.Subagent == "" {
 			msg = &evs[i]
 		}
 	}

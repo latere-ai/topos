@@ -110,7 +110,7 @@ func TestHistoryReadsOneThread(t *testing.T) {
 	b.user(ada, "The code word is quartz.", 1)
 	th := b.thread("", "Review the diff.", 1)
 	b.assistant(th, 1, false, txt("Reviewing."))
-	b.add(session.TypeThreadMessage, th, 1, session.ThreadMessage{From: "", To: th, FromName: "builder", Content: []lux.Block{txt("Check go.mod too.")}})
+	b.add(session.TypeSubagentMessage, th, 1, session.SubagentMessage{From: "", To: th, FromName: "builder", Content: []lux.Block{txt("Check go.mod too.")}})
 	b.assistant("", 1, false, txt("Spawned."))
 
 	sub, err := session.History(b.events, th, 100)
@@ -169,15 +169,15 @@ func TestHistoryShowsACallNoToolUseRecords(t *testing.T) {
 // whose payload does not decode is an error, as the fold's is.
 func TestHistoryRefusesAPayloadItCannotRead(t *testing.T) {
 	for _, typ := range []session.Type{
-		session.TypeUserMessage, session.TypeThreadMessage, session.TypeThreadStarted, session.TypeAgentMessage,
+		session.TypeUserMessage, session.TypeSubagentMessage, session.TypeSubagentStarted, session.TypeAgentMessage,
 		session.TypeAgentToolUse, session.TypeToolResult, session.TypeUserToolResult, session.TypeUserAnswer,
 		session.TypeUserInterrupt, session.TypeTitleChanged,
 	} {
 		e := session.Event{ID: "evt_1", Seq: 1, Type: typ, Payload: json.RawMessage(`[]`)}
-		if typ == session.TypeThreadStarted || typ == session.TypeThreadMessage {
-			e.Thread = "evt_1"
+		if typ == session.TypeSubagentStarted || typ == session.TypeSubagentMessage {
+			e.Subagent = "evt_1"
 		}
-		thread := e.Thread
+		thread := e.Subagent
 		if _, err := session.History([]session.Event{e}, thread, 10); err == nil {
 			t.Errorf("%s: read a payload that does not decode", typ)
 		}

@@ -31,7 +31,7 @@ func TestTheSessionFoldsItsContextReport(t *testing.T) {
 	l.add(TypeModelRequest, ModelRequest{Model: "m", Outcome: "ok", Context: report(100)})
 	latest := l.add(TypeModelRequest, ModelRequest{Model: "m", Outcome: "ok", Context: report(300)})
 	l.add(TypeModelRequest, ModelRequest{Model: "m", Outcome: "ok", Context: report(900)})
-	l.evs[len(l.evs)-1].Thread = "thr_1"
+	l.evs[len(l.evs)-1].Subagent = "thr_1"
 	l.add(TypeModelRequest, ModelRequest{Model: "small", Outcome: "ok", Purpose: PurposeTitle, Context: report(50)})
 	l.add(TypeModelRequest, ModelRequest{Model: "m", Outcome: "ok"})
 	gone := l.add(TypeModelRequest, ModelRequest{Model: "m", Outcome: "ok", Context: report(700)})

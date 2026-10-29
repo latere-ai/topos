@@ -102,7 +102,7 @@ func TestPostgresWatchAcrossReplicas(t *testing.T) {
 		}
 	}()
 	if _, err := conn.Exec(ctx, `INSERT INTO events (session_id, seq, id, type, time, thread, turn, step, payload, redacted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)`,
-		e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Thread, e.Turn, e.Step, string(e.Payload)); err != nil {
+		e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Subagent, e.Turn, e.Step, string(e.Payload)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.Exec(ctx, `UPDATE sessions SET last_seq = 1 WHERE id = $1`, s.ID); err != nil {

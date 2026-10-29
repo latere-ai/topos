@@ -190,7 +190,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		},
 		Name: ac.Name, Instructions: ac.Instructions, Policy: ac.Policy, Effort: ac.Effort,
 		Subagents: ac.Subagents, MaxDepth: ac.MaxDepth, MaxConcurrent: ac.MaxConcurrent, CompactAt: ac.CompactAt,
-		Prompt: prompts.HarnessOptions{Threads: len(ac.Subagents) > 0},
+		Prompt: prompts.HarnessOptions{Subagents: len(ac.Subagents) > 0},
 		Clock:  b.o.Clock,
 		Log:    b.o.Log,
 	}

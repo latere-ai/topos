@@ -22,7 +22,7 @@ func TestADeltaFrame(t *testing.T) {
 		want string
 	}{
 		{Delta{Turn: 2, Step: 1, Block: 0, Kind: DeltaText, Text: "<b>Hi</b>"}, `{"turn":2,"step":1,"block":0,"kind":"text","text":"<b>Hi</b>"}`},
-		{Delta{Thread: "evt_1", Turn: 2, Step: 3, Block: 1, Kind: DeltaToolInput, Text: `{"a":`}, `{"thread":"evt_1","turn":2,"step":3,"block":1,"kind":"tool_input","text":"{\"a\":"}`},
+		{Delta{Subagent: "evt_1", Turn: 2, Step: 3, Block: 1, Kind: DeltaToolInput, Text: `{"a":`}, `{"subagent":"evt_1","turn":2,"step":3,"block":1,"kind":"tool_input","text":"{\"a\":"}`},
 		{Delta{Turn: 2, Step: 1, Block: 4, Kind: DeltaText, Text: "dropped", Reset: true}, `{"turn":2,"step":1,"reset":true}`},
 	} {
 		b, err := Marshal(c.d)
@@ -38,7 +38,7 @@ func TestADeltaFrame(t *testing.T) {
 		}
 		want := c.d
 		if want.Reset {
-			want = Delta{Thread: c.d.Thread, Turn: c.d.Turn, Step: c.d.Step, Reset: true}
+			want = Delta{Subagent: c.d.Subagent, Turn: c.d.Turn, Step: c.d.Step, Reset: true}
 		}
 		if back != want {
 			t.Errorf("%s reads back as %+v", b, back)

@@ -16,7 +16,7 @@ func TestRenderIncludesOnlyTheSectionsThatApply(t *testing.T) {
 	if strings.Contains(plain, "{{") || !strings.Contains(plain, "disposable sandbox") || strings.Contains(plain, "# Subagents") || strings.Contains(plain, "# Git") {
 		t.Fatalf("a plain sandbox prompt:\n%s", plain)
 	}
-	full, err := Harness(HarnessCurrent, HarnessOptions{Host: true, Threads: true, Memory: true, Git: true})
+	full, err := Harness(HarnessCurrent, HarnessOptions{Host: true, Subagents: true, Memory: true, Git: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestTheSubagentsSectionNamesTheRenamedTools(t *testing.T) {
 				t.Fatalf("version %d renders %+v otherwise than version %d: %v %v\n%s\n---\n%s", now, o, before, err1, err2, old, cur)
 			}
 		}
-		cur, err := Harness(now, HarnessOptions{Threads: true})
+		cur, err := Harness(now, HarnessOptions{Subagents: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestTheDeviceVersionSaysTheMachineIsThePersonsComputer(t *testing.T) {
 	if strings.Contains(device, "disposable sandbox") || strings.Contains(device, "# Git") {
 		t.Fatalf("the device prompt calls the computer a sandbox or names the session's branch:\n%s", device)
 	}
-	for _, o := range []HarnessOptions{{}, {Host: true}, {Host: true, Threads: true, Memory: true, Git: true}, {Threads: true}} {
+	for _, o := range []HarnessOptions{{}, {Host: true}, {Host: true, Subagents: true, Memory: true, Git: true}, {Subagents: true}} {
 		v1, err1 := Harness(HarnessCurrent, o)
 		v2, err2 := Harness(HarnessDevice, o)
 		if err1 != nil || err2 != nil || v1 != v2 {

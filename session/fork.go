@@ -25,7 +25,7 @@ func ForkPoint(evs []Event, at *uint64) (uint64, error) {
 	marks := boundaries(evs)
 	if at != nil {
 		if *at == 0 || *at > uint64(len(evs)) || !marks[*at-1] {
-			return 0, fmt.Errorf("%w: at_seq %d is not a turn boundary, a session.status of the session's own thread that is idle or an end that closed a finished turn", ErrInvalidForkPoint, *at)
+			return 0, fmt.Errorf("%w: at_seq %d is not a turn boundary, a session.status of the session's own conversation that is idle or an end that closed a finished turn", ErrInvalidForkPoint, *at)
 		}
 		return *at, nil
 	}
@@ -52,8 +52,8 @@ func ForkBefore(evs []Event, before uint64) (uint64, error) {
 		return 0, fmt.Errorf("%w: before_seq %d names no event of the log, which ends at %d", ErrInvalidForkPoint, before, len(evs))
 	}
 	e := evs[before-1]
-	if e.Type != TypeUserMessage || e.Thread != "" {
-		return 0, fmt.Errorf("%w: before_seq %d is a %s, not a user.message of the session's own thread", ErrInvalidForkPoint, before, e.Type)
+	if e.Type != TypeUserMessage || e.Subagent != "" {
+		return 0, fmt.Errorf("%w: before_seq %d is a %s, not a user.message of the session's own conversation", ErrInvalidForkPoint, before, e.Type)
 	}
 	if e.Redacted() {
 		return 0, fmt.Errorf("%w: the user.message at before_seq %d is redacted", ErrInvalidForkPoint, before)
@@ -109,7 +109,7 @@ func boundaries(evs []Event) []bool {
 
 // ownStatus decodes a session.status of the session's own thread.
 func ownStatus(e Event) (SessionStatus, bool) {
-	if e.Type != TypeSessionStatus || e.Thread != "" || e.Redacted() {
+	if e.Type != TypeSessionStatus || e.Subagent != "" || e.Redacted() {
 		return SessionStatus{}, false
 	}
 	var p SessionStatus

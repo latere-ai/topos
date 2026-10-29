@@ -93,9 +93,9 @@ type Checkpointer struct {
 	Machine   machine.Machine
 	SessionID string
 	AgentID   string
-	// Thread is the thread whose worktree this is; empty is the session's
+	// Subagent is the thread whose worktree this is; empty is the session's
 	// own working directory.
-	Thread string
+	Subagent string
 	// SessionRepo is the bare repository that holds the objects when the
 	// working directory is not a checkout.
 	SessionRepo string
@@ -109,8 +109,8 @@ type Checkpointer struct {
 
 // Ref is the ref of a turn's checkpoint.
 func (c *Checkpointer) Ref(turn int) string {
-	if c.Thread != "" {
-		return fmt.Sprintf("refs/topos/checkpoints/%s/threads/%s/%d", c.SessionID, c.Thread, turn)
+	if c.Subagent != "" {
+		return fmt.Sprintf("refs/topos/checkpoints/%s/threads/%s/%d", c.SessionID, c.Subagent, turn)
 	}
 	return fmt.Sprintf("refs/topos/checkpoints/%s/%d", c.SessionID, turn)
 }
@@ -182,7 +182,7 @@ func (c *Checkpointer) Take(ctx context.Context, turn int, previous string) (ses
 		return session.CheckpointRef{}, err
 	}
 	cp := session.CheckpointRef{Ref: ref, Commit: commit}
-	if c.Remote != "" && c.Thread == "" && c.keep(ctx, commit) {
+	if c.Remote != "" && c.Subagent == "" && c.keep(ctx, commit) {
 		cp.Remote = c.Remote
 	}
 	return cp, nil

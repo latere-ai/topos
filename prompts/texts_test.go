@@ -272,8 +272,8 @@ var textCases = func() []textCase {
 		{name: TranscriptSender, data: sender("", ""), want: "Message from " + cmp.Or("", "", "someone") + ":"},
 		{name: TranscriptInterrupt, data: sender("Ada", "usr_ada"), want: cmp.Or("Ada", "usr_ada", "someone") + " interrupted the previous turn."},
 		{name: TranscriptInterrupt, data: sender("", ""), want: cmp.Or("", "", "someone") + " interrupted the previous turn."},
-		{name: TranscriptThreadMessage, data: Data{"FromName": "reviewer", "From": "evt_1"}, want: "Message from thread " + cmp.Or("reviewer", "evt_1", "session") + ":"},
-		{name: TranscriptThreadMessage, data: Data{"FromName": "", "From": ""}, want: "Message from thread " + cmp.Or("", "", "session") + ":"},
+		{name: TranscriptSubagentMessage, data: Data{"FromName": "reviewer", "From": "evt_1"}, want: "Message from thread " + cmp.Or("reviewer", "evt_1", "session") + ":"},
+		{name: TranscriptSubagentMessage, data: Data{"FromName": "", "From": ""}, want: "Message from thread " + cmp.Or("", "", "session") + ":"},
 		{name: TranscriptRewound, data: Data{"Turn": 3}, want: "The working directory was restored to its state at the end of turn " + strconv.Itoa(3) + "."},
 
 		{name: CallDenied, data: Data{"Note": ""}, want: "A person denied this call."},
@@ -300,28 +300,28 @@ var textCases = func() []textCase {
 		{name: CallRepeated, want: "This exact call already got this same answer earlier in this turn, so repeating it cannot succeed. Change the call, or stop and tell the person what is blocking you."},
 
 		{name: "results/threads/idle-v1", data: Data{"Thread": "evt_7"}, want: "Thread " + "evt_7" + " is idle; send it more work with message."},
-		{name: ThreadIdle, data: Data{"Thread": "evt_7"}, want: "Subagent evt_7 is idle; send it more work with send_message."},
+		{name: SubagentIdle, data: Data{"Thread": "evt_7"}, want: "Subagent evt_7 is idle; send it more work with send_message."},
 		{name: "results/threads/stopped-v1", data: Data{"Thread": "evt_7", "Reason": "error", "Detail": "model_error"}, want: fmt.Sprintf("Thread %s stopped: %s %s", "evt_7", "error", "model_error")},
-		{name: ThreadStopped, data: Data{"Thread": "evt_7", "Reason": "error", "Detail": "model_error"}, want: "Subagent evt_7 stopped: error model_error"},
+		{name: SubagentStopped, data: Data{"Thread": "evt_7", "Reason": "error", "Detail": "model_error"}, want: "Subagent evt_7 stopped: error model_error"},
 		{name: AdvisorStopped, data: Data{"Reason": "turn_limit", "Detail": ""}, want: fmt.Sprintf("The advisor stopped: %s %s", "turn_limit", "")},
-		{name: ThreadBranch, data: Data{"Branch": "agents/reviewer/ses_1.evt_7", "Commit": "1a2b3c4"}, want: fmt.Sprintf("Its work is on branch %s at %s; merge it with git.", "agents/reviewer/ses_1.evt_7", "1a2b3c4")},
+		{name: SubagentBranch, data: Data{"Branch": "agents/reviewer/ses_1.evt_7", "Commit": "1a2b3c4"}, want: fmt.Sprintf("Its work is on branch %s at %s; merge it with git.", "agents/reviewer/ses_1.evt_7", "1a2b3c4")},
 		{name: "results/threads/uncommitted-v1", want: "The thread works from the last commit: your uncommitted changes are not in its worktree."},
-		{name: ThreadUncommitted, want: "The subagent works from the last commit: your uncommitted changes are not in its worktree."},
+		{name: SubagentUncommitted, want: "The subagent works from the last commit: your uncommitted changes are not in its worktree."},
 		{name: "results/threads/commit-failed-v1", data: Data{"Branch": "agents/r/b", "Output": "fatal: no"}, want: "The thread's work could not be committed to " + "agents/r/b" + ": " + "fatal: no"},
-		{name: ThreadCommitFailed, data: Data{"Branch": "agents/r/b", "Output": "fatal: no"}, want: "The subagent's work could not be committed to agents/r/b: fatal: no"},
-		{name: ThreadUnknownSubagent, data: Data{"Agent": `no"body`}, want: fmt.Sprintf("no subagent named %q", `no"body`)},
+		{name: SubagentCommitFailed, data: Data{"Branch": "agents/r/b", "Output": "fatal: no"}, want: "The subagent's work could not be committed to agents/r/b: fatal: no"},
+		{name: SubagentUnknown, data: Data{"Agent": `no"body`}, want: fmt.Sprintf("no subagent named %q", `no"body`)},
 		{name: "results/threads/depth-exceeded-v1", data: Data{"Depth": 2}, want: fmt.Sprintf("a thread at depth %d may not spawn", 2)},
-		{name: ThreadDepthExceeded, data: Data{"Depth": 2}, want: "at depth 2, you may not start another subagent"},
+		{name: SubagentDepthExceeded, data: Data{"Depth": 2}, want: "at depth 2, you may not start another subagent"},
 		{name: "results/threads/no-worktrees-v1", want: "this machine keeps no worktrees; spawn with isolation shared"},
-		{name: ThreadNoWorktrees, want: "this machine keeps no worktrees; start the subagent with isolation shared"},
+		{name: SubagentNoWorktrees, want: "this machine keeps no worktrees; start the subagent with isolation shared"},
 		{name: "results/threads/too-many-v1", data: Data{"Max": 8}, want: fmt.Sprintf("the session already runs %d threads", 8)},
-		{name: ThreadTooMany, data: Data{"Max": 8}, want: "the session already runs 8 subagents"},
+		{name: SubagentTooMany, data: Data{"Max": 8}, want: "the session already runs 8 subagents"},
 		{name: "results/threads/not-spawned-v1", data: Data{"Thread": "evt_9"}, want: fmt.Sprintf("no thread %s that this thread spawned", "evt_9")},
-		{name: ThreadNotSpawned, data: Data{"Thread": "evt_9"}, want: "you started no subagent evt_9"},
+		{name: SubagentNotStarted, data: Data{"Thread": "evt_9"}, want: "you started no subagent evt_9"},
 		{name: "results/threads/ended-v1", data: Data{"Thread": "evt_9"}, want: fmt.Sprintf("thread %s has ended", "evt_9")},
-		{name: ThreadEnded, data: Data{"Thread": "evt_9"}, want: "subagent evt_9 has ended"},
+		{name: SubagentEnded, data: Data{"Thread": "evt_9"}, want: "subagent evt_9 has ended"},
 		{name: "results/threads/subagent-gone-v1", data: Data{"Thread": "evt_9", "Agent": "reviewer"}, want: fmt.Sprintf("thread %s runs %q, which is no longer a subagent", "evt_9", "reviewer")},
-		{name: ThreadSubagentGone, data: Data{"Thread": "evt_9", "Agent": "reviewer"}, want: `subagent evt_9 was started as "reviewer", which is no longer one of your subagents`},
+		{name: SubagentGone, data: Data{"Thread": "evt_9", "Agent": "reviewer"}, want: `subagent evt_9 was started as "reviewer", which is no longer one of your subagents`},
 
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": "read, write"}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "read, write")},
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": ""}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "")},
@@ -797,7 +797,7 @@ func TestTheHarnessPromptRendersItsCurrentBytes(t *testing.T) {
 		"8b50d2daa0751c36a8debd0ba402629893fca2ad3395e91b664478a4c310c59a",
 	}
 	for i, sum := range want {
-		o := HarnessOptions{Host: i&1 != 0, Threads: i&2 != 0, Memory: i&4 != 0, Git: i&8 != 0}
+		o := HarnessOptions{Host: i&1 != 0, Subagents: i&2 != 0, Memory: i&4 != 0, Git: i&8 != 0}
 		got, err := Harness(1, o)
 		if err != nil {
 			t.Fatal(err)

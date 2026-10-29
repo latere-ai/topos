@@ -109,7 +109,7 @@ func testSearchMatches(t *testing.T, st session.Store) {
 		t.Fatal(err)
 	}
 	threaded := Reply(t, "a subagent mentions walrus too", t0)
-	threaded.Thread = "thr_child"
+	threaded.Subagent = "thr_child"
 	secret := Message(t, "my walrus password is swordfish", t0)
 	appendAll(t, st, hidden.ID, 0, result, threaded, secret)
 	if err := st.Redact(ctx, hidden.ID, secret.ID, session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, "a secret"); err != nil {

@@ -126,7 +126,7 @@ func (f *fixture) toolTurn(id string, n int, thread string) {
 		}
 		e.Turn = n
 		if p.typ == session.TypeAgentToolUse {
-			e.Thread = thread
+			e.Subagent = thread
 		}
 		batch = append(batch, e)
 	}

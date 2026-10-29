@@ -825,7 +825,7 @@ func checkpointOf(evs []session.Event, turn int) (*session.CheckpointRef, int) {
 	var cp *session.CheckpointRef
 	rewinds := 0
 	for _, e := range evs {
-		if e.Redacted() || e.Thread != "" {
+		if e.Redacted() || e.Subagent != "" {
 			continue
 		}
 		switch e.Type {
@@ -845,7 +845,7 @@ func checkpointOf(evs []session.Event, turn int) (*session.CheckpointRef, int) {
 func lastCheckpointRef(evs []session.Event) *session.CheckpointRef {
 	for _, e := range slices.Backward(evs) {
 		var p session.SessionStatus
-		if e.Type == session.TypeSessionStatus && e.Thread == "" && !e.Redacted() && e.Decode(&p) == nil && p.Checkpoint != nil {
+		if e.Type == session.TypeSessionStatus && e.Subagent == "" && !e.Redacted() && e.Decode(&p) == nil && p.Checkpoint != nil {
 			return p.Checkpoint
 		}
 	}

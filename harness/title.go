@@ -357,7 +357,7 @@ func titleWindow(s session.Session, log []session.Event) (string, []titleMessage
 	current := ""
 	var msgs []titleMessage
 	for _, e := range log {
-		if e.Redacted() || e.Thread != "" {
+		if e.Redacted() || e.Subagent != "" {
 			continue
 		}
 		switch e.Type {

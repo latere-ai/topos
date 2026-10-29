@@ -43,8 +43,8 @@ const (
 // ReplayStep is the verdict on one model.request of a log.
 type ReplayStep struct {
 	// Seq is the model.request's sequence number.
-	Seq    uint64 `json:"seq"`
-	Thread string `json:"thread,omitempty"`
+	Seq      uint64 `json:"seq"`
+	Subagent string `json:"subagent,omitempty"`
 	// Outcome is match, mismatch, codec_mismatch or skipped.
 	Outcome string `json:"outcome"`
 	// Codec is the recorded codec; Build is this build's for the step's
@@ -71,7 +71,7 @@ func Replay(ctx context.Context, log []session.Event, rebuild Rebuild, enc Encod
 		if e.Type != session.TypeModelRequest {
 			continue
 		}
-		step := ReplayStep{Seq: e.Seq, Thread: e.Thread}
+		step := ReplayStep{Seq: e.Seq, Subagent: e.Subagent}
 		if e.Redacted() {
 			step.Outcome, step.Detail = ReplaySkipped, "the model.request is redacted"
 			out = append(out, step)

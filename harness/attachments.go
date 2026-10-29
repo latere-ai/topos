@@ -167,7 +167,7 @@ func (t *turn) deliverAttachments(ctx context.Context) error {
 		t.sh.undeliverable[p] = true
 	}
 	for i := range evs {
-		evs[i].Turn, evs[i].Step, evs[i].Thread = t.num, t.step, t.thread
+		evs[i].Turn, evs[i].Step, evs[i].Subagent = t.num, t.step, t.thread
 	}
 	return t.commit(ctx, evs...)
 }

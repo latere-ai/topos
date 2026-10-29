@@ -124,7 +124,7 @@ func (t *turn) rebuild(ctx context.Context) (ir.Request, string, int64, error) {
 func (t *turn) steps() []session.Event {
 	var out []session.Event
 	for _, e := range t.events() {
-		if e.Type == session.TypeAgentMessage && e.Thread == t.thread && !e.Redacted() {
+		if e.Type == session.TypeAgentMessage && e.Subagent == t.thread && !e.Redacted() {
 			out = append(out, e)
 		}
 	}
@@ -146,7 +146,7 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 	names := map[string]string{}
 	done := map[string]bool{}
 	for _, e := range t.events() {
-		if e.Thread != t.thread || e.Redacted() {
+		if e.Subagent != t.thread || e.Redacted() {
 			continue
 		}
 		switch e.Type {
@@ -167,7 +167,7 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 	var ids []string
 	var from, to uint64
 	for _, e := range t.events() {
-		if e.Seq >= keepFrom || e.Thread != t.thread || e.Redacted() {
+		if e.Seq >= keepFrom || e.Subagent != t.thread || e.Redacted() {
 			continue
 		}
 		var id string
@@ -294,7 +294,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 			break
 		}
 		prefix = append(prefix, e)
-		if from == 0 && e.Thread == t.thread {
+		if from == 0 && e.Subagent == t.thread {
 			from = e.Seq
 		}
 	}

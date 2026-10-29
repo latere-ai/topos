@@ -362,9 +362,9 @@ const (
 	// and Subject.
 	TranscriptSender    Name = "transcript/sender-v1"
 	TranscriptInterrupt Name = "transcript/interrupt-v1"
-	// TranscriptThreadMessage takes the sending thread's FromName and
+	// TranscriptSubagentMessage takes the sending thread's FromName and
 	// From.
-	TranscriptThreadMessage Name = "transcript/thread-message-v1"
+	TranscriptSubagentMessage Name = "transcript/thread-message-v1"
 	// TranscriptRewound takes Turn.
 	TranscriptRewound Name = "transcript/rewound-v1"
 	// TranscriptAttachments takes Attachments, each with Path, MediaType
@@ -485,19 +485,19 @@ const (
 // file names. Version 2 of a result names the agent and send_message
 // tools and calls a thread the agent it runs.
 const (
-	ThreadIdle            Name = "results/threads/idle-v2"
-	ThreadStopped         Name = "results/threads/stopped-v2"
+	SubagentIdle          Name = "results/threads/idle-v2"
+	SubagentStopped       Name = "results/threads/stopped-v2"
 	AdvisorStopped        Name = "results/threads/advisor-stopped-v1"
-	ThreadBranch          Name = "results/threads/branch-v1"
-	ThreadUncommitted     Name = "results/threads/uncommitted-v2"
-	ThreadCommitFailed    Name = "results/threads/commit-failed-v2"
-	ThreadUnknownSubagent Name = "results/threads/unknown-subagent-v1"
-	ThreadDepthExceeded   Name = "results/threads/depth-exceeded-v2"
-	ThreadNoWorktrees     Name = "results/threads/no-worktrees-v2"
-	ThreadTooMany         Name = "results/threads/too-many-v2"
-	ThreadNotSpawned      Name = "results/threads/not-spawned-v2"
-	ThreadEnded           Name = "results/threads/ended-v2"
-	ThreadSubagentGone    Name = "results/threads/subagent-gone-v2"
+	SubagentBranch        Name = "results/threads/branch-v1"
+	SubagentUncommitted   Name = "results/threads/uncommitted-v2"
+	SubagentCommitFailed  Name = "results/threads/commit-failed-v2"
+	SubagentUnknown       Name = "results/threads/unknown-subagent-v1"
+	SubagentDepthExceeded Name = "results/threads/depth-exceeded-v2"
+	SubagentNoWorktrees   Name = "results/threads/no-worktrees-v2"
+	SubagentTooMany       Name = "results/threads/too-many-v2"
+	SubagentNotStarted    Name = "results/threads/not-spawned-v2"
+	SubagentEnded         Name = "results/threads/ended-v2"
+	SubagentGone          Name = "results/threads/subagent-gone-v2"
 )
 
 // The registry's answers to a call it refuses (spec 008), and the line

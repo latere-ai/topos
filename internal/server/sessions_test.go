@@ -803,7 +803,7 @@ func TestStreamDeltas(t *testing.T) {
 	published := []session.Delta{
 		{Turn: 1, Step: 1, Block: 0, Kind: session.DeltaThinking, Text: "Reading main.go."},
 		{Turn: 1, Step: 1, Reset: true},
-		{Thread: "evt_t", Turn: 1, Step: 1, Block: 1, Kind: session.DeltaText, Text: "<ok> \"done\"\n"},
+		{Subagent: "evt_t", Turn: 1, Step: 1, Block: 1, Kind: session.DeltaText, Text: "<ok> \"done\"\n"},
 	}
 	for _, d := range published {
 		pub.PublishDelta(s.ID, d)

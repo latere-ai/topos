@@ -203,8 +203,8 @@ func TestAnAnswersImageIsKept(t *testing.T) {
 	if !slices.Equal(got, wantOrder) {
 		t.Fatalf("the step's events are %v, want %v", got, wantOrder)
 	}
-	if evs[at].Turn != msgs[0].Turn || evs[at].Step != msgs[0].Step || evs[at].Thread != "" {
-		t.Fatalf("files.kept is turn %d step %d thread %q, its answer turn %d step %d", evs[at].Turn, evs[at].Step, evs[at].Thread, msgs[0].Turn, msgs[0].Step)
+	if evs[at].Turn != msgs[0].Turn || evs[at].Step != msgs[0].Step || evs[at].Subagent != "" {
+		t.Fatalf("files.kept is turn %d step %d thread %q, its answer turn %d step %d", evs[at].Turn, evs[at].Step, evs[at].Subagent, msgs[0].Turn, msgs[0].Step)
 	}
 	tr, err := session.Fold(evs, "")
 	if err != nil || tr.Check() != nil {

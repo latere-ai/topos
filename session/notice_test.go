@@ -27,7 +27,7 @@ func logOf(t *testing.T, items ...logged) []Event {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Seq, e.Thread = uint64(i+1), it.thread
+		e.Seq, e.Subagent = uint64(i+1), it.thread
 		out = append(out, e)
 	}
 	return out

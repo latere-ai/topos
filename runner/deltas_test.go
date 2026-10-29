@@ -58,7 +58,7 @@ func (o *observed) OnReset(string, int, int) {
 }
 
 func fragment(thread string, step int, typ ir.EventType, index int, text string) harness.Delta {
-	return harness.Delta{Thread: thread, Turn: 1, Step: step, Event: ir.Event{Type: typ, Index: index, Delta: text}}
+	return harness.Delta{Subagent: thread, Turn: 1, Step: step, Event: ir.Event{Type: typ, Index: index, Delta: text}}
 }
 
 // TestTheForwarderJoinsFragments: the fragments of a block are joined
@@ -82,7 +82,7 @@ func TestTheForwarderJoinsFragments(t *testing.T) {
 	f.OnDelta(fragment("", 1, ir.EventBlockStop, 0, ""))
 	want := []session.Delta{
 		{Turn: 1, Step: 1, Block: 0, Kind: session.DeltaThinking, Text: strings.Repeat("ab", 100)},
-		{Thread: "evt_t", Turn: 1, Step: 1, Block: 0, Kind: session.DeltaText, Text: "other thread"},
+		{Subagent: "evt_t", Turn: 1, Step: 1, Block: 0, Kind: session.DeltaText, Text: "other thread"},
 	}
 	if got := pub.all(); !slices.Equal(got, want) {
 		t.Fatalf("published %+v, want %+v", got, want)
@@ -163,7 +163,7 @@ func TestTheForwarderResetsAStep(t *testing.T) {
 	f.close()
 	want := []session.Delta{
 		{Turn: 1, Step: 2, Reset: true},
-		{Thread: "evt_t", Turn: 1, Step: 2, Block: 0, Kind: session.DeltaText, Text: "kept"},
+		{Subagent: "evt_t", Turn: 1, Step: 2, Block: 0, Kind: session.DeltaText, Text: "kept"},
 	}
 	if got := pub.all(); !slices.Equal(got, want) || next.resets != 1 {
 		t.Fatalf("published %+v, the Observer saw %d resets", got, next.resets)

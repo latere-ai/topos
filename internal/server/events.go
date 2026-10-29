@@ -517,7 +517,7 @@ func ends(ev session.Event) bool {
 // KeptRule is the sentence the event routes state files.kept by (specs
 // 055 and 064): what a client draws an answer's images and offers its
 // linked files from.
-var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agent.message of the session's own thread that shows a local image or links a local file, once the message's step is committed and before the turn's session.status: "+
+var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agent.message of the session's own conversation that shows a local image or links a local file, once the message's step is committed and before the turn's session.status: "+
 	"message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for a file kept as a blob of the session, path the destination as the message wrote it, "+
 	"and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, not_a_file, outside_workdir, no_machine, limit and unavailable. "+
 	"A destination names a file of the machine when it has no scheme, the file: scheme, or the prefix sandbox: before a path with no scheme, and lies inside the working directory; a reference in a code span or a fenced block is not read. "+
@@ -564,7 +564,7 @@ var MachineRule = fmt.Sprintf("session.machine {machine, reason, cause, context,
 // directory in its folder of the files store.
 var WorkRule = fmt.Sprintf("work.saved {covers, written, removed, unsaved, deferred, skipped, skipped_files, held, failed, whole, from} records, for a session that keeps its files in a folder of the files store, "+
 	"the copy of its working directory kept at %s/<path> in that folder, path the file's place in the working directory, the latest state alone and no turn's before it. "+
-	"A turn of the session's own thread that ran a call ends with one, before its session.status, when the turn end wrote, removed or left out a file: "+
+	"A turn of the session's own conversation that ran a call ends with one, before its session.status, when the turn end wrote, removed or left out a file: "+
 	"covers is the last sequence the turn end had read when it walked the directory; written each {path, size, mode, sha256} for a file written, new or changed, mode its permission bits and sha256 the hex digest of its bytes; "+
 	"removed the paths whose files were deleted; unsaved the paths whose newer bytes were not written, which the copy no longer vouches for; deferred how many changed files were left for a later turn end; "+
 	"skipped how many files the copy leaves out and skipped_files the first %d of them, each {path, reason}, reason %s for a file past %d bytes and %s for one past the copy's %d files or %d bytes in path order; "+

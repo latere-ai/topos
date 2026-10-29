@@ -27,7 +27,7 @@ func forkLog(t *testing.T, statuses ...forkStatus) []session.Event {
 	evs := make([]session.Event, len(statuses))
 	for i, s := range statuses {
 		evs[i] = storetest.Status(t, s.status, s.reason, at.Add(time.Duration(i)*time.Second))
-		evs[i].Thread = s.thread
+		evs[i].Subagent = s.thread
 	}
 	session.Stamp(session.NewID(session.PrefixSession), 0, evs)
 	return evs
@@ -173,7 +173,7 @@ func TestAForkRestatesTheEndOfItsTurn(t *testing.T) {
 		}
 	}
 	last := got[seq-1]
-	if last.ID != end.ID || !last.Time.Equal(end.Time) || last.Turn != 1 || last.Type != session.TypeSessionStatus || last.Thread != "" {
+	if last.ID != end.ID || !last.Time.Equal(end.Time) || last.Turn != 1 || last.Type != session.TypeSessionStatus || last.Subagent != "" {
 		t.Fatalf("the restated end: %+v, want the parent's %+v", last, logged[seq-1])
 	}
 	var p struct {
@@ -207,7 +207,7 @@ func edited(t *testing.T) []session.Event {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Thread = thread
+		e.Subagent = thread
 		return e
 	}
 	changed, err := session.NewEvent(session.TypeModelChanged, session.ModelChanged{

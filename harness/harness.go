@@ -48,7 +48,7 @@ type Log interface {
 // Deltas are never appended: the agent.message that follows is the
 // record.
 type Delta struct {
-	Thread     string
+	Subagent   string
 	Turn, Step int
 	Event      ir.Event
 }
@@ -131,7 +131,7 @@ type Config struct {
 	Notify bool
 	// History offers the history tool (spec 084): the runner sets it when
 	// the agent's tools name the tool. The session's own thread holds it,
-	// and a spawned thread when its thread.started names it, as a
+	// and a spawned thread when its subagent.started names it, as a
 	// built-in's name passes to a thread.
 	History bool
 	// MaxDepth bounds how deep threads nest: zero is 2, at most 4.
@@ -508,7 +508,7 @@ func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
 	if err != nil {
 		return session.Event{}, err
 	}
-	e.Turn, e.Step, e.Thread = t.num, t.step, t.thread
+	e.Turn, e.Step, e.Subagent = t.num, t.step, t.thread
 	return e, nil
 }
 
@@ -625,7 +625,7 @@ func (t *turn) checkpoint(ctx context.Context) (*session.CheckpointRef, error) {
 // log, or empty.
 func LastCheckpoint(log []session.Event, thread string) string {
 	for _, e := range slices.Backward(log) {
-		if e.Type != session.TypeSessionStatus || e.Thread != thread || e.Redacted() {
+		if e.Type != session.TypeSessionStatus || e.Subagent != thread || e.Redacted() {
 			continue
 		}
 		var p session.SessionStatus
@@ -1214,7 +1214,7 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 		}
 		t.startMachine(ev)
 		if o := t.h.c.Observer; o != nil {
-			o.OnDelta(Delta{Thread: t.thread, Turn: t.num, Step: t.step, Event: ev})
+			o.OnDelta(Delta{Subagent: t.thread, Turn: t.num, Step: t.step, Event: ev})
 		}
 	}
 }
@@ -1661,7 +1661,7 @@ func (t *turn) modelRequest(ctx context.Context, res models.Result, si sendInfo,
 // lastMessage is the id of the thread's latest agent.message.
 func (t *turn) lastMessage() string {
 	for _, e := range slices.Backward(t.events()) {
-		if e.Type == session.TypeAgentMessage && e.Thread == t.thread {
+		if e.Type == session.TypeAgentMessage && e.Subagent == t.thread {
 			return e.ID
 		}
 	}

@@ -34,7 +34,7 @@ func testActivity(t *testing.T, st session.Store) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Turn, e.Thread = turn, thread
+		e.Turn, e.Subagent = turn, thread
 		return e
 	}
 	status := func(s session.Status, reason session.StopReason, at time.Time, turn int) session.Event {

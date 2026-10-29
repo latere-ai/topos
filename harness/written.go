@@ -102,7 +102,7 @@ func (t *turn) writtenAsText(ctx context.Context, res models.Result, si sendInfo
 func (t *turn) unmovable() string {
 	switch {
 	case t.thread != "":
-		return "a thread's turn does not move"
+		return "a subagent's turn does not move"
 	case t.model.Via == "" || t.model.Name == "":
 		return "the session runs a model named itself"
 	case t.h.c.Failover == nil:
@@ -119,7 +119,7 @@ func (t *turn) unmovable() string {
 // of tool as text on model, and the action the turn took.
 func (t *turn) logText(ctx context.Context, level slog.Level, model, tool, action string, attrs ...slog.Attr) {
 	t.h.c.Log.LogAttrs(ctx, level, "a response wrote a tool call as text", append([]slog.Attr{
-		slog.String("session", t.s.ID), slog.String("thread", t.thread), slog.Int("turn", t.num), slog.Int("step", t.step),
+		slog.String("session", t.s.ID), slog.String("subagent", t.thread), slog.Int("turn", t.num), slog.Int("step", t.step),
 		slog.String("model", model), slog.String("tool", tool), slog.String("action", action),
 	}, attrs...)...)
 }

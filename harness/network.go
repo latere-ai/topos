@@ -319,7 +319,7 @@ func (t *turn) refusals(ctx context.Context, toolUseID string, since time.Time, 
 // confirmation.
 func (t *turn) settleApprovals(ctx context.Context, w *waits) error {
 	for _, a := range session.Approvals(t.events()) {
-		if !a.Open() || a.Thread != t.thread {
+		if !a.Open() || a.Subagent != t.thread {
 			continue
 		}
 		d := session.ApprovalDecided{ApprovalID: a.Request.ApprovalID, Decision: session.DecisionDeny}

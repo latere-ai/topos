@@ -89,7 +89,7 @@ func TestReplayReproducesRequestHash(t *testing.T) {
 	}
 	threads := map[string]bool{}
 	for _, s := range steps {
-		threads[s.Thread] = true
+		threads[s.Subagent] = true
 		if s.Replayed != s.Recorded || s.Codec != s.Build {
 			t.Fatalf("step %+v", s)
 		}
@@ -103,7 +103,7 @@ func TestReplayReproducesRequestHash(t *testing.T) {
 	// its request never carried.
 	var second session.ModelRequest
 	for _, ev := range log {
-		if ev.Type == session.TypeModelRequest && ev.Thread == "" && ev.Step == 2 && ev.Turn == 1 {
+		if ev.Type == session.TypeModelRequest && ev.Subagent == "" && ev.Step == 2 && ev.Turn == 1 {
 			if err := ev.Decode(&second); err != nil {
 				t.Fatal(err)
 			}

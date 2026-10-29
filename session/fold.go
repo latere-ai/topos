@@ -351,18 +351,18 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			}
 			noteSender(p.Sender)
 			results[p.ToolUseID] = resultBlock(p.ToolUseID, p.Content, p.IsError, cleared, o.History)
-		case TypeThreadStarted:
-			var p ThreadStarted
+		case TypeSubagentStarted:
+			var p SubagentStarted
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
 			user(text(p.Task))
-		case TypeThreadMessage:
-			var p ThreadMessage
+		case TypeSubagentMessage:
+			var p SubagentMessage
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
-			from := prompts.Render(prompts.TranscriptThreadMessage, prompts.Data{"FromName": p.FromName, "From": p.From})
+			from := prompts.Render(prompts.TranscriptSubagentMessage, prompts.Data{"FromName": p.FromName, "From": p.From})
 			user(append([]lux.Block{text(from)}, p.Content...)...)
 		case TypeSessionRewound:
 			var p SessionRewound
@@ -537,8 +537,8 @@ func fence(text string) string {
 // inView reports whether e belongs to the fold of thread: the events
 // whose thread is it, and the session-wide machine, memory and (for the
 // session's thread) rewind events. An event's thread is the thread whose
-// transcript it renders into: a thread.started carries its own id, a
-// thread.message the receiving thread's.
+// transcript it renders into: a subagent.started carries its own id, a
+// subagent.message the receiving thread's.
 func inView(e Event, thread string) bool {
 	switch e.Type {
 	case TypeSessionMachine, TypeMemoryAttached:
@@ -546,7 +546,7 @@ func inView(e Event, thread string) bool {
 	case TypeSessionRewound:
 		return thread == ""
 	}
-	return e.Thread == thread
+	return e.Subagent == thread
 }
 
 // Uncompacted returns the redacted events of a thread's view that would
@@ -579,7 +579,7 @@ func Uncompacted(events []Event, thread string) ([]Event, error) {
 func visible(e Event) bool {
 	switch e.Type {
 	case TypeUserMessage, TypeUserInterrupt, TypeAgentMessage, TypeToolResult,
-		TypeUserToolResult, TypeThreadStarted, TypeThreadMessage, TypeContextCompacted,
+		TypeUserToolResult, TypeSubagentStarted, TypeSubagentMessage, TypeContextCompacted,
 		TypeSessionRewound:
 		return true
 	}

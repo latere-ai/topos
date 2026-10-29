@@ -225,7 +225,7 @@ func TestAQuestionWrittenAsTextIsAskedAgainAsACall(t *testing.T) {
 	}
 	lines := logs.lines(t)
 	if len(lines) != 1 || lines[0]["level"] != "INFO" || lines[0]["action"] != actionReminded || lines[0]["tool"] != ToolQuestion ||
-		lines[0]["model"] != model || lines[0]["session"] != e.s.ID || lines[0]["turn"] != float64(1) || lines[0]["step"] != float64(1) || lines[0]["thread"] != "" {
+		lines[0]["model"] != model || lines[0]["session"] != e.s.ID || lines[0]["turn"] != float64(1) || lines[0]["step"] != float64(1) || lines[0]["subagent"] != "" {
 		t.Fatalf("log %+v", lines)
 	}
 	noWords(t, logs, "Tech Stack", "to-do", "React")
@@ -561,7 +561,7 @@ func TestAThreadIsRemindedAndNeverMoves(t *testing.T) {
 		if err := ev.Decode(&p); err != nil {
 			t.Fatal(err)
 		}
-		if ev.Thread != "" {
+		if ev.Subagent != "" {
 			outcomes = append(outcomes, p.Outcome)
 		}
 	}
@@ -569,7 +569,7 @@ func TestAThreadIsRemindedAndNeverMoves(t *testing.T) {
 		t.Fatalf("the thread's model.requests %v", outcomes)
 	}
 	lines := logs.lines(t)
-	if a := logs.actions(t); !slices.Equal(a, []string{actionReminded, actionKept}) || lines[1]["why"] != "a thread's turn does not move" || lines[1]["thread"] == "" || lines[1]["tool"] != "echo" {
+	if a := logs.actions(t); !slices.Equal(a, []string{actionReminded, actionKept}) || lines[1]["why"] != "a subagent's turn does not move" || lines[1]["subagent"] == "" || lines[1]["tool"] != "echo" {
 		t.Fatalf("log %+v", lines)
 	}
 }

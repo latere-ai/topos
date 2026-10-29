@@ -294,7 +294,7 @@ func startedByPerson(evs []session.Event) bool {
 	closed, opened := -1, -1
 	for i, e := range slices.Backward(evs) {
 		var p session.SessionStatus
-		if e.Type != session.TypeSessionStatus || e.Thread != "" || e.Decode(&p) != nil {
+		if e.Type != session.TypeSessionStatus || e.Subagent != "" || e.Decode(&p) != nil {
 			continue
 		}
 		if closed < 0 && p.Status != session.StatusRunning {
@@ -310,7 +310,7 @@ func startedByPerson(evs []session.Event) bool {
 	var after uint64
 	for _, e := range slices.Backward(evs[:opened]) {
 		var mr session.ModelRequest
-		if e.Type != session.TypeModelRequest || e.Thread != "" || e.Decode(&mr) != nil || mr.Purpose != "" {
+		if e.Type != session.TypeModelRequest || e.Subagent != "" || e.Decode(&mr) != nil || mr.Purpose != "" {
 			continue
 		}
 		after = cmp.Or(mr.FoldSeq, e.Seq)

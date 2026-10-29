@@ -279,7 +279,7 @@ func TestAnEndOnIdleSessionForksAtItsTurn(t *testing.T) {
 	var statuses []session.Status
 	for _, e := range evs {
 		var p session.SessionStatus
-		if e.Type == session.TypeSessionStatus && e.Thread == "" && e.Decode(&p) == nil {
+		if e.Type == session.TypeSessionStatus && e.Subagent == "" && e.Decode(&p) == nil {
 			statuses = append(statuses, p.Status)
 		}
 	}

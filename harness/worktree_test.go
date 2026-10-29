@@ -111,7 +111,7 @@ func TestAnIsolatedThreadWorksOnItsOwnBranch(t *testing.T) {
 	}
 	id, started := e.thread(e.all())
 	if started.Isolation != "worktree" || !strings.HasPrefix(started.Branch, "agents/reviewer/"+e.s.ID+".") || started.Workdir != filepath.Join(base, "worktrees", id) {
-		t.Fatalf("thread.started %+v", started)
+		t.Fatalf("subagent.started %+v", started)
 	}
 	if _, err := os.Stat(filepath.Join(work, "notes.txt")); !os.IsNotExist(err) {
 		t.Fatalf("the thread wrote into the parent's working directory: %v", err)

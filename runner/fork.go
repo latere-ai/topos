@@ -22,7 +22,7 @@ func forkCheckpoint(s session.Session, evs []session.Event) (*session.Checkpoint
 		return nil, 0
 	}
 	for _, e := range slices.Backward(evs) {
-		if !s.Copied(e) || e.Type != session.TypeSessionStatus || e.Thread != "" || e.Redacted() {
+		if !s.Copied(e) || e.Type != session.TypeSessionStatus || e.Subagent != "" || e.Redacted() {
 			continue
 		}
 		var p session.SessionStatus

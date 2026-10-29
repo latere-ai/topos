@@ -35,7 +35,7 @@ func openCalls(log []session.Event, thread string) []pendingCall {
 	// redaction removes what the result held, not that the call returned.
 	answered := map[string]bool{}
 	for _, e := range log {
-		if id := e.Answers(); id != "" && e.Thread == thread {
+		if id := e.Answers(); id != "" && e.Subagent == thread {
 			answered[id] = true
 		}
 	}
@@ -46,7 +46,7 @@ func openCalls(log []session.Event, thread string) []pendingCall {
 			continue
 		}
 		switch {
-		case e.Type == session.TypeAgentToolUse && e.Thread == thread:
+		case e.Type == session.TypeAgentToolUse && e.Subagent == thread:
 			var p session.AgentToolUse
 			if e.Decode(&p) != nil || answered[p.ToolUseID] {
 				continue

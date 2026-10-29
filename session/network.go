@@ -176,7 +176,7 @@ type ApprovalDecided struct {
 type Approval struct {
 	Request      ApprovalRequested
 	Seq          uint64
-	Thread       string
+	Subagent     string
 	Decided      *ApprovalDecided
 	Confirmation *UserToolConfirmation
 	Message      *UserMessage
@@ -205,7 +205,7 @@ func Approvals(evs []Event) []Approval {
 				continue
 			}
 			index[p.ApprovalID] = len(out)
-			out = append(out, Approval{Request: p, Seq: e.Seq, Thread: e.Thread})
+			out = append(out, Approval{Request: p, Seq: e.Seq, Subagent: e.Subagent})
 		case TypeApprovalDecided:
 			var p ApprovalDecided
 			if e.Decode(&p) != nil {

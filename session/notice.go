@@ -46,7 +46,7 @@ type NoticeMeta struct {
 // noticeOf is the notice a tool.result of the session's own thread
 // records, nil for any other event.
 func noticeOf(e Event) *Notice {
-	if e.Type != TypeToolResult || e.Thread != "" || e.Redacted() {
+	if e.Type != TypeToolResult || e.Subagent != "" || e.Redacted() {
 		return nil
 	}
 	var p struct {
@@ -74,7 +74,7 @@ func Noticed(evs []Event, after uint64) bool {
 func TriggerTurn(evs []Event, through uint64) (UserMessage, bool) {
 	start := 0
 	for i, e := range slices.Backward(evs) {
-		if e.Seq > through || e.Type != TypeSessionStatus || e.Thread != "" || e.Redacted() {
+		if e.Seq > through || e.Type != TypeSessionStatus || e.Subagent != "" || e.Redacted() {
 			continue
 		}
 		var p SessionStatus

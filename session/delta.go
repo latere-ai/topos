@@ -37,11 +37,11 @@ const DeltaBuffer = 256
 // Deltas are never appended and never replayed: the agent.message that
 // follows is the record, so a client that misses one loses nothing.
 type Delta struct {
-	// Thread is the thread whose response it is, empty for the session's
-	// own thread, as on events.
-	Thread string `json:"thread,omitempty"`
-	Turn   int    `json:"turn"`
-	Step   int    `json:"step"`
+	// Subagent is the id of the subagent whose response it is, empty for
+	// the session's own conversation, as on events.
+	Subagent string `json:"subagent,omitempty"`
+	Turn     int    `json:"turn"`
+	Step     int    `json:"step"`
 	// Block is the index of the response's content block the text
 	// belongs to.
 	Block int       `json:"block"`
@@ -51,17 +51,17 @@ type Delta struct {
 	Reset bool `json:"reset,omitempty"`
 }
 
-// MarshalJSON writes a reset as {thread, turn, step, reset} alone, since
-// it belongs to no block, and any other delta as {thread, turn, step,
-// block, kind, text}.
+// MarshalJSON writes a reset as {subagent, turn, step, reset} alone,
+// since it belongs to no block, and any other delta as {subagent, turn,
+// step, block, kind, text}.
 func (d Delta) MarshalJSON() ([]byte, error) {
 	if d.Reset {
 		return Marshal(struct {
-			Thread string `json:"thread,omitempty"`
-			Turn   int    `json:"turn"`
-			Step   int    `json:"step"`
-			Reset  bool   `json:"reset"`
-		}{d.Thread, d.Turn, d.Step, true})
+			Subagent string `json:"subagent,omitempty"`
+			Turn     int    `json:"turn"`
+			Step     int    `json:"step"`
+			Reset    bool   `json:"reset"`
+		}{d.Subagent, d.Turn, d.Step, true})
 	}
 	type plain Delta
 	return Marshal(plain(d))

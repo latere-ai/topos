@@ -40,8 +40,8 @@ type HarnessOptions struct {
 	// Device is true on a person's own computer reached through the Cella
 	// environment it serves (spec 080), which version 2 and later say.
 	Device bool
-	// Threads is true when the agent has subagents.
-	Threads bool
+	// Subagents is true when the agent has subagents.
+	Subagents bool
 	// Memory is true when a memory store is attached.
 	Memory bool
 	// Git is true when the working directory is in a repository.
@@ -55,7 +55,7 @@ type HarnessOptions struct {
 // configuration, so an unknown one is an error, not a panic.
 func Harness(n int, o HarnessOptions) (string, error) {
 	s, err := Execute(Name(fmt.Sprintf("harness/harness-v%d", n)), Data{
-		"Host": o.Host, "Device": o.Device, "Threads": o.Threads, "Memory": o.Memory, "Git": o.Git,
+		"Host": o.Host, "Device": o.Device, "Threads": o.Subagents, "Memory": o.Memory, "Git": o.Git,
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompts: no harness prompt version %d: %w", n, err)

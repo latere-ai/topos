@@ -387,7 +387,7 @@ func TestForkPointMustBeATurnBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	threadIdle.Thread = "thr_reviewer"
+	threadIdle.Subagent = "thr_reviewer"
 	cur, err := f.sessions.Get(t.Context(), s.ID)
 	if err != nil {
 		t.Fatal(err)

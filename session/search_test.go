@@ -273,12 +273,12 @@ func TestSearchTextReadsWhatAPersonSaw(t *testing.T) {
 	}
 	result := event(t, TypeToolResult, map[string]any{"tool_use_id": "t1", "content": "Lisbon flights"})
 	threaded := msg
-	threaded.Thread = "thr_1"
+	threaded.Subagent = "thr_1"
 	redacted := msg
 	redacted.Payload = tombstone
 	for _, e := range []Event{result, threaded, redacted} {
 		if _, ok := SearchText(e); ok {
-			t.Errorf("an event a search does not read was read: %s thread %q", e.Type, e.Thread)
+			t.Errorf("an event a search does not read was read: %s thread %q", e.Type, e.Subagent)
 		}
 	}
 	broken := msg

@@ -156,7 +156,7 @@ func (th *thread) record(t *testing.T, res Result) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Thread = th.id
+	e.Subagent = th.id
 	th.events = append(th.events, e)
 }
 

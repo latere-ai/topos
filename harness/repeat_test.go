@@ -20,7 +20,7 @@ func (e *env) threadResults(thread string) []session.ToolResult {
 	e.t.Helper()
 	var out []session.ToolResult
 	for _, ev := range e.all() {
-		if ev.Type == session.TypeToolResult && ev.Thread == thread {
+		if ev.Type == session.TypeToolResult && ev.Subagent == thread {
 			var p session.ToolResult
 			if err := ev.Decode(&p); err != nil {
 				e.t.Fatal(err)
@@ -254,7 +254,7 @@ func TestAThreadCountsItsOwnRepeats(t *testing.T) {
 	}
 	errs := e.events(ctx, session.TypeSessionError)
 	var se session.SessionError
-	if len(errs) != 1 || errs[0].Thread != id || errs[0].Decode(&se) != nil || se.Code != CodeRepeatedCall {
+	if len(errs) != 1 || errs[0].Subagent != id || errs[0].Decode(&se) != nil || se.Code != CodeRepeatedCall {
 		t.Fatalf("session.error %+v, want one on the thread", errs)
 	}
 	if n := len(e.events(ctx, session.TypeSessionStatus)); n != 2 {

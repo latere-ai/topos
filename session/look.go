@@ -36,7 +36,7 @@ func Looks(s Session, evs []Event) []Look {
 		if s.Copied(e) {
 			continue
 		}
-		if e.Type == TypeUserMessage && e.Thread == "" && !e.Redacted() {
+		if e.Type == TypeUserMessage && e.Subagent == "" && !e.Redacted() {
 			if open >= 0 {
 				out[open].Ended = true
 				open = -1
@@ -52,7 +52,7 @@ func Looks(s Session, evs []Event) []Look {
 			continue
 		}
 		out[open].CostUSDMicro += Cost(e)
-		if e.Type == TypeSessionStatus && e.Thread == "" && !e.Redacted() {
+		if e.Type == TypeSessionStatus && e.Subagent == "" && !e.Redacted() {
 			var p SessionStatus
 			if e.Decode(&p) == nil && p.Status != "" && p.Status != StatusRunning {
 				out[open].Ended = true

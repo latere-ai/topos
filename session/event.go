@@ -25,9 +25,9 @@ const (
 	TypeAgentMessage         Type = "agent.message"
 	TypeAgentToolUse         Type = "agent.tool_use"
 	TypeToolResult           Type = "tool.result"
-	TypeThreadStarted        Type = "thread.started"
-	TypeThreadEnded          Type = "thread.ended"
-	TypeThreadMessage        Type = "thread.message"
+	TypeSubagentStarted      Type = "subagent.started"
+	TypeSubagentEnded        Type = "subagent.ended"
+	TypeSubagentMessage      Type = "subagent.message"
 	TypeContextCompacted     Type = "context.compacted"
 	TypeModelRequest         Type = "model.request"
 	TypeSessionStatus        Type = "session.status"
@@ -64,8 +64,8 @@ const (
 var Known = map[Type]bool{
 	TypeUserMessage: true, TypeUserInterrupt: true, TypeUserToolConfirmation: true,
 	TypeUserToolResult: true, TypeUserAnswer: true, TypeAgentMessage: true, TypeAgentToolUse: true,
-	TypeToolResult: true, TypeThreadStarted: true, TypeThreadEnded: true,
-	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
+	TypeToolResult: true, TypeSubagentStarted: true, TypeSubagentEnded: true,
+	TypeSubagentMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
 	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypePolicyChanged: true, TypeTitleChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
@@ -76,15 +76,17 @@ var Known = map[Type]bool{
 
 // Event is one entry of a session's log.
 type Event struct {
-	ID        string          `json:"id"`
-	Seq       uint64          `json:"seq"`
-	SessionID string          `json:"session_id"`
-	Type      Type            `json:"type"`
-	Time      time.Time       `json:"time"`
-	Turn      int             `json:"turn,omitempty"`
-	Step      int             `json:"step,omitempty"`
-	Thread    string          `json:"thread,omitempty"`
-	Payload   json.RawMessage `json:"payload"`
+	ID        string    `json:"id"`
+	Seq       uint64    `json:"seq"`
+	SessionID string    `json:"session_id"`
+	Type      Type      `json:"type"`
+	Time      time.Time `json:"time"`
+	Turn      int       `json:"turn,omitempty"`
+	Step      int       `json:"step,omitempty"`
+	// Subagent is the id of the subagent whose conversation the event
+	// belongs to, empty for the session's own (spec 013).
+	Subagent string          `json:"subagent,omitempty"`
+	Payload  json.RawMessage `json:"payload"`
 }
 
 // tombstone is the payload a redacted event keeps.
@@ -258,10 +260,10 @@ type ToolResult struct {
 	CostUSDMicro *int64          `json:"cost_usd_micro,omitempty"`
 }
 
-// ThreadStarted is the payload of thread.started. The event's id is the
-// new thread's id, and so is its thread field; Parent names the thread
-// that started it.
-type ThreadStarted struct {
+// SubagentStarted is the payload of subagent.started. The event's id is
+// the new subagent's id, and so is its subagent field; Parent names the
+// subagent that started it, empty for the session's own conversation.
+type SubagentStarted struct {
 	Agent     AgentRef `json:"agent"`
 	Parent    string   `json:"parent,omitempty"`
 	ToolUseID string   `json:"tool_use_id,omitempty"`
@@ -280,19 +282,19 @@ type ThreadStarted struct {
 	Ignored []string `json:"ignored,omitempty"`
 }
 
-// ThreadEnded is the payload of thread.ended.
-type ThreadEnded struct {
+// SubagentEnded is the payload of subagent.ended.
+type SubagentEnded struct {
 	Reason       string     `json:"reason"`
 	FinalText    string     `json:"final_text,omitempty"`
 	Usage        *lux.Usage `json:"usage,omitempty"`
 	CostUSDMicro *int64     `json:"cost_usd_micro,omitempty"`
 }
 
-// ThreadMessage is the payload of thread.message; the event's thread is
-// the receiving thread, the same as To. FromName is the
-// sending thread's agent name, recorded by the runner so the fold renders
-// the sender without looking up another thread.
-type ThreadMessage struct {
+// SubagentMessage is the payload of subagent.message; the event's
+// subagent is the receiving one, the same as To. FromName is the sender's
+// agent name, recorded by the runner so the fold renders the sender
+// without looking up another subagent.
+type SubagentMessage struct {
 	From      string      `json:"from,omitempty"`
 	To        string      `json:"to,omitempty"`
 	FromName  string      `json:"from_name,omitempty"`

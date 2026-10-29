@@ -358,12 +358,12 @@ const (
 // deltaSchema is the data of a stream's event: delta frame (spec 015).
 var deltaSchema = yaml.MapSlice{
 	{Key: "type", Value: "object"},
-	{Key: "description", Value: "One live frame of a session's response as it arrives, the data of an event: delta frame. A frame of text is {thread, turn, step, block, kind, text}: text is the next run of the content block's text, thinking or tool input, " +
-		"to append to what the step's earlier deltas carried for that block. A reset is {thread, turn, step, reset}: the step's request is sent again, so what its deltas carried is discarded. " +
+	{Key: "description", Value: "One live frame of a session's response as it arrives, the data of an event: delta frame. A frame of text is {subagent, turn, step, block, kind, text}: text is the next run of the content block's text, thinking or tool input, " +
+		"to append to what the step's earlier deltas carried for that block. A reset is {subagent, turn, step, reset}: the step's request is sent again, so what its deltas carried is discarded. " +
 		"Deltas are best effort: never appended, never replayed, and dropped rather than slowing the turn; the step's agent.message is the record, so a client that misses deltas loses nothing, and a delta of a step whose agent.message the client holds is stale."},
 	{Key: "required", Value: []string{"turn", "step"}},
 	{Key: "properties", Value: yaml.MapSlice{
-		{Key: "thread", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: "The thread whose response it is; absent for the session's own thread, as on events."}}},
+		{Key: "subagent", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: "The id of the subagent whose response it is; absent for the session's own conversation, as on events."}}},
 		{Key: "turn", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}},
 		{Key: "step", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}},
 		{Key: "block", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 0}, {Key: "description", Value: "The index of the response's content block the text belongs to."}}},
@@ -438,8 +438,8 @@ var opDescriptions = map[string]string{
 		"root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, " +
 		"carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, " +
 		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request. " + MetadataFilterRule + " " + TriggerFilterRule + " " + RolloutFilterRule,
-	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
-		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
+	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote in the session's own conversation, "+
+		"and a person's answers to the agent's questions; never a tool's output, a subagent's conversation, a file, or a redacted event. A message matches when it holds every word of q. "+
 		"Markdown's marks and a link's address are not searched, and a message is searched in its first %d bytes. "+
 		"The answer is a page of {session, matches}, at most limit sessions, newest first by id as the list orders them, with next_cursor while more follow. "+
 		"matches are the session's newest %d matching events, newest first, each {seq, event_id, type, time, excerpt}: seq is the event's place in the log, a client's way to show it in the conversation, "+
@@ -537,12 +537,12 @@ var opDescriptions = map[string]string{
 		"When that response does the same on a session whose model has a via, the same question is asked with failed_reason %q and failed_detail naming the tool, once a turn and as one of those moves, "+
 		"and the turn continues on the model the allow names after session.model_changed by the service with reason %s (%q); otherwise that response is the answer as written. "+
 		"A call made again with the same tool and the same input, compared as JSON, after it was answered with an error, and answered with the same error again, is a repeat: its tool.result carries the error and then a note that the call already got that answer in the turn. "+
-		"A success of the call clears its count, and each thread counts its own calls. After %d repeats of one call, once every call of the step is answered, the thread's turn ends with session.error repeated_call (%q): "+
-		"the session goes idle with stop_reason error, and a subagent's thread stops with an error result of the call that drove it. "+
+		"A success of the call clears its count, and the session and each subagent count their own calls. After %d repeats of one call, once every call of the step is answered, the turn ends with session.error repeated_call (%q): "+
+		"the session goes idle with stop_reason error, and a subagent stops with an error result of the call that drove it. "+
 		"A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
 		"session.send carries model, model_via and model_route, the model the session stands on, the name it was asked by and the route chosen on the way, each while it has one, and idle_seconds, the whole seconds since its last model request ended. "+
 		"For a user.message it also carries the message's shape, never its words: message_chars, the characters of its text blocks; attachments, its files and images; links, the http:// and https:// addresses in its text; "+
-		"and tools_last_turn, whether the session's last turn called a tool on any thread. An allow that names a model may name route, the routed name the authorizer chose on the way to it: "+
+		"and tools_last_turn, whether the session's last turn called a tool, its own or a subagent's. An allow that names a model may name route, the routed name the authorizer chose on the way to it: "+
 		"the session keeps it on its model beside via, an allow that names a model without one clears it, a route that moves while the model stays appends session.model_changed by the service, and a turn moved off a model that cannot serve keeps its route. "+
 		MessageTextRule+" "+
 		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
@@ -595,10 +595,10 @@ var opDescriptions = map[string]string{
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject) + " " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + ContextRule + " " + WatchedRule,
 	"forkSession": "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. " +
 		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"tree\": \"new\", \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
-		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
-		"or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
+		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own conversation that is idle, whatever its stop reason, " +
+		"or that is ended completed straight after its running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
 		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. " +
-		"before_seq names a user.message of the session's own thread from a person that opened a turn, the last session.status of the session's own thread before it being idle, or none before it, as for the opening message; " +
+		"before_seq names a user.message of the session's own conversation from a person that opened a turn, the last session.status of the session's own conversation before it being idle, or none before it, as for the opening message; " +
 		"the fork copies events 1 to before_seq - 1, whatever lies between the turn's end and the message included, such as a change of model, and seq 0, nothing, before the opening message. " +
 		"A message sent while a turn ran, a trigger's, a service's or a redacted one, and any other event, is invalid_fork_point; before_seq beside at_seq is invalid_request. " +
 		"message is a user.message's payload as the send route takes it, {content, attachments, askable, answers}, under the same limits and refusals, sent to the fork in the same call; " +
@@ -628,9 +628,9 @@ var opDescriptions = map[string]string{
 		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
 	"getSessionActivity": `Each item is {"sender", "messages": [{"client", "count"}], "sessions": [{"client", "count"}], "answers"}: one sender's counts for the day, senders in subject order, and a sender with none of the three left out. It holds counts only, never a word of what was said. ` +
-		"messages counts the user.message events of the day on a session's own thread sent by a person and no trigger and not redacted, by the OAuth client of the token that sent each, as the sender's client records it, empty for a token that named none. " +
+		"messages counts the user.message events of the day in a session's own conversation sent by a person and no trigger and not redacted, by the OAuth client of the token that sent each, as the sender's client records it, empty for a token that named none. " +
 		"sessions counts the sessions created that day whose initiator is a person, that no trigger started and that are no run of a rollout, by the initiator's client; a fork is a session its caller created. " +
-		"answers counts the turns of the day on a session's own thread that ended normally, a session.status idle at end_turn or ended as completed written by a turn, each counted for the sender of the last user.message before it when that message was a person's and no trigger's. " +
+		"answers counts the turns of the day in a session's own conversation that ended normally, a session.status idle at end_turn or ended as completed written by a turn, each counted for the sender of the last user.message before it when that message was a person's and no trigger's. " +
 		"The messages and answers of a rollout's runs are left out. The route asks session.activity once, about the collection, with day and, when the request names one, sender; a deny is forbidden. The owner policy allows an admin, and a caller who names themselves as sender.",
 	"archiveSession": "The body is empty. An idle or ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, nothing is appended to its log, and an idle one still takes a message, whose turn runs while it stays archived. " +
 		"A running session is conflict: archiving never stops a turn, so interrupt it or wait for it to finish. Archiving an archived session keeps its archived_at. The route asks session.read, then, of a session that is not running, session.update with session_id and archived true; a deny is forbidden.",
@@ -650,7 +650,7 @@ var opDescriptions = map[string]string{
 		"A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. "+
 		"It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. "+
 		"The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. "+
-		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox and a person's own computer decide progressive as confirm, which each call's agent.tool_use records as its mode. "+
+		"A subagent runs no looser than its agent's mode or the mode of any agent that started it, and a host with no operating-system sandbox and a person's own computer decide progressive as confirm, which each call's agent.tool_use records as its mode. "+
 		"A title is trimmed of surrounding white space, and one that is then empty, longer than %d characters, or holds a control character or a line or paragraph separator is invalid_request. "+
 		"A change of the title asks the same session.update with title, the trimmed title, and appends session.title_changed {by, old, new}, the title the session had, empty when it had none, and the one it has, after the other changes of the same body; the Session's title is the new one and its updated_at does not move. "+
 		"A change to the title the session has appends nothing, and once a person changed the title the harness names the session no more. "+

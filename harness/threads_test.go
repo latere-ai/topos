@@ -39,22 +39,22 @@ func withReviewer(mut func(*Subagent)) func(*Config) {
 
 func spawnCall(id, args string) ir.Block { return call(id, ToolAgent, args) }
 
-func (e *env) thread(ctxEvents []session.Event) (string, session.ThreadStarted) {
+func (e *env) thread(ctxEvents []session.Event) (string, session.SubagentStarted) {
 	e.t.Helper()
 	for _, ev := range ctxEvents {
-		if ev.Type == session.TypeThreadStarted {
-			var p session.ThreadStarted
+		if ev.Type == session.TypeSubagentStarted {
+			var p session.SubagentStarted
 			if err := ev.Decode(&p); err != nil {
 				e.t.Fatal(err)
 			}
-			if ev.Thread != ev.ID {
-				e.t.Fatalf("thread.started carries thread %q, want its own id", ev.Thread)
+			if ev.Subagent != ev.ID {
+				e.t.Fatalf("subagent.started carries thread %q, want its own id", ev.Subagent)
 			}
 			return ev.ID, p
 		}
 	}
-	e.t.Fatal("no thread.started")
-	return "", session.ThreadStarted{}
+	e.t.Fatal("no subagent.started")
+	return "", session.SubagentStarted{}
 }
 
 func (e *env) all() []session.Event {
@@ -117,11 +117,11 @@ func TestSpawnRunsASubagentAndMessageContinuesIt(t *testing.T) {
 	evs := e.all()
 	id, started := e.thread(evs)
 	if started.Parent != "" || started.Depth != 1 || started.Agent.Name != "reviewer" || started.Model != reviewerModel || strings.Join(started.Tools, ",") != "echo" {
-		t.Fatalf("thread.started %+v", started)
+		t.Fatalf("subagent.started %+v", started)
 	}
 	var results []session.ToolResult
 	for _, ev := range evs {
-		if ev.Type == session.TypeToolResult && ev.Thread == "" {
+		if ev.Type == session.TypeToolResult && ev.Subagent == "" {
 			var p session.ToolResult
 			if err := ev.Decode(&p); err != nil {
 				t.Fatal(err)
@@ -134,7 +134,7 @@ func TestSpawnRunsASubagentAndMessageContinuesIt(t *testing.T) {
 	}
 	childEvents := 0
 	for _, ev := range evs {
-		if ev.Thread == id {
+		if ev.Subagent == id {
 			childEvents++
 		}
 	}
@@ -157,7 +157,7 @@ func TestSpawnRunsASubagentAndMessageContinuesIt(t *testing.T) {
 
 func (e *env) hasEnded(evs []session.Event, id string) bool {
 	for _, ev := range evs {
-		if ev.Type == session.TypeThreadEnded && ev.Thread == id {
+		if ev.Type == session.TypeSubagentEnded && ev.Subagent == id {
 			return true
 		}
 	}
@@ -168,7 +168,7 @@ func (e *env) parentResults(t *testing.T) []session.ToolResult {
 	t.Helper()
 	var out []session.ToolResult
 	for _, ev := range e.all() {
-		if ev.Type == session.TypeToolResult && ev.Thread == "" {
+		if ev.Type == session.TypeToolResult && ev.Subagent == "" {
 			var p session.ToolResult
 			if err := ev.Decode(&p); err != nil {
 				t.Fatal(err)
@@ -288,16 +288,16 @@ func TestAThreadThatFinishedBeforeACrashIsNotRunAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, err := session.NewEvent(session.TypeThreadStarted, session.ThreadStarted{Agent: session.AgentRef{Name: "reviewer"}, ToolUseID: "toolu_s", Task: "t", Depth: 1, Tools: []string{"echo"}}, t0)
+	started, err := session.NewEvent(session.TypeSubagentStarted, session.SubagentStarted{Agent: session.AgentRef{Name: "reviewer"}, ToolUseID: "toolu_s", Task: "t", Depth: 1, Tools: []string{"echo"}}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	started.Thread = started.ID
+	started.Subagent = started.ID
 	answer, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: "Already reviewed."}}}, StopReason: ir.StopEndTurn}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer.Thread = started.ID
+	answer.Subagent = started.ID
 	e.appendEvents(ctx, msg, use, started, answer)
 	e.running(ctx)
 	e.stub.Script(model, reply(ir.StopEndTurn, text("done")))
@@ -581,7 +581,7 @@ func TestSettled(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.Seq, e.Thread = seq, th
+		e.Seq, e.Subagent = seq, th
 		return e
 	}
 	answer := mk(5, session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: "done"}}}})
@@ -714,7 +714,7 @@ func TestTheAdvisorSeesTheConversationAndActsOnNothing(t *testing.T) {
 	}
 	starts := 0
 	for _, ev := range e.all() {
-		if ev.Type == session.TypeThreadStarted {
+		if ev.Type == session.TypeSubagentStarted {
 			starts++
 		}
 	}
@@ -735,11 +735,11 @@ func TestAnAdvisorCallResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, err := session.NewEvent(session.TypeThreadStarted, session.ThreadStarted{Agent: session.AgentRef{Name: advisorAgent}, ToolUseID: "toolu_a", Task: "Review.", Depth: 1, Tools: []string{}}, t0)
+	started, err := session.NewEvent(session.TypeSubagentStarted, session.SubagentStarted{Agent: session.AgentRef{Name: advisorAgent}, ToolUseID: "toolu_a", Task: "Review.", Depth: 1, Tools: []string{}}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	started.Thread = started.ID
+	started.Subagent = started.ID
 	e.appendEvents(ctx, msg, use, started)
 	e.running(ctx)
 	e.stub.Script(advisorModel, reply(ir.StopEndTurn, text("resumed advice")))
@@ -802,7 +802,7 @@ func TestASubagentsEffortReachesItsRequests(t *testing.T) {
 
 // TestASubagentActsWithTheSessionsCredentials: a subagent whose agent
 // declares its own identity and permissions acts as a thread of the
-// session, and its thread.started names what it ignores (spec 013).
+// session, and its subagent.started names what it ignores (spec 013).
 func TestASubagentActsWithTheSessionsCredentials(t *testing.T) {
 	e := setup(t, withReviewer(func(s *Subagent) { s.Ignored = []string{"identity", "permissions"} }))
 	ctx := t.Context()
@@ -816,6 +816,6 @@ func TestASubagentActsWithTheSessionsCredentials(t *testing.T) {
 		t.Fatalf("outcome %+v", out)
 	}
 	if _, started := e.thread(e.all()); !slices.Equal(started.Ignored, []string{"identity", "permissions"}) {
-		t.Fatalf("thread.started ignored %v", started.Ignored)
+		t.Fatalf("subagent.started ignored %v", started.Ignored)
 	}
 }

@@ -19,9 +19,9 @@ import (
 // a session (spec 083).
 var TitleRule = fmt.Sprintf("A session whose agent's latest version sets spec.title is named by the harness after a turn a person started, and once for a session such an agent ran before: "+
 	"model.request {model, prompt_version, purpose: %s, fold_seq, outcome, cost_usd_micro} records the request that asked a model whether the title still names the conversation, "+
-	"its prompt_version the title prompt it was built from, such as %s; the session spends its cost, and it moves no thread and not the session's updated_at. "+
+	"its prompt_version the title prompt it was built from, such as %s; the session spends its cost, and it is a step of no conversation and does not move the session's updated_at. "+
 	"A new title follows it in the same batch as session.title_changed {by, old, new}, by the service {subject: %s, kind: service}, which leaves updated_at where it was. "+
-	"A model.request without purpose is a step of a thread or a compaction's summary. No delta of a title's request is streamed: a client sees the title, not the model writing it. "+
+	"A model.request without purpose is a step of the session's own conversation or a subagent's, or a compaction's summary. No delta of a title's request is streamed: a client sees the title, not the model writing it. "+
 	"Once a person changed the title, a fork's copied change included, the harness changes it no more.",
 	session.PurposeTitle, prompts.Title, session.HarnessSubject)
 

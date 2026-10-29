@@ -95,7 +95,7 @@ func CountActivity(ctx context.Context, st Store, o ActivityOptions) ([]SenderAc
 // redacted. It answers the message's payload when it is one.
 func PersonMessage(e Event) (UserMessage, bool) {
 	var m UserMessage
-	if e.Type != TypeUserMessage || e.Thread != "" || e.Redacted() || e.Decode(&m) != nil {
+	if e.Type != TypeUserMessage || e.Subagent != "" || e.Redacted() || e.Decode(&m) != nil {
 		return UserMessage{}, false
 	}
 	return m, m.Sender.Kind == SenderPerson && m.FiringID == ""
@@ -113,7 +113,7 @@ func StartedByPerson(s Session) bool {
 // A session ended through the API carries no turn and finishes nothing.
 func FinishedAnswer(e Event) bool {
 	var p SessionStatus
-	if e.Type != TypeSessionStatus || e.Thread != "" || e.Turn == 0 || e.Redacted() || e.Decode(&p) != nil {
+	if e.Type != TypeSessionStatus || e.Subagent != "" || e.Turn == 0 || e.Redacted() || e.Decode(&p) != nil {
 		return false
 	}
 	return (p.Status == StatusIdle && p.StopReason == StopEndTurn) || (p.Status == StatusEnded && p.StopReason == StopCompleted)
@@ -171,7 +171,7 @@ func (t *activityTally) log(ctx context.Context, st Store, id string) error {
 		}
 		for i := range events {
 			e := events[i]
-			if e.Type == TypeUserMessage && e.Thread == "" {
+			if e.Type == TypeUserMessage && e.Subagent == "" {
 				last = &e
 				if m, ok := PersonMessage(e); ok && within(e.Time, t.o) {
 					if s := t.of(m.Sender.Subject); s != nil {

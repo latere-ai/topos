@@ -595,7 +595,7 @@ func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error 
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO events (session_id, seq, id, type, time, thread, turn, step, payload, redacted, search)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, to_tsvector('simple', $11::text))`,
-			e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Thread, e.Turn, e.Step, string(e.Payload), e.Redacted(), search)
+			e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Subagent, e.Turn, e.Step, string(e.Payload), e.Redacted(), search)
 		if isUnique(err) {
 			return fmt.Errorf("%w: event %s is already in the log", session.ErrSequenceConflict, e.ID)
 		}
@@ -735,7 +735,7 @@ func scanEvents(rows pgx.Rows, id string) ([]session.Event, error) {
 		var e session.Event
 		var seq int64
 		var typ, payload string
-		if err := rows.Scan(&seq, &e.ID, &typ, &e.Time, &e.Thread, &e.Turn, &e.Step, &payload); err != nil {
+		if err := rows.Scan(&seq, &e.ID, &typ, &e.Time, &e.Subagent, &e.Turn, &e.Step, &payload); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("postgres: read an event of %s: %w", id, err)
 		}

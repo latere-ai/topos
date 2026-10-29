@@ -146,7 +146,7 @@ func TestQuestionIsOfferedWhenNamed(t *testing.T) {
 		}
 		_, started := e.thread(e.all())
 		if slices.Contains(started.Tools, ToolQuestion) {
-			t.Fatalf("thread.started records the tools %v", started.Tools)
+			t.Fatalf("subagent.started records the tools %v", started.Tools)
 		}
 	})
 

@@ -25,7 +25,7 @@ import (
 // again as its step built it, the fold of the log through the request's
 // fold_seq, on the thread it ran on, with the prompt version, the
 // model, the dialect and the max_tokens it recorded. A thread's
-// configuration is its parent's narrowed by its thread.started, as the
+// configuration is its parent's narrowed by its subagent.started, as the
 // agent tool and the advisor built it, and a compaction's summary
 // request is built from the range it summarized. blobs reads the
 // instruction files the fold names.
@@ -58,7 +58,7 @@ func (h *Harness) Rebuild(s session.Session, blobs BlobReader) models.Rebuild {
 		if root.reg, err = root.registry(h.c.Tools.Names()); err != nil {
 			return models.Request{}, err
 		}
-		t, err := root.replayThread(log, step.Thread)
+		t, err := root.replayThread(log, step.Subagent)
 		if err != nil {
 			return models.Request{}, err
 		}
@@ -162,14 +162,14 @@ func (t *turn) replayRequest(ctx context.Context, log, prefix []session.Event, s
 
 // replayThread is the turn of thread id under t, built as the agent tool
 // and the advisor built it: its parent's, then the configuration and the
-// tools its thread.started names.
+// tools its subagent.started names.
 func (t *turn) replayThread(log []session.Event, id string) (*turn, error) {
 	if id == t.thread {
 		return t, nil
 	}
 	started, ok := threadStartedOf(log, id)
 	if !ok {
-		return nil, fmt.Errorf("%w: the log has no thread.started for thread %s", models.ErrNotRebuilt, id)
+		return nil, fmt.Errorf("%w: the log has no subagent.started for subagent %s", models.ErrNotRebuilt, id)
 	}
 	parent, err := t.replayThread(log, started.Parent)
 	if err != nil {
@@ -181,22 +181,22 @@ func (t *turn) replayThread(log []session.Event, id string) (*turn, error) {
 	} else if started.Agent.Name == advisorAgent && parent.h.c.Advisor != nil {
 		cfg = parent.advisorConfig()
 	} else {
-		return nil, fmt.Errorf("%w: the configuration names no subagent %q for thread %s", models.ErrNotRebuilt, started.Agent.Name, id)
+		return nil, fmt.Errorf("%w: the configuration names no subagent %q for subagent %s", models.ErrNotRebuilt, started.Agent.Name, id)
 	}
 	return parent.child(id, started.Depth, cfg, started.Tools)
 }
 
-func threadStartedOf(log []session.Event, id string) (session.ThreadStarted, bool) {
+func threadStartedOf(log []session.Event, id string) (session.SubagentStarted, bool) {
 	for _, e := range log {
-		if e.Type != session.TypeThreadStarted || e.ID != id || e.Redacted() {
+		if e.Type != session.TypeSubagentStarted || e.ID != id || e.Redacted() {
 			continue
 		}
-		var p session.ThreadStarted
+		var p session.SubagentStarted
 		if e.Decode(&p) == nil {
 			return p, true
 		}
 	}
-	return session.ThreadStarted{}, false
+	return session.SubagentStarted{}, false
 }
 
 // summaryOf finds the summary compaction whose request is the

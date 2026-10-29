@@ -40,7 +40,7 @@ func TestLooksAreTheTurnsTriggersBegan(t *testing.T) {
 	l.add(TypeSessionStatus, running)
 	l.add(TypeModelRequest, cost(100))
 	l.add(TypeModelRequest, cost(50))
-	l.evs[len(l.evs)-1].Thread = "thr_1"
+	l.evs[len(l.evs)-1].Subagent = "thr_1"
 	l.add(TypeToolResult, ToolResult{ToolUseID: "toolu_1", Outcome: "ok", CostUSDMicro: new(int64(7))})
 	l.add(TypeSessionStatus, idle)
 	l.add(TypeModelRequest, ModelRequest{Model: "small", Outcome: "ok", Purpose: PurposeTitle, CostUSDMicro: new(int64(3))})

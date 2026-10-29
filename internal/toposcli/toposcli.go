@@ -772,7 +772,7 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 			spec, overlay = ac.Model, &ac.Overlay
 			cfg.Name, cfg.Instructions, cfg.Policy, cfg.Effort = ac.Name, ac.Instructions, ac.Policy, ac.Effort
 			cfg.Subagents, cfg.MaxDepth, cfg.MaxConcurrent, cfg.CompactAt = ac.Subagents, ac.MaxDepth, ac.MaxConcurrent, ac.CompactAt
-			cfg.Prompt.Threads = len(ac.Subagents) > 0
+			cfg.Prompt.Subagents = len(ac.Subagents) > 0
 		}
 		if name := cmp.Or(o.model, s.Metadata["model"]); name != "" {
 			spec, overlay, cfg.Effort = v1.AgentModel{Name: name}, nil, ""

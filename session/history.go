@@ -50,7 +50,7 @@ const (
 var historyShown = map[Type]bool{
 	TypeUserMessage: true, TypeUserInterrupt: true, TypeUserAnswer: true, TypeUserToolResult: true,
 	TypeAgentMessage: true, TypeAgentToolUse: true, TypeToolResult: true, TypeTitleChanged: true,
-	TypeThreadStarted: true, TypeThreadMessage: true,
+	TypeSubagentStarted: true, TypeSubagentMessage: true,
 }
 
 // History is the thread's view of events below the sequence before, as
@@ -140,14 +140,14 @@ func historyEntry(e Event, names map[string]string, recorded map[string]bool) (H
 			}
 			en.Body = joinLines(en.Body, prompts.Render(prompts.HistoryFiles, prompts.Data{"Paths": strings.Join(paths, ", ")}))
 		}
-	case TypeThreadMessage:
-		var p ThreadMessage
+	case TypeSubagentMessage:
+		var p SubagentMessage
 		if err := e.Decode(&p); err != nil {
 			return en, false, err
 		}
 		en.Head, en.Body = historyHead(historyMessage, Sender{Name: p.FromName, Subject: p.From}, "", "", ""), textOf(p.Content)
-	case TypeThreadStarted:
-		var p ThreadStarted
+	case TypeSubagentStarted:
+		var p SubagentStarted
 		if err := e.Decode(&p); err != nil {
 			return en, false, err
 		}

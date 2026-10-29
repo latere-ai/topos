@@ -285,7 +285,7 @@ type State struct {
 func StateOf(events []session.Event, thread string) State {
 	st := State{Hashes: map[string]string{}, Apps: map[string]*session.PublishMeta{}, Standing: map[string]*session.PublishMeta{}, Parses: map[string]ParseMeta{}}
 	for _, e := range events {
-		if e.Type != session.TypeToolResult || e.Thread != thread || e.Redacted() {
+		if e.Type != session.TypeToolResult || e.Subagent != thread || e.Redacted() {
 			continue
 		}
 		var p session.ToolResult
