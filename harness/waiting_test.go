@@ -350,3 +350,58 @@ func TestSendNowMovesACommand(t *testing.T) {
 		t.Fatalf("the request after the move: %s", b[len(b)-1])
 	}
 }
+
+// hookedLog calls after once each batch is appended, as another writer
+// beside the turn would append right after it.
+type hookedLog struct {
+	*storeLog
+	after func(batch []session.Event)
+}
+
+func (l hookedLog) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
+	foreign, err := l.storeLog.Append(ctx, batch)
+	if err == nil {
+		l.after(batch)
+	}
+	return foreign, err
+}
+
+// TestAMessageAfterTheLastCommitIsReadByTheStep: a message appended after
+// the step's last commit, which the harness has not seen when it names
+// what its request reads, is named by a second messages.read and read by
+// that same request.
+func TestAMessageAfterTheLastCommitIsReadByTheStep(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	e.echo.run = func(tools.Call) (tools.Result, error) {
+		e.says(e.s.Initiator, "First.", false)
+		return tools.Text(tools.OutcomeOK, "done"), nil
+	}
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"x"}`)), reply(ir.StopEndTurn, text("Both.")))
+	e.send(ctx, "Go.")
+	late := false
+	log := hookedLog{e.log, func(batch []session.Event) {
+		if batch[len(batch)-1].Type == session.TypeToolResult && !late {
+			late = true
+			e.says(e.s.Initiator, "Second.", false)
+		}
+	}}
+	s, err := e.store.Get(ctx, e.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.h.RunTurn(ctx, s, evs, log)
+	if err != nil || out.StopReason != session.StopEndTurn || out.Pending {
+		t.Fatalf("outcome %+v, %v", out, err)
+	}
+	if b := e.bodies(); len(b) != 2 || !before(b[1], "First.", "Second.") {
+		t.Fatalf("requests %q", b)
+	}
+	if got := e.reads(ctx); len(got) != 2 {
+		t.Fatalf("messages.read %v, want one per batch the step saw", got)
+	}
+}

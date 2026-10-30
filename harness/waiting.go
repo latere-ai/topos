@@ -15,26 +15,36 @@ import (
 // background; the calls still running then are cut (spec 098).
 const SendNowGrace = time.Second
 
-// markReads appends the messages.read that names the waiting messages
+// maxReadMarks bounds the messages.read a step appends before its
+// request: each append returns what others appended since the last, and
+// a message among it is named by the next.
+const maxReadMarks = 4
+
+// markReads appends the messages.read that name the waiting messages
 // the step's request is the first to read (spec 098): every person's,
 // and every other one whose turn closed before this one. The step folds
-// the log the append returned, so a message withdrawn before it is left
-// out, and one appended after it waits for the next step.
+// the log the last append returned, so a message withdrawn before it is
+// left out, and one appended after it waits for the next step.
 func (t *turn) markReads(ctx context.Context) error {
-	var ids []string
-	for _, w := range session.Unread(t.events()) {
-		if w.Person() || w.Closed != 0 {
-			ids = append(ids, w.Event.ID)
+	for range maxReadMarks {
+		var ids []string
+		for _, w := range session.Unread(t.events()) {
+			if w.Person() || w.Closed != 0 {
+				ids = append(ids, w.Event.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		e, err := t.event(session.TypeMessagesRead, session.MessagesRead{EventIDs: ids})
+		if err != nil {
+			return err
+		}
+		if err := t.commit(ctx, e); err != nil {
+			return err
 		}
 	}
-	if len(ids) == 0 {
-		return nil
-	}
-	e, err := t.event(session.TypeMessagesRead, session.MessagesRead{EventIDs: ids})
-	if err != nil {
-		return err
-	}
-	return t.commit(ctx, e)
+	return nil
 }
 
 // sendsNow reports whether a message the runner signaled as sent to be
