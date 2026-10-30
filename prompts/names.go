@@ -604,6 +604,9 @@ const (
 	// BashMoved takes Grace, Ports, PID and Log: a foreground server
 	// moved to the background (spec 045).
 	BashMoved Name = "results/bash/moved-v1"
+	// BashMovedNow takes PID and Log: a foreground command moved to the
+	// background because a message was sent to be read now (spec 098).
+	BashMovedNow Name = "results/bash/moved-now-v1"
 	// BashUnchecked takes Error: why a command that passed its timeout
 	// was never checked for a server.
 	BashUnchecked Name = "results/bash/unchecked-v1"

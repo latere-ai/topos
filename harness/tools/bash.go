@@ -78,7 +78,7 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		ReportDir:  !in.Background,
 	}
 	if !in.Background {
-		req.ServerGrace = serverGrace
+		req.ServerGrace, req.MoveNow = serverGrace, c.MoveNow
 	}
 	res, err := c.Machine.Exec(ctx, req)
 	note := ""
@@ -101,15 +101,21 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		return b.result(ctx, c, OutcomeOK, text, nil)
 	}
 	if res.Moved {
-		// A server the command started keeps running as a job; the turn
-		// goes on with what it wrote so far.
+		// A server the command started, or a command still running when
+		// a message was sent to be read now, keeps running as a job; the
+		// turn goes on with what it wrote so far. A server's move names
+		// the ports it listens on, and a move asked for now names none.
 		var out strings.Builder
 		out.WriteString(note)
 		out.Write(res.Output)
 		if len(res.Output) > 0 && res.Output[len(res.Output)-1] != '\n' {
 			out.WriteByte('\n')
 		}
-		out.WriteString(prompts.Render(prompts.BashMoved, prompts.Data{"Grace": serverGrace.String(), "Ports": portList(res.Ports), "PID": res.PID, "Log": res.Log}))
+		if len(res.Ports) == 0 {
+			out.WriteString(prompts.Render(prompts.BashMovedNow, prompts.Data{"PID": res.PID, "Log": res.Log}))
+		} else {
+			out.WriteString(prompts.Render(prompts.BashMoved, prompts.Data{"Grace": serverGrace.String(), "Ports": portList(res.Ports), "PID": res.PID, "Log": res.Log}))
+		}
 		return b.result(ctx, c, OutcomeOK, out.String(), nil)
 	}
 	code := res.ExitCode

@@ -7,10 +7,12 @@ package tools
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -205,6 +207,45 @@ func TestBashACommandThatNeverListensIsUnchanged(t *testing.T) {
 	if res.Outcome != OutcomeOK || text(res) != "done\nExit code: 0" || res.Meta == nil || res.Meta.Dir != f.work {
 		t.Fatalf("result %s %q %+v", res.Outcome, text(res), res.Meta)
 	}
+}
+
+// TestAMovedCommandSaysSo: a command still running when a message is
+// sent to be read now moves to the background, and its result, ok, says
+// so after what it wrote so far, with no port named (spec 098).
+func TestAMovedCommandSaysSo(t *testing.T) {
+	f := open(t)
+	bash := builtinTool(t, NameBash)
+	now := make(chan struct{})
+	go func() {
+		// The command marks itself running once its first line has had
+		// time to be read; the message is sent then.
+		ready := filepath.Join(f.work, "ready")
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+		}
+		close(now)
+	}()
+	input := mustInput(t, map[string]any{"command": "echo started; /bin/sleep 0.2; : > ready; while :; do echo tick; /bin/sleep 0.05; done", "timeout_ms": 60000})
+	res, err := bash.Run(t.Context(), Call{ID: "toolu_1", Input: json.RawMessage(input), Machine: f.h, MoveNow: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := text(res)
+	m := regexp.MustCompile(`^started\n(?:tick\n)*Still running when a message was sent to be read now, so it was moved to the background as pid (\d+) and keeps running\. ` +
+		`Its output so far is above; what it writes from now on goes to (\S+)\. Read the log with read, and stop it with bash: kill -TERM -(\d+)\.$`).FindStringSubmatch(out)
+	if res.Outcome != OutcomeOK || res.IsError() || m == nil || m[1] != m[3] || res.Meta != nil {
+		t.Fatalf("result %s %q meta %+v", res.Outcome, out, res.Meta)
+	}
+	log := m[2]
+	// What the command writes after the move is in its log, until the
+	// session's end stops it.
+	waitFor(t, func() bool { return strings.Contains(get(t, log), "tick\n") })
+	if err := f.h.Release(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(get(t, log), "[job "+m[1]+" exited with code") })
 }
 
 func TestPortList(t *testing.T) {

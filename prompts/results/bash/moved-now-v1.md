@@ -1,0 +1,1 @@
+Still running when a message was sent to be read now, so it was moved to the background as pid {{.PID}} and keeps running. Its output so far is above; what it writes from now on goes to {{.Log}}. Read the log with read, and stop it with bash: kill -TERM -{{.PID}}.

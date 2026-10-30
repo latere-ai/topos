@@ -130,6 +130,9 @@ type Call struct {
 	Machine machine.Machine
 	// State is the thread's tool state as its log records it.
 	State State
+	// MoveNow is closed when the person asked for a message to be read
+	// now (spec 098): a running command moves to the background.
+	MoveNow <-chan struct{}
 }
 
 // Outcomes of a call (spec 008).

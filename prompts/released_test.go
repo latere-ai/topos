@@ -137,6 +137,7 @@ var released = map[string]string{
 	"tools/bash-v1.md":                           "018674631e83db53cc403d379aef91f5856d4f78c6eb982f20b370c28e23f5d2",
 	"tools/bash-v2.md":                           "ea2aad837f564504a81860b65cca6f8a07e80521dca9ca00dcecdfe57adedd53",
 	"results/bash/moved-v1.md":                   "6e1d5b51f29c0b978c112b4babcc069da889afab49643adea600de621f4a5a34",
+	"results/bash/moved-now-v1.md":               "e947cce8bcec04d194ba8f15b7261d42d10c55db5c063973a65c6f7fb4aa3321",
 	"results/bash/unchecked-v1.md":               "49b6662c0a37b462792ed4d0109e480f89ddc7fed5e243827d25616c5d8c7aaa",
 	"tools/edit-v1.md":                           "ce7152ab826073e0980e647ca92c29743cc7381173459daa42e21767fdaa0e28",
 	"tools/glob-v1.md":                           "83274017db0aaeebd8a48d65435c319dc70e490d1913aff7087fe4ed69ece892",
