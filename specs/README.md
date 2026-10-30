@@ -150,6 +150,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [094](094-a-memory-folder-of-past-conversations.md) | A memory folder of past conversations: an allow names a read-only memory folder whose files are the initiator's other conversations in the session's context, kept by one metadata entry or by its absence, served from the server's log as one Markdown file each, with every list and read asked of the authorizer as the initiator and the session named as the question's origin | medium | testing | 015, 016, 050, 056, 057, 058, 077, 083, 086, 093 |
 | [095](095-a-triggers-reach-and-one-run-per-scope.md) | A trigger's reach and one run per scope: `spec.reach` names a kind the authorizer maps and, with `split: scope`, makes each firing ask `trigger.runs` which scopes are due before it starts anything, start one session for each with the scope and the time since which it reads, and record `skipped_nothing_new` when none is, so a night with nothing new starts no session and asks no model | medium | testing | 022, 086, 087, 088, 090, 093 |
 | [096](096-what-a-session-has-cost-so-far-and-how-far-its-to-do-list-is.md) | What a session has cost so far and how far its to-do list is: the budget counts the log through `last_seq` and each `model.request` and `tool.result` carries what it added, so no event of its own reports the spending; a `todo` call's result records the list, described as `TodoResultMeta`; and no progress count beyond the to-do list until workflow runs count their nodes | small | testing | 008, 023, 033, 047, 056, 082 |
+| [098](098-messages-sent-while-a-turn-runs.md) | Messages sent while a turn runs: a person's message read at the next step where it was read and marked as sent during the work, a trigger's or a wake's held for the turn's end, send now moving running commands to the background and cutting the rest after a grace, `messages.read` and `user.withdraw` | large | drafted | 004, 005, 009, 012, 015, 016, 045, 086 |
 
 ## Dependency graph
 
@@ -252,6 +253,7 @@ flowchart BT
   S094[094 a memory folder of past conversations]
   S095[095 a trigger's reach and one run per scope]
   S096[096 cost so far and the to-do list]
+  S098[098 messages sent while a turn runs]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -444,6 +446,9 @@ flowchart BT
   S096 --> S033
   S096 --> S056
   S096 --> S082
+  S098 --> S016
+  S098 --> S045
+  S098 --> S086
 ```
 
 ## Build order
