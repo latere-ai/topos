@@ -78,6 +78,15 @@ sandbox as before, and the sandbox does not see the folders. A line that
 empties a file forgets it, and `touch` makes no empty file. A read-only
 folder answers a change with `Read-only file system`.
 
+A line on the runner runs within bounds, since it shares the runner
+with every other session: 50,000 steps, 10 seconds, and what it may hold,
+read and list. A line that reaches one stops where it is with
+`/bin/sh: 2: <the bound>` and exit code 2, keeping what it changed
+before; it does not move to the sandbox. A line longer than 64 KiB,
+nested deeper than 64, with a command of more than 16 expansions, more
+than 32 pipes or a pattern of more than 8 `*`, and a line that turns on
+`set -x`, runs in the sandbox. A line keeps at most 1 MiB of output.
+
 The runner logs which call opened a session's sandbox, `a tool call
 opened the session's machine` with the tool and the reason, and counts
 bash calls by where they ran in `latere.topos.bash.runs` and the calls
