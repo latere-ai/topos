@@ -501,12 +501,15 @@ func Cost(e Event) int64 {
 // its first message is in the log. A user.interrupt is input in one case
 // alone (spec 039): it closed a question whose result no runner appended
 // yet, so a runner claims the session to close the call. An interrupt on
-// any other idle session starts nothing.
+// any other idle session starts nothing. A message a person or a trigger
+// sent while the last turn ran, which no request read and nobody
+// withdrew, is pending input too, unless the session waits for a
+// person's answer (spec 098).
 func HasPendingInput(evs []Event) bool {
 	for _, ev := range slices.Backward(evs) {
 		switch ev.Type {
 		case TypeSessionStatus:
-			return false
+			return PendingWaiting(evs)
 		case TypeUserMessage, TypeUserToolConfirmation, TypeUserToolResult, TypeSessionResumed, TypeUserAnswer:
 			return true
 		case TypeUserInterrupt:

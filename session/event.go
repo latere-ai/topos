@@ -57,6 +57,11 @@ const (
 	// cleared (spec 086).
 	TypeWakeSet     Type = "session.wake_set"
 	TypeWakeCleared Type = "session.wake_cleared"
+	// TypeUserWithdraw is a person taking back a waiting message nothing
+	// read, and TypeMessagesRead the waiting messages a request is the
+	// first to read (spec 098).
+	TypeUserWithdraw Type = "user.withdraw"
+	TypeMessagesRead Type = "messages.read"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -72,6 +77,7 @@ var Known = map[Type]bool{
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
 	TypeFilesKept: true, TypeConnectionsChanged: true, TypeConnectionRequested: true,
 	TypeWorkSaved: true, TypeMachineWaiting: true, TypeWakeSet: true, TypeWakeCleared: true,
+	TypeUserWithdraw: true, TypeMessagesRead: true,
 }
 
 // Event is one entry of a session's log.
@@ -143,6 +149,10 @@ type UserMessage struct {
 	// the message of a firing that counts toward one (spec 087); nil on
 	// every other message.
 	Spend *MessageSpend `json:"spend,omitempty"`
+	// SendNow asks that a message sent while a turn runs be read at once:
+	// running commands move to the background and what still runs after
+	// a grace is cut (spec 098). It changes nothing on an idle session.
+	SendNow bool `json:"send_now,omitempty"`
 }
 
 // UserInterrupt is the payload of user.interrupt.
@@ -363,6 +373,10 @@ type ModelRequest struct {
 	// the request is the fold of the events through it, which a replay
 	// folds again (spec 007).
 	FoldSeq uint64 `json:"fold_seq,omitempty"`
+	// NamesReads is set on every request built since spec 098: the
+	// waiting messages it read are the ones a messages.read names. A
+	// request without it read every message its FoldSeq covers.
+	NamesReads bool `json:"names_reads,omitempty"`
 	// Reminder is the text the request carried after the fold of its log,
 	// which no event holds: the harness's word to the model that its
 	// last response wrote a call as text (spec 062). A replay renders it

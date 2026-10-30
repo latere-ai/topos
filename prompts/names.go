@@ -362,6 +362,11 @@ const (
 	// and Subject.
 	TranscriptSender    Name = "transcript/sender-v1"
 	TranscriptInterrupt Name = "transcript/interrupt-v1"
+	// TranscriptWhileWorking and TranscriptSentNow take the sender's Name
+	// and Subject: a message read by the turn it was sent in, and one sent
+	// to be read now that cut the turn it was sent in (spec 098).
+	TranscriptWhileWorking Name = "transcript/while-working-v1"
+	TranscriptSentNow      Name = "transcript/sent-now-v1"
 	// TranscriptSubagentMessage takes the sending thread's FromName and
 	// From.
 	TranscriptSubagentMessage Name = "transcript/thread-message-v1"

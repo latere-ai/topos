@@ -112,7 +112,8 @@ func Attachments(log []Event) []Attachment {
 // PendingAttachments are the files of the log's messages that the
 // session's latest machine has not been given: every one since that
 // machine's session.machine that no attachments.delivered after it
-// names. A session with no machine recorded has every file pending.
+// names. A session with no machine recorded has every file pending. A
+// waiting message nothing read yet, or one withdrawn, has none pending.
 func PendingAttachments(log []Event) []Attachment {
 	delivered := map[string]bool{}
 	for _, e := range log {
@@ -129,10 +130,27 @@ func PendingAttachments(log []Event) []Attachment {
 			}
 		}
 	}
+	// A waiting message's files wait with it: they are written once a
+	// request reads the message, and never for a withdrawn one (spec 098).
+	held := map[string]bool{}
+	for _, w := range WaitingMessages(log) {
+		if w.State != MessageRead {
+			held[w.Event.ID] = true
+		}
+	}
 	var out []Attachment
-	for _, a := range Attachments(log) {
-		if !delivered[a.Path] && !slices.ContainsFunc(out, func(b Attachment) bool { return b.Path == a.Path }) {
-			out = append(out, a)
+	for _, e := range log {
+		if e.Type != TypeUserMessage || e.Redacted() || held[e.ID] {
+			continue
+		}
+		var p UserMessage
+		if e.Decode(&p) != nil {
+			continue
+		}
+		for _, a := range p.Attachments {
+			if !delivered[a.Path] && !slices.ContainsFunc(out, func(b Attachment) bool { return b.Path == a.Path }) {
+				out = append(out, a)
+			}
 		}
 	}
 	return out

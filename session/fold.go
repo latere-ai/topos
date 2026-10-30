@@ -136,9 +136,26 @@ func InlineFiles(events []Event, thread string) ([]Attachment, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A waiting message counts where it renders: at the messages.read
+	// that read it, and nowhere while unread or once withdrawn (spec 098).
+	place := map[string]uint64{}
+	if thread == "" {
+		for _, w := range WaitingMessages(view) {
+			switch {
+			case w.State == MessageRead && w.ReadAt != 0:
+				place[w.Event.ID] = w.ReadAt
+			case w.State != MessageRead:
+				place[w.Event.ID] = 0
+			}
+		}
+	}
 	var out []Attachment
 	for _, e := range view {
-		if e.Type != TypeUserMessage || e.Redacted() || covering(ranges, e.Seq) != nil {
+		seq, moved := place[e.ID]
+		if !moved {
+			seq = e.Seq
+		}
+		if e.Type != TypeUserMessage || e.Redacted() || seq == 0 || covering(ranges, seq) != nil {
 			continue
 		}
 		var p UserMessage
@@ -212,6 +229,18 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 		}
 	}
 
+	// The waiting messages of the session's own thread, by id, and the
+	// ones each messages.read read, by its sequence (spec 098).
+	waiting, readAt := map[string]Waiting{}, map[uint64][]Waiting{}
+	if thread == "" {
+		for _, w := range WaitingMessages(view) {
+			waiting[w.Event.ID] = w
+			if w.ReadAt != 0 {
+				readAt[w.ReadAt] = append(readAt[w.ReadAt], w)
+			}
+		}
+	}
+
 	var items []item
 	results := map[string]lux.Block{}
 	lastStep := -1
@@ -224,6 +253,54 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 		}
 	}
 	user := func(blocks ...lux.Block) { items = append(items, item{role: ir.RoleUser, blocks: blocks}) }
+	// message renders a person's or a trigger's message, led by lead when
+	// set, which says when the message was sent (spec 098) and stands in
+	// for the line that names its sender.
+	message := func(e Event, p UserMessage, lead *lux.Block) {
+		noteSender(p.Sender)
+		blocks := slices.Clone(p.Content)
+		// A wake's message is the agent's own note, led by when it set
+		// the wake and when it was due, and a message that began a turn
+		// nobody waits for by what such a turn is (spec 086).
+		if w := p.Wake; w != nil {
+			blocks = append([]lux.Block{text(wakeLine(*w, e.Time))}, blocks...)
+		}
+		// A firing that counts toward a trigger says what its watch has
+		// cost and whether it is ahead of pace (spec 087).
+		if p.FiringID != "" && p.Spend != nil {
+			blocks = append([]lux.Block{text(paceLine(*p.Spend, p.Wake != nil))}, blocks...)
+		}
+		if p.FiringID != "" && p.Judged() && o.Notify {
+			woken := prompts.Render(prompts.ContextWoken, prompts.Data{"Wake": p.Wake != nil, "Attended": o.Attended})
+			blocks = append([]lux.Block{text(woken)}, blocks...)
+		}
+		if multi && lead == nil {
+			blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)
+		}
+		// The files a message carries are named to the model by the
+		// paths the runner writes them at (spec 015), and a short text
+		// file's text follows the line that names it (spec 079).
+		if len(p.Attachments) > 0 {
+			named := prompts.Render(prompts.TranscriptAttachments, prompts.Data{"Attachments": p.Attachments})
+			if o.Device {
+				named = prompts.Render(prompts.TranscriptAttachmentsDevice, prompts.Data{"Attachments": p.Attachments})
+			}
+			blocks = append(blocks, text(named))
+			t.Attached = append(t.Attached, text(named))
+			for _, a := range p.Attachments {
+				if body, ok := o.Texts[a.Blob]; ok && a.Inline {
+					body = strings.TrimRight(body, "\r\n")
+					inline := text(prompts.Render(prompts.TranscriptAttachmentText, prompts.Data{"Path": a.Path, "Fence": fence(body), "Text": body}))
+					blocks = append(blocks, inline)
+					t.Attached = append(t.Attached, inline)
+				}
+			}
+		}
+		if lead != nil {
+			blocks = append([]lux.Block{*lead}, blocks...)
+		}
+		user(blocks...)
+	}
 
 	for _, e := range view {
 		emitBefore(ranges, e.Seq, user, o.History)
@@ -242,50 +319,31 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 		}
 		switch e.Type {
 		case TypeUserMessage:
+			// A waiting message renders where the request that read it
+			// was built, or nowhere while unread or once withdrawn, unless
+			// a request written before spec 098 read it where it stands.
+			if w, ok := waiting[e.ID]; ok && (w.State != MessageRead || w.ReadAt != 0) {
+				continue
+			}
 			var p UserMessage
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
-			noteSender(p.Sender)
-			blocks := slices.Clone(p.Content)
-			// A wake's message is the agent's own note, led by when it set
-			// the wake and when it was due, and a message that began a turn
-			// nobody waits for by what such a turn is (spec 086).
-			if w := p.Wake; w != nil {
-				blocks = append([]lux.Block{text(wakeLine(*w, e.Time))}, blocks...)
-			}
-			// A firing that counts toward a trigger says what its watch has
-			// cost and whether it is ahead of pace (spec 087).
-			if p.FiringID != "" && p.Spend != nil {
-				blocks = append([]lux.Block{text(paceLine(*p.Spend, p.Wake != nil))}, blocks...)
-			}
-			if p.FiringID != "" && p.Judged() && o.Notify {
-				woken := prompts.Render(prompts.ContextWoken, prompts.Data{"Wake": p.Wake != nil, "Attended": o.Attended})
-				blocks = append([]lux.Block{text(woken)}, blocks...)
-			}
-			if multi {
-				blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)
-			}
-			// The files a message carries are named to the model by the
-			// paths the runner writes them at (spec 015), and a short text
-			// file's text follows the line that names it (spec 079).
-			if len(p.Attachments) > 0 {
-				named := prompts.Render(prompts.TranscriptAttachments, prompts.Data{"Attachments": p.Attachments})
-				if o.Device {
-					named = prompts.Render(prompts.TranscriptAttachmentsDevice, prompts.Data{"Attachments": p.Attachments})
+			message(e, p, nil)
+		case TypeMessagesRead:
+			for _, w := range readAt[e.Seq] {
+				if w.Event.Redacted() {
+					continue
 				}
-				blocks = append(blocks, text(named))
-				t.Attached = append(t.Attached, text(named))
-				for _, a := range p.Attachments {
-					if body, ok := o.Texts[a.Blob]; ok && a.Inline {
-						body = strings.TrimRight(body, "\r\n")
-						inline := text(prompts.Render(prompts.TranscriptAttachmentText, prompts.Data{"Path": a.Path, "Fence": fence(body), "Text": body}))
-						blocks = append(blocks, inline)
-						t.Attached = append(t.Attached, inline)
-					}
+				var lead *lux.Block
+				switch {
+				case w.Person() && w.ReadInItsTurn():
+					lead = new(text(prompts.Render(prompts.TranscriptWhileWorking, sender(w.Message.Sender))))
+				case w.CutForIt:
+					lead = new(text(prompts.Render(prompts.TranscriptSentNow, sender(w.Message.Sender))))
 				}
+				message(w.Event, w.Message, lead)
 			}
-			user(blocks...)
 		case TypeUserInterrupt:
 			var p UserInterrupt
 			if err := e.Decode(&p); err != nil {
