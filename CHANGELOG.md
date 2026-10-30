@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.61.0 - 2026-10-30
+
 ### Added
 
 - **A memory folder can hold the person's past conversations.** A memory folder of an allow may name `sessions: {"metadata": {"<key>": "<value>" | null}}` in place of `url`, `owner` and `path`, with `access` `read_only`. The folder holds the initiator's other sessions of the agents of the session's context, kept by the one metadata entry (a string keeps that value, `null` the sessions without the key): one per fork tree, never the reading session's own tree, no run of a rollout, newest first. Each conversation is `/memory/<name>/<yyyy-mm-dd>-<session id>.md`, holding its title, its dates and what the person and the agent said on the session's own thread, at most 256 KiB, so `glob`, `grep` and `read` find and open earlier conversations. Every list asks `session.list` and every conversation listed or read asks `session.read` as the initiator, each naming `origin: {"kind": "memory", "session_id", "folder"}` and a read the conversation's `metadata`; a denied read leaves the conversation out, and a denied list reads `This session may not read these conversations now.` with the deny's reason as `refusal`. A folder of conversations needs no `TOPOS_FILES_AUDIENCE`: a runner in `toposd` reaches the server directly, and a remote runner over its lease at `POST /internal/v1/leases/{session}/conversations/{list,read}`. A release before this one refuses a create whose allow names such a folder, so an authorizer names it only to this release or later. See `docs/memory-folders.md`.
