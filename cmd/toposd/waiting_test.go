@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -148,7 +149,12 @@ func TestMessagesWhileATurnRuns(t *testing.T) {
 		return e
 	}
 
+	// The command runs once the sandbox is attached, which a build with
+	// the race detector makes slow.
 	waitUntil("the first command running", running("toolu_1"))
+	waitUntil("the sandbox attached", func(evs []session.Event) bool {
+		return slices.ContainsFunc(evs, func(e session.Event) bool { return e.Type == session.TypeSessionMachine })
+	})
 	time.Sleep(time.Second)
 	start := time.Now()
 	message("Use port 9000.", true)
