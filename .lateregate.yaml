@@ -89,7 +89,9 @@ depcheck:
         (spec 018); the CommonMark parser and the HTML tokenizer the
         harness finds the images an answer shows and the files it links
         with (specs 055 and 064); the routine's shape the trigger tool
-        applies a proposal in (spec 086); nothing
+        applies a proposal in (spec 086); the POSIX shell interpreter
+        the memory machine runs a command line over the memory folders
+        with, through Cella's shell package (spec 097); nothing
         else does without a row here
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
@@ -108,7 +110,9 @@ depcheck:
         github.com/go-logr: the SDK's internal logger
         github.com/google/uuid: the SDK's instance ids
         github.com/goccy/go-yaml: the YAML decoder of manifests and the OpenAPI document's encoder
-        latere.ai/x/cella: the Cella client and its manifest types, for hosted sessions' machines (spec 009)
+        latere.ai/x/cella: the Cella client and its manifest types, for hosted sessions' machines (spec 009), and its shell package, which runs a command line over the memory folders in the process (spec 097)
+        mvdan.cc/sh: the POSIX shell parser and interpreter of Cella's shell package (spec 097); it runs no program and opens no file of the host
+        golang.org/x/term: the terminal checks the interpreter is built with (spec 097)
         github.com/jackc/pgx: the Postgres driver of the session and object stores (spec 014)
         github.com/jackc/puddle: the connection pool under pgxpool
         github.com/jackc/pgpassfile: the .pgpass reader pgx consults

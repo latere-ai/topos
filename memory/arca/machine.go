@@ -13,9 +13,13 @@
 // absent or never seen, so a file another session changed since this
 // one read it is refused and nothing is overwritten. A write of no bytes
 // forgets the file: a DELETE with If-Match. A folder whose access is
-// read_only refuses every change before any request. Commands and moves
-// are refused. A spill file of a long result, the one path a memory call
-// writes outside /memory, goes to the session's own machine.
+// read_only refuses every change before any request. A command line
+// whose every program is one the shell of latere.ai/x/cella/shell
+// provides and whose every path is in a memory folder runs in the
+// process over the same reads and writes (spec 097); any other command,
+// and a move, is not run here. A spill file of a long result, the one
+// path a memory call writes outside /memory, goes to the session's own
+// machine.
 package arca
 
 import (
@@ -40,9 +44,10 @@ import (
 // session, by checksum, so a second grep reads only what changed.
 const maxCached = 32 << 20
 
-// errCommands is an Exec on the memory machine: commands run on the
-// session's own machine, which does not see /memory.
-var errCommands = errors.New("memory: commands do not run in memory folders; read, write, edit, glob and grep reach them")
+// errCommands is a command the memory machine does not run: one in the
+// background, with input or variables of its own, or that Runs refuses.
+// The harness runs those on the session's own machine.
+var errCommands = errors.New("memory: the command runs on the session's machine")
 
 // errRename is a Rename into or out of a memory folder.
 var errRename = errors.New("memory: a memory file is not moved; write it at the new path and write the old one empty to forget it")
@@ -154,10 +159,6 @@ func (m *Machine) Open(ctx context.Context) error {
 		return nil
 	}
 	return machine.Open(ctx, m.fallback)
-}
-
-func (m *Machine) Exec(context.Context, machine.ExecRequest) (machine.ExecResult, error) {
-	return machine.ExecResult{}, errCommands
 }
 
 func (m *Machine) ExecStream(context.Context, machine.ExecRequest) (machine.ExecStream, error) {

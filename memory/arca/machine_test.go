@@ -188,16 +188,10 @@ func TestTheMemoryMachine(t *testing.T) {
 		t.Fatalf("a forget of a changed file: %v", err)
 	}
 
-	// Moves and commands are refused; a read_only folder refuses every
-	// change before any request.
+	// Moves are refused; a read_only folder refuses every change before
+	// any request.
 	if err := m.Rename(ctx, "/memory/project/a.md", "/memory/project/b.md"); !errors.Is(err, errRename) {
 		t.Fatalf("rename: %v", err)
-	}
-	if _, err := m.Exec(ctx, machine.ExecRequest{Command: "ls"}); !errors.Is(err, errCommands) {
-		t.Fatalf("exec: %v", err)
-	}
-	if _, err := m.ExecStream(ctx, machine.ExecRequest{Command: "ls"}); !errors.Is(err, errCommands) {
-		t.Fatalf("exec stream: %v", err)
 	}
 	before := len(arca.Requests())
 	var ro *memory.ReadOnly
