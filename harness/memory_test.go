@@ -202,7 +202,7 @@ func TestTheAttachmentsBlockNamesMemory(t *testing.T) {
 	r.send(ctx, "Second.")
 	r.turn(ctx)
 	const want = "<attachments>\n" +
-		"Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:\n" +
+		"Memory folders, kept across sessions. read, write, edit, glob and grep reach them, and so does a command that uses only ls, cat, head, tail, wc, grep, find, sort, uniq, cut, mkdir, rm, mv, cp, touch and the shell's builtins; any other program does not see them. Write a file empty to forget it:\n" +
 		"- /memory/user/ (read only)\n" +
 		"- /memory/project/ (read and write)\n" +
 		"</attachments>"
@@ -226,7 +226,7 @@ func TestTheAttachmentsBlockNamesMemory(t *testing.T) {
 	if len(v1) != 1 || v1[0] != apps+"</attachments>" {
 		t.Fatalf("a session with no memory folders: %q", v1)
 	}
-	if len(v2) != 1 || v2[0] != apps+"Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:\n- /memory/project/ (read and write)\n</attachments>" {
+	if len(v2) != 1 || v2[0] != apps+"Memory folders, kept across sessions. read, write, edit, glob and grep reach them, and so does a command that uses only ls, cat, head, tail, wc, grep, find, sort, uniq, cut, mkdir, rm, mv, cp, touch and the shell's builtins; any other program does not see them. Write a file empty to forget it:\n- /memory/project/ (read and write)\n</attachments>" {
 		t.Fatalf("a session with apps and memory folders: %q", v2)
 	}
 	s.Rollout = "rol_1"

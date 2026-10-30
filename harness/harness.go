@@ -212,9 +212,14 @@ type Config struct {
 	Files Files
 	// Log receives one line per response that wrote a tool call as text
 	// and what the turn did about it (spec 062): the session, thread,
-	// turn, step, model, tool and action, never a word of the response.
-	// Nil discards them.
+	// turn, step, model, tool and action, never a word of the response;
+	// and one line for the call that opened a machine opened on demand
+	// (spec 097): the tool, why, and the program the memory machine's
+	// shell named. Nil discards them.
 	Log *slog.Logger
+	// Meter counts where bash calls ran and which calls opened the
+	// session's machine (spec 097); nil counts nothing.
+	Meter Meter
 	// MCP is how the drive's listing of each connection of kind mcp ended,
 	// by the connection's name (spec 069): the connections block names
 	// these mcp connections and no other, and the drive's first turn
@@ -240,6 +245,9 @@ type Harness struct {
 	// texts are the texts of the files a request carries inline (spec
 	// 079), kept for the harness's life.
 	texts *texts
+	// opened is set once a call's open of the session's machine opened on
+	// demand is recorded (spec 097), shared by the copies a turn makes.
+	opened *atomic.Bool
 }
 
 // switchedModel is one model Connect answered.
@@ -318,7 +326,7 @@ func New(c Config) (*Harness, error) {
 	if c.PromptVersion == 0 {
 		c.PromptVersion = prompts.HarnessCurrent
 	}
-	return &Harness{c: c, prompt: p, switched: &switchedModel{}, listed: &atomic.Bool{}, texts: &texts{}}, nil
+	return &Harness{c: c, prompt: p, switched: &switchedModel{}, listed: &atomic.Bool{}, texts: &texts{}, opened: &atomic.Bool{}}, nil
 }
 
 // on points the harness's configuration at the model name, which the
@@ -1304,8 +1312,10 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 //
 // In a session with memory folders a call of a tool that names its paths
 // starts nothing: its path has not streamed yet, and a call under
-// /memory/ runs on the memory machine (spec 093). The call opens the
-// machine when it runs, if it needs it.
+// /memory/ runs on the memory machine (spec 093). Nor does a bash call
+// when the memory machine runs command lines: its line has not streamed
+// either, and one that reaches the folders alone runs in the process
+// (spec 097). The call opens the machine when it runs, if it needs it.
 func (t *turn) startMachine(ev ir.Event) {
 	if ev.Type != ir.EventBlockStart || ev.Block == nil || ev.Block.ToolUse == nil || t.machineRefused() != nil {
 		return
@@ -1317,30 +1327,10 @@ func (t *turn) startMachine(ev ir.Event) {
 	if _, paths := tool.(tools.Pather); paths && t.h.c.Memory != nil {
 		return
 	}
+	if tool.Definition().Name == tools.NameBash && t.h.runsLines() {
+		return
+	}
 	machine.Start(t.h.c.Machine)
-}
-
-// onMemory reports whether a call runs on the session's memory machine
-// (spec 093): a call of a tool that names its paths, in a session with
-// memory folders, every path of which is under /memory/ once cleaned. A
-// relative path, and a call that names none, act in the working
-// directory and run on the session's machine.
-func (h *Harness) onMemory(tool tools.Tool, input []byte) bool {
-	p, ok := tool.(tools.Pather)
-	if !ok || h.c.Memory == nil {
-		return false
-	}
-	paths := p.Paths(input)
-	return len(paths) > 0 && !slices.ContainsFunc(paths, func(p string) bool { return !memory.Under(p) })
-}
-
-// machineOf is the machine a call runs on: the memory machine for one
-// onMemory names, the session's for any other.
-func (h *Harness) machineOf(tool tools.Tool, input []byte) (machine.Machine, bool) {
-	if h.onMemory(tool, input) {
-		return h.c.Memory, true
-	}
-	return h.c.Machine, false
 }
 
 // opensMachine reports whether a call of a tool with these properties
@@ -1825,8 +1815,8 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 				st := t.toolState()
 				state = &st
 			}
-			m, _ := t.h.machineOf(tool, input)
-			if refused := c.Check(tools.Call{ID: id, Input: input, Machine: m, State: *state}); refused != nil {
+			r := t.h.route(tool, input, state.Dir)
+			if refused := c.Check(tools.Call{ID: id, Input: input, Machine: r.m, State: *state}); refused != nil {
 				answered = append(answered, answeredCall{id, *refused})
 				continue
 			}
@@ -2137,9 +2127,18 @@ func (t *turn) call(ctx context.Context, c plannedCall, w *waits) error {
 // answered.
 func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (tools.Result, error) {
 	// A call whose every path is under /memory/ runs on the memory
-	// machine and opens no other (spec 093).
-	m, onMemory := t.h.machineOf(c.tool, c.input)
-	opens := opensMachine(c.tool.Properties()) && !onMemory
+	// machine and opens no other (spec 093), and so does a bash call whose
+	// line the memory machine runs itself (spec 097).
+	rt := t.h.route(c.tool, c.input, state.Dir)
+	opens := opensMachine(c.tool.Properties()) && !rt.memory
+	closed := t.h.unopened()
+	t.recordRun(ctx, rt)
+	if rt.asked && !rt.memory && memory.Under(state.Dir) {
+		// The line's directory is a memory folder's, which the session's
+		// machine does not have: the command starts in the working
+		// directory, and its result says so.
+		state.DirInMemory = true
+	}
 	// A tool that acts on the machine opens a machine opened on demand
 	// first, so its paths resolve against the working directory of the
 	// machine that exists; a tool of no effect never opens one.
@@ -2156,8 +2155,20 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 		if err := machine.Open(ctx, t.h.c.Machine); err != nil {
 			return t.unopened(ctx, err)
 		}
+		if closed {
+			reason := rt.reason
+			if !rt.asked {
+				reason = ReasonTool
+			}
+			t.recordOpen(ctx, c, reason, rt.program)
+		}
 	}
-	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: m, State: state, MoveNow: t.moveNow})
+	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: rt.m, State: state, MoveNow: t.moveNow})
+	if closed && !opens && res.Spill != nil {
+		// A call on the memory machine opens the session's machine only
+		// to write its long result to a file there.
+		t.recordOpen(ctx, c, ReasonSpill, "")
+	}
 	var lost *appendError
 	if isPause(err) || errors.As(err, &lost) {
 		return tools.Result{}, err

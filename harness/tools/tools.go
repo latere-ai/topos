@@ -256,7 +256,12 @@ type State struct {
 	// tells a fork's directory from the one its copied log names, a
 	// directory of its parent's machine.
 	DirSeq uint64
-	Todos  []Todo
+	// DirInMemory is set by the harness for a bash call that runs on the
+	// session's machine while Dir is in a memory folder, where a line
+	// that reached the folders alone left it (spec 097): the machine has
+	// no such directory, so the command starts in the working directory.
+	DirInMemory bool
+	Todos       []Todo
 	// App is the last publish result that named an app the thread
 	// created, its own (spec 043), nil before there is one; a result
 	// without attached is the thread's own.

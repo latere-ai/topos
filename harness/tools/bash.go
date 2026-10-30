@@ -80,8 +80,15 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 	if !in.Background {
 		req.ServerGrace, req.MoveNow = serverGrace, c.MoveNow
 	}
-	res, err := c.Machine.Exec(ctx, req)
 	note := ""
+	if c.State.DirInMemory {
+		// The directory is a memory folder's, which this machine does not
+		// have: the command starts in the working directory instead, and
+		// the directory it ends in replaces the folder's.
+		note = prompts.Render(prompts.BashDirInMemory, prompts.Data{"Dir": req.Dir, "Workdir": c.Machine.Info().Workdir}) + "\n"
+		req.Dir = ""
+	}
+	res, err := c.Machine.Exec(ctx, req)
 	if err != nil && req.Dir != "" && missingDir(err) {
 		// The persistent directory is gone, removed by an earlier
 		// command; the call runs in the working directory instead, and
