@@ -116,6 +116,18 @@ type Task struct {
 	// Spend is the week a woken prompt's message carries (spec 087), nil
 	// for none.
 	Spend *Spend
+	// WhileWorking is what the driver sends as the person while the
+	// agent's turn runs (spec 098), nil for nothing.
+	WhileWorking *WhileWorking
+}
+
+// WhileWorking is a message the driver sends as the person once the
+// first call of Tool in the session's own thread has started: Text, sent
+// to be read now when Now is set.
+type WhileWorking struct {
+	Tool string `yaml:"tool"`
+	Text string `yaml:"text"`
+	Now  bool   `yaml:"now"`
 }
 
 // The kinds of a woken prompt: a judged trigger's message, and a wake's.
@@ -204,6 +216,9 @@ type taskFile struct {
 	Confirm  string   `yaml:"confirm"`
 	Woken    string   `yaml:"woken"`
 	Spend    *Spend   `yaml:"spend"`
+	// WhileWorking is while_working, the person's message sent while the
+	// agent works.
+	WhileWorking *WhileWorking `yaml:"while_working"`
 }
 
 // Load reads every task of the suite rooted at dir: each directory
@@ -256,6 +271,7 @@ func LoadTask(dir string) (Task, error) {
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
 		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers, Confirm: f.Confirm, Woken: f.Woken, Spend: f.Spend,
+		WhileWorking: f.WhileWorking,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -291,6 +307,9 @@ func LoadTask(dir string) (Task, error) {
 	}
 	if m := t.Agent.Title; m != nil && m.Model != nil && strings.TrimSpace(*m.Model) == "" {
 		return fail("agent.title.model is empty: name a model, or leave model out for the run's own")
+	}
+	if w := t.WhileWorking; w != nil && (w.Tool == "" || strings.TrimSpace(w.Text) == "") {
+		return fail("while_working names the tool whose first call it waits for and the text it sends")
 	}
 	if len(t.Answers) > 0 && !slices.Contains(t.Agent.Tools, harness.ToolQuestion) {
 		return fail("answers are for a question, and the agent does not hold the question tool")

@@ -1,0 +1,12 @@
+# Runs the build, reads the change the person sent while it ran, which
+# the next request holds after the build's result, and writes the
+# greeting the person asked for in its place.
+steps:
+  - tool_calls:
+      - name: bash
+        input: {command: "sleep 2"}
+  - expect: {text_contains: "Change of plan"}
+    tool_calls:
+      - name: write
+        input: {path: greeting.txt, content: "hallo\n"}
+  - text: The build finished. You changed the greeting while it ran, so greeting.txt holds hallo.

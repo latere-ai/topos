@@ -1,0 +1,2 @@
+- no_call: {tool: write, input: {content: {matches: '(?i)\bhello\b'}}}
+- file: {path: greeting.txt, matches: '^(?i)hallo\s*$'}

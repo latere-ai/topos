@@ -616,6 +616,15 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 		return res, err
 	}
 	dctx, cancel := context.WithTimeout(ctx, r.t.Timeout+RunGrace)
+	// A task that sends while the agent works sends its message once the
+	// agent's first call of its tool has started, as the person would
+	// (spec 098).
+	sent := make(chan error, 1)
+	if w := r.t.WhileWorking; w != nil {
+		go func() { sent <- sendWhileWorking(dctx, st, s.ID, person, *w) }()
+	} else {
+		sent <- nil
+	}
 	out, derr := rn.Drive(dctx, s.ID)
 	// A task that names its answers answers the session's question once,
 	// as a person would, and the session's turn continues.
@@ -632,6 +641,9 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 		}
 	}
 	cancel()
+	if err := <-sent; err != nil {
+		derr = errors.Join(derr, err)
+	}
 	if err := r.release(context.WithoutCancel(ctx)); err != nil {
 		derr = errors.Join(derr, err)
 	}
@@ -766,6 +778,42 @@ func confirmCalls(ctx context.Context, st session.Store, id string, person sessi
 	session.Stamp(id, last, batch)
 	_, err = st.Append(ctx, id, last, batch)
 	return err
+}
+
+// sendWhileWorking appends w's message as the person once the log holds
+// the first call of w.Tool in the session's own thread, after the log's
+// last event, again when another writer appended first. A run whose
+// agent never calls the tool sends nothing, which is no error: the
+// task's checker judges what the agent did.
+func sendWhileWorking(ctx context.Context, st session.Store, id string, person session.Sender, w WhileWorking) error {
+	evs, err := st.Watch(ctx, id, 1)
+	if err != nil {
+		return err
+	}
+	for e := range evs {
+		var p session.AgentToolUse
+		if e.Type != session.TypeAgentToolUse || e.Subagent != "" || e.Decode(&p) != nil || p.Name != w.Tool {
+			continue
+		}
+		msg := session.UserMessage{Sender: person, Content: []lux.Block{{Type: ir.BlockText, Text: w.Text}}, SendNow: w.Now}
+		for {
+			ev, err := session.NewEvent(session.TypeUserMessage, msg, time.Now())
+			if err != nil {
+				return err
+			}
+			s, err := st.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+			batch := []session.Event{ev}
+			session.Stamp(id, s.LastSeq, batch)
+			_, err = st.Append(ctx, id, s.LastSeq, batch)
+			if !errors.Is(err, session.ErrSequenceConflict) {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // suiteTriggers is the suite's reach to triggers for the trigger and

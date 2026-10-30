@@ -172,3 +172,27 @@ func TestScriptsAreRefusedWhenMalformed(t *testing.T) {
 		t.Fatal("played a connection that is not scripted")
 	}
 }
+
+// TestAnExpectationReadsTheMessagesText: text_contains holds when a text
+// block of any of the request's messages holds the words, and fails the
+// step otherwise.
+func TestAnExpectationReadsTheMessagesText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.yaml")
+	if err := os.WriteFile(path, []byte("steps:\n  - expect: {text_contains: use port 9000}\n    text: On 9000.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &Model{}
+	var ee *ExpectationError
+	if _, err := m.Stream(t.Context(), models.Request{IR: request("x", "use port 9000"), Connection: conn(path)}); !errors.As(err, &ee) || ee.Step != 1 {
+		t.Fatalf("words in a tool result met text_contains: %v", err)
+	}
+	r := request("x")
+	r.Messages = append(r.Messages, ir.Message{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "Ada: use port 9000 instead."}}})
+	s, err := m.Stream(t.Context(), models.Request{IR: r, Connection: conn(path)})
+	if err != nil {
+		t.Fatalf("a met expectation: %v", err)
+	}
+	if res, err := drain(t, s); err != nil || res.Message.Blocks[0].Text != "On 9000." {
+		t.Fatalf("the step %+v, %v", res, err)
+	}
+}

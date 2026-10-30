@@ -1,0 +1,16 @@
+name: redirected
+category: instructions
+# A person's message sent while the agent works: it changes what the
+# person asked while the agent's first command runs, reaches the agent at
+# its next step after the command's result, led by the line that says it
+# was sent while the agent worked, and the agent does the changed task
+# rather than the one it started.
+agent:
+  tools: [bash, write]
+while_working:
+  tool: bash
+  text: "Change of plan: greeting.txt should hold the German greeting, hallo, not hello."
+prompt: |
+  The release build takes a moment: run `sleep 6` with bash and wait for
+  it to finish. Then write greeting.txt holding the one word hello, the
+  greeting for the release announcement.

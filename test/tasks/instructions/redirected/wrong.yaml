@@ -1,0 +1,9 @@
+# Writes the greeting first asked for, as if no message had come.
+steps:
+  - tool_calls:
+      - name: bash
+        input: {command: "sleep 2"}
+  - tool_calls:
+      - name: write
+        input: {path: greeting.txt, content: "hello\n"}
+  - text: Wrote hello.

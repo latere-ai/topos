@@ -88,6 +88,8 @@ func TestLoadTaskRefuses(t *testing.T) {
 		{"an empty title model", map[string]string{"task.yaml": task("agent: {title: {model: ' '}}\n"), "check.yaml": minimalCheck}, "agent.title.model is empty"},
 		{"a title of another field", map[string]string{"task.yaml": task("agent: {title: {name: quick}}\n"), "check.yaml": minimalCheck}, "name"},
 		{"serve not a directory", map[string]string{"task.yaml": task("serve: pages\n"), "check.yaml": minimalCheck}, "serve"},
+		{"a while_working message with no text", map[string]string{"task.yaml": task("while_working: {tool: bash, text: ' '}\n"), "check.yaml": minimalCheck}, "while_working names"},
+		{"a while_working message with no tool", map[string]string{"task.yaml": task("while_working: {text: Use 9000.}\n"), "check.yaml": minimalCheck}, "while_working names"},
 		{"web_search and no results", map[string]string{"task.yaml": task("agent: {tools: [web_search]}\n"), "check.yaml": minimalCheck}, "names no search results"},
 		{"results and no web_search", map[string]string{"task.yaml": task("search: r.yaml\n"), "check.yaml": minimalCheck, "r.yaml": "[]\n"}, "does not hold it"},
 		{"results that do not read", map[string]string{"task.yaml": task("agent: {tools: [web_search]}\nsearch: r.yaml\n"), "check.yaml": minimalCheck, "r.yaml": "- {title: T, url: ftp://x}\n"}, "http or https URL"},

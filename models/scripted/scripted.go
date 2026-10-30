@@ -69,7 +69,10 @@ type Fail struct {
 type Expect struct {
 	ToolResultContains string `yaml:"tool_result_contains"`
 	SystemContains     string `yaml:"system_contains"`
-	Messages           int    `yaml:"messages"`
+	// TextContains is held by a text block of the request's messages, a
+	// person's message among them.
+	TextContains string `yaml:"text_contains"`
+	Messages     int    `yaml:"messages"`
 }
 
 // Script is a list of steps.
@@ -231,6 +234,17 @@ func check(e *Expect, r *ir.Request, step int) error {
 		}
 		if !found {
 			return fail(fmt.Sprintf("no system part contains %q", e.SystemContains))
+		}
+	}
+	if e.TextContains != "" {
+		found := false
+		for _, m := range r.Messages {
+			for _, b := range m.Blocks {
+				found = found || (b.Type == ir.BlockText && strings.Contains(b.Text, e.TextContains))
+			}
+		}
+		if !found {
+			return fail(fmt.Sprintf("no text of the messages contains %q", e.TextContains))
 		}
 	}
 	if e.ToolResultContains != "" {
