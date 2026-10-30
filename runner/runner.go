@@ -348,6 +348,9 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	if cfg.Interrupt == nil {
 		cfg.Interrupt = intr.current
 	}
+	if cfg.SendNow == nil {
+		cfg.SendNow = intr.sentNow
+	}
 	// A scope change drops every credential the drive holds, so the next
 	// call acts with one minted under the new scope.
 	var scoped func()
@@ -885,12 +888,16 @@ func attached(evs []session.Event) (git, memory bool) {
 
 // interrupts closes one channel per turn when a person appends
 // user.interrupt, so the harness cancels the turn's in-flight request and
-// running calls at once (spec 005), and ends a title the drive asks for
-// between turns when any input arrives after it began (spec 083).
+// running calls at once (spec 005), sends on another each message a
+// person sent to be read now (spec 098), and ends a title the drive asks
+// for between turns when any input arrives after it began (spec 083).
 type interrupts struct {
 	mu     sync.Mutex
 	ch     chan struct{}
 	closed bool
+	// now carries the turn's messages sent to be read now. A message it
+	// has no room for is read at the step after, as any other.
+	now chan session.Event
 	// input is the sequence of the latest input event the watch saw; after
 	// and onInput are the title waiting on input past after, ended at once
 	// by onInput.
@@ -899,8 +906,12 @@ type interrupts struct {
 	onInput func()
 }
 
+// sendNowRoom is how many messages sent to be read now a turn's channel
+// holds before the harness takes them.
+const sendNowRoom = 8
+
 func newInterrupts() *interrupts {
-	return &interrupts{ch: make(chan struct{})}
+	return &interrupts{ch: make(chan struct{}), now: make(chan session.Event, sendNowRoom)}
 }
 
 // watch follows the log from seq and fires on every user.interrupt, and
@@ -921,6 +932,8 @@ func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq
 			switch {
 			case e.Type == session.TypeUserInterrupt:
 				i.fire()
+			case sentNow(e):
+				i.sendNow(e)
 			case e.Type == session.TypeScopeChanged && scoped != nil:
 				scoped()
 			}
@@ -975,14 +988,41 @@ func (i *interrupts) endOnInput(seq uint64, end func()) func() {
 	}
 }
 
-// reset starts a turn with a fresh channel; an interrupt before the turn
-// began does not stop it.
+// reset starts a turn with fresh channels; an interrupt before the turn
+// began does not stop it, and a message sent to be read now before it is
+// read by its first request.
 func (i *interrupts) reset() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.closed {
 		i.ch, i.closed = make(chan struct{}), false
 	}
+	i.now = make(chan session.Event, sendNowRoom)
+}
+
+// sentNow reports whether e is a message a person sent to the session's
+// own thread to be read now.
+func sentNow(e session.Event) bool {
+	if e.Type != session.TypeUserMessage || e.Subagent != "" || e.Redacted() {
+		return false
+	}
+	var p session.UserMessage
+	return e.Decode(&p) == nil && p.SendNow && p.Sender.Kind == session.SenderPerson
+}
+
+func (i *interrupts) sendNow(e session.Event) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	select {
+	case i.now <- e:
+	default:
+	}
+}
+
+func (i *interrupts) sentNow() <-chan session.Event {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.now
 }
 
 func (i *interrupts) fire() {
