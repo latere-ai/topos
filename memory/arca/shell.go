@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"maps"
 	"path"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,18 @@ import (
 // file changed since this session read it: the file tools' words for the
 // same refusal, after the path the shell names.
 const changedWords = "changed since it was last read; read it again before writing"
+
+// lines holds a place for each command line running in the process: a
+// line runs inside toposd beside every other session's, so at most half
+// the process's processors run lines at once, and a line past them waits
+// for a place under its own timeout.
+var lines = make(chan struct{}, max(1, runtime.GOMAXPROCS(0)/2))
+
+// maxOutput is the most a line's output keeps: one memory file. Past the
+// tool's output limit the result spills to the session's machine as a
+// machine's command does, so the spill holds up to a file's worth of
+// output, and what is past it is dropped.
+const maxOutput = memory.MaxFileBytes
 
 // Mounts are the directories a command line reaches the memory folders
 // at (spec 097): /memory, which no line changes, and each folder, read
@@ -55,7 +68,10 @@ func (m *Machine) Runs(command, dir string) (reason, program string) {
 // 097), when Runs allowed it from the same directory: no machine opens,
 // and every read and write is the machine's own, with the version each
 // path was read at. A background command, one with input or variables of
-// its own, and a line Runs refuses are not run here.
+// its own, and a line Runs refuses are not run here. A line waits for a
+// place among the lines the process runs at once, and runs within the
+// shell's bounds: one that reaches a bound ends with the shell's message
+// and status 2.
 func (m *Machine) Exec(ctx context.Context, r machine.ExecRequest) (machine.ExecResult, error) {
 	if r.Background || r.Stdin != nil || len(r.Env) > 0 {
 		return machine.ExecResult{}, errCommands
@@ -66,8 +82,14 @@ func (m *Machine) Exec(ctx context.Context, r machine.ExecRequest) (machine.Exec
 		run, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
+	select {
+	case lines <- struct{}{}:
+		defer func() { <-lines }()
+	case <-run.Done():
+		return ended(ctx), nil
+	}
 	now := time.Now()
-	req := shell.Request{Command: r.Command, Dir: r.Dir, Name: "/bin/sh", Now: now}
+	req := shell.Request{Command: r.Command, Dir: r.Dir, Name: "/bin/sh", Now: now, MaxOutput: maxOutput}
 	if r.ReportDir {
 		// A machine's shell runs the line after the line that reports
 		// its directory, so its messages count from 2.
@@ -84,16 +106,24 @@ func (m *Machine) Exec(ctx context.Context, r machine.ExecRequest) (machine.Exec
 	var declined *shell.Declined
 	switch {
 	case err == nil:
-	case ctx.Err() != nil:
-		out.Canceled, out.ExitCode, out.Dir = true, -1, ""
 	case run.Err() != nil:
-		out.TimedOut, out.ExitCode, out.Dir = true, -1, ""
+		ended := ended(ctx)
+		out.Canceled, out.TimedOut, out.ExitCode, out.Dir = ended.Canceled, ended.TimedOut, -1, ""
 	case errors.As(err, &declined):
 		return machine.ExecResult{}, errCommands
 	default:
 		return machine.ExecResult{}, fmt.Errorf("memory: run the command: %w", err)
 	}
 	return out, nil
+}
+
+// ended is a line whose context ended: canceled when the caller's did,
+// and otherwise timed out.
+func ended(ctx context.Context) machine.ExecResult {
+	if ctx.Err() != nil {
+		return machine.ExecResult{Canceled: true, ExitCode: -1}
+	}
+	return machine.ExecResult{TimedOut: true, ExitCode: -1}
 }
 
 // served is the memory folders as a command line reaches them: a

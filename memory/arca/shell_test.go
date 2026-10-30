@@ -7,11 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"latere.ai/x/cella/shell"
+
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/memory"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/arcastub"
 )
@@ -329,14 +333,82 @@ func TestWhatALineDoesNotRun(t *testing.T) {
 	if _, err := m.ExecStream(ctx, machine.ExecRequest{Command: "ls /memory"}); !errors.Is(err, errCommands) {
 		t.Fatalf("exec stream: %v", err)
 	}
-	res, err := m.Exec(ctx, machine.ExecRequest{Command: "while true; do :; done", Dir: "/memory/project", Timeout: 50 * time.Millisecond, ReportDir: true})
-	if err != nil || !res.TimedOut || res.Canceled || res.Dir != "" {
+}
+
+// hangingMachine is a memory machine whose store answers nothing until
+// the test ends.
+func hangingMachine(t *testing.T) *Machine {
+	t.Helper()
+	arca := arcastub.New(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	arca.RequireToken(func(string) bool { <-release; return true })
+	return newMachine(t, arca, &fallback{})
+}
+
+// TestALineThatRunsPastItsTimeout: a line still running when its timeout
+// passes is timed out, and one whose caller ends is canceled, whether it
+// is waiting on the store or for a place to run (spec 097).
+func TestALineThatRunsPastItsTimeout(t *testing.T) {
+	m := hangingMachine(t)
+	ctx := t.Context()
+	res, err := m.Exec(ctx, machine.ExecRequest{Command: "ls", Dir: "/memory/project", Timeout: 50 * time.Millisecond, ReportDir: true})
+	if err != nil || !res.TimedOut || res.Canceled || res.Dir != "" || res.ExitCode != -1 {
 		t.Fatalf("a line past its timeout: %+v %v", res, err)
 	}
 	cctx, cancel := context.WithCancel(ctx)
 	time.AfterFunc(50*time.Millisecond, cancel)
-	res, err = m.Exec(cctx, machine.ExecRequest{Command: "while true; do :; done", Dir: "/memory/project", Timeout: time.Minute, ReportDir: true})
+	res, err = m.Exec(cctx, machine.ExecRequest{Command: "ls", Dir: "/memory/project", Timeout: time.Minute, ReportDir: true})
 	if err != nil || !res.Canceled || res.TimedOut {
 		t.Fatalf("a canceled line: %+v %v", res, err)
+	}
+
+	// Every place taken: a line waits, under its timeout.
+	free, _, _ := shellMachine(t)
+	for range cap(lines) {
+		lines <- struct{}{}
+	}
+	// One place is given back below, so the line given it runs.
+	defer func() {
+		for range cap(lines) - 1 {
+			<-lines
+		}
+	}()
+	res, err = free.Exec(ctx, machine.ExecRequest{Command: "ls", Dir: "/memory/project", Timeout: 50 * time.Millisecond})
+	if err != nil || !res.TimedOut || res.ExitCode != -1 {
+		t.Fatalf("a line with no place, past its timeout: %+v %v", res, err)
+	}
+	cctx, cancel = context.WithCancel(ctx)
+	cancel()
+	res, err = free.Exec(cctx, machine.ExecRequest{Command: "ls", Dir: "/memory/project", Timeout: time.Minute})
+	if err != nil || !res.Canceled {
+		t.Fatalf("a canceled line with no place: %+v %v", res, err)
+	}
+	time.AfterFunc(50*time.Millisecond, func() { <-lines })
+	res = run(t, free, "/memory/project", "ls")
+	if string(res.Output) != "notes\nplan.md\n" {
+		t.Fatalf("a line given a place: %+v", res)
+	}
+}
+
+// TestALineIsBounded: a line runs within the shell's bounds, which stop
+// an endless loop with the shell's message and status 2, and keeps at
+// most a memory file of output (spec 097).
+func TestALineIsBounded(t *testing.T) {
+	if want := max(1, runtime.GOMAXPROCS(0)/2); cap(lines) != want {
+		t.Errorf("%d lines run at once, want %d", cap(lines), want)
+	}
+	m, arca, fb := shellMachine(t)
+	res := run(t, m, "/memory/project", "echo start; while :; do :; done")
+	if res.ExitCode != 2 || res.TimedOut || string(res.Output) != fmt.Sprintf("start\n/bin/sh: 2: the line ran more than %d steps\n", shell.DefaultSteps) {
+		t.Errorf("an endless loop: %+v", res)
+	}
+	arca.Put(owner, projectPath+"/half.md", arcastub.Object{Data: []byte(strings.Repeat("x", 600<<10))})
+	res = run(t, m, "/memory/project", "cat half.md half.md half.md")
+	if res.ExitCode != 0 || len(res.Output) != memory.MaxFileBytes {
+		t.Errorf("a long output kept %d bytes, exit %d, want %d", len(res.Output), res.ExitCode, memory.MaxFileBytes)
+	}
+	if fb.opened != 0 {
+		t.Error("a bounded line opened the session's machine")
 	}
 }
