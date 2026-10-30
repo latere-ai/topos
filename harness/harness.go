@@ -2150,7 +2150,7 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 			return t.unopened(ctx, err)
 		}
 	}
-	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: m, State: state})
+	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: m, State: state, MoveNow: t.moveNow})
 	var lost *appendError
 	if isPause(err) || errors.As(err, &lost) {
 		return tools.Result{}, err

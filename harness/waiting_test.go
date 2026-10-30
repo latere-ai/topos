@@ -5,6 +5,7 @@ package harness
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -299,5 +300,53 @@ func TestSendNowOnAnIdleSessionChangesNothing(t *testing.T) {
 	e.running(ctx)
 	if out := e.turn(ctx); out.StopReason != session.StopEndTurn || out.Pending {
 		t.Fatalf("a message sent now to an idle session cut its own turn: %+v", out)
+	}
+}
+
+// TestSendNowMovesACommand: a bash command still running when a person
+// sends a message to be read now moves to the background on the host and
+// keeps running, the step is not cut, and its next request reads the
+// message after the moved call's result.
+func TestSendNowMovesACommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the host machine on Windows does not move a running command")
+	}
+	now := make(chan session.Event, 4)
+	m, _ := workMachine(t, nil)
+	e := setup(t, func(c *Config) {
+		c.SendNow = func() <-chan session.Event { return now }
+		c.Machine = m
+		c.Policy = Policy{Mode: ModeConfirm, AlwaysAllow: []string{"bash(*)"}}
+		c.Tools = tools.NewRegistry()
+		for _, b := range tools.Builtins() {
+			if b.Definition().Name == tools.NameBash {
+				if err := c.Tools.AddBuiltin(b); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	})
+	ctx := t.Context()
+	first := reply(ir.StopToolUse, call("toolu_1", tools.NameBash, `{"command":"echo begun; sleep 30"}`))
+	first.Respond = func(*ir.Request, *ir.Response) {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			now <- e.says(e.s.Initiator, "Stop waiting, use 9000.", true)
+		}()
+	}
+	e.stub.Script(model, first, reply(ir.StopEndTurn, text("On 9000.")))
+	e.send(ctx, "Start the server.")
+	start := time.Now()
+	out := e.turn(ctx)
+	if out.StopReason != session.StopEndTurn || out.Pending || time.Since(start) > 10*time.Second {
+		t.Fatalf("outcome %+v after %s", out, time.Since(start))
+	}
+	var res session.ToolResult
+	if err := e.events(ctx, session.TypeToolResult)[0].Decode(&res); err != nil || res.Outcome != tools.OutcomeOK {
+		t.Fatalf("result %+v, %v", res, err)
+	}
+	b := e.bodies()
+	if len(b) != 2 || !before(b[1], "begun", "moved to the background") || !before(b[1], "moved to the background", "Ada sent this while you were working:") {
+		t.Fatalf("the request after the move: %s", b[len(b)-1])
 	}
 }
