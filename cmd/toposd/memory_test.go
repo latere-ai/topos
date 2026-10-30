@@ -34,13 +34,15 @@ func fileReply(id, name string, input map[string]string) luxstub.Reply {
 // its project folder, written with its own token for the files audience,
 // and a second session with the same folder reads it with its own; the
 // model reads the folders in the attachments block; the session answers
-// each folder's name and access alone; and neither session creates a
-// sandbox (spec 093).
+// each folder's name and access alone; the second lists and searches the
+// folder with a bash line too; and neither session creates a sandbox
+// (specs 093 and 097).
 func TestMemoryAcrossSessions(t *testing.T) {
 	vars, s := credentialStubs(t,
 		fileReply("toolu_1", "write", map[string]string{"path": "/memory/project/color.md", "content": "The club's color is navy.\n"}),
 		saidReply("I will remember that."),
 		fileReply("toolu_2", "read", map[string]string{"path": "/memory/project/color.md"}),
+		fileReply("toolu_3", "bash", map[string]string{"command": "cd /memory/project && ls && grep -c navy color.md"}),
 		saidReply("The club's color is navy."),
 	)
 	arca := arcastub.New(t)
@@ -54,7 +56,7 @@ func TestMemoryAcrossSessions(t *testing.T) {
 	vars["TOPOS_FILES_AUDIENCE"] = "arca"
 	publicURL, _, stop := startServe(t, vars)
 	send := apiClient(t, publicURL, vars)
-	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: keeper\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  tools: [read, write, edit, glob, grep]\n  machine: {kind: cella}\n"
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: keeper\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  tools: [read, write, edit, glob, grep, bash]\n  machine: {kind: cella}\n  approvals: {mode: confirm, alwaysAllow: [bash]}\n"
 	if code, body := send(http.MethodPut, "/v1/agents/keeper", manifest); code != http.StatusCreated {
 		t.Fatalf("apply: %d %s", code, body)
 	}
@@ -101,6 +103,18 @@ func TestMemoryAcrossSessions(t *testing.T) {
 	if !read {
 		t.Fatalf("the second session did not read the memory: %s", events)
 	}
+	// A bash line over the memory folders runs on the runner and creates
+	// no sandbox (spec 097).
+	listed := false
+	for _, e := range page.Items {
+		var p session.ToolResult
+		if e.Type == session.TypeToolResult && e.Decode(&p) == nil && p.ToolUseID == "toolu_3" && !p.IsError && len(p.Content) > 0 {
+			listed = p.Content[0].Text == "color.md\n1\nExit code: 0"
+		}
+	}
+	if !listed {
+		t.Fatalf("the second session's bash line over memory: %s", events)
+	}
 	var readers []string
 	for _, r := range arca.Requests() {
 		if r.Op != arcastub.OpRead && r.Op != arcastub.OpHead {
@@ -123,7 +137,7 @@ func TestMemoryAcrossSessions(t *testing.T) {
 		}
 	}
 	if n := s.cella.Count(cellastub.OpCreate); n != 0 {
-		t.Fatalf("sessions that only remember created %d sandboxes", n)
+		t.Fatalf("sessions that only remember, and list and search their memory with bash, created %d sandboxes", n)
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("serve exited %d", code)

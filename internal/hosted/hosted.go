@@ -194,6 +194,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		Prompt: prompts.HarnessOptions{Subagents: len(ac.Subagents) > 0},
 		Clock:  b.o.Clock,
 		Log:    b.o.Log,
+		Meter:  Meter,
 	}
 	cfg.Policy.Mode = cmp.Or(cfg.Policy.Mode, harness.ModeConfirm)
 	if cfg.Files, err = b.files(ctx, s); err != nil {
