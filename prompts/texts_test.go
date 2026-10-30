@@ -394,6 +394,7 @@ var textCases = func() []textCase {
 
 		{name: BashEmpty, want: "The command is empty."},
 		{name: BashDirGone, data: Data{"Dir": "/work/gone", "Workdir": "/work"}, want: strings.TrimSuffix(fmt.Sprintf("[%s no longer exists; the command ran in the working directory %s]\n", "/work/gone", "/work"), "\n")},
+		{name: BashDirInMemory, data: Data{"Dir": "/memory/user", "Workdir": "/work"}, want: "[/memory/user is in a memory folder, which the programs of this command do not see; the command ran in the working directory /work]"},
 		{name: BashNotStarted, data: Data{"Error": "no shell"}, want: fmt.Sprintf("The command did not start: %v.", errors.New("no shell"))},
 		{name: BashBackground, data: Data{"PID": 4242, "Log": "/spill/jobs/job-1.log"}, want: fmt.Sprintf("%sStarted in the background as pid %d; its output goes to %s. Read the log with read, and stop the job with bash: kill -TERM -%d.", "", 4242, "/spill/jobs/job-1.log", 4242)},
 		{name: BashMoved, data: Data{"Grace": (3 * time.Second).String(), "Ports": "port 8000", "PID": 4242, "Log": "/spill/jobs/job-1.log"}, want: fmt.Sprintf("Still running after %s and listening on %s, so it was moved to the background as pid %d and keeps running. Its output so far is above; what it writes from now on goes to %s. Read the log with read, and stop it with bash: kill -TERM -%d.", 3*time.Second, "port 8000", 4242, "/spill/jobs/job-1.log", 4242)},
@@ -628,13 +629,16 @@ var textCases = func() []textCase {
 		}}, want: "<attachments>\n" + "Apps, each a checkout of its source in the working directory, on your branch agents/assistant/ses_1:\n" +
 			`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
 			`- notes-2/ : Notes, published at https://notes.apps.example.com (publish with app "notes")` + "\n" + "</attachments>"},
-		{name: ContextAttachmentsMemory, data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp(nil), "Memory": []memoryLine{{"user", true}, {"project", false}}},
+		{name: "context/attachments-v2", data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp(nil), "Memory": []memoryLine{{"user", true}, {"project", false}}},
 			want: "<attachments>\n" + "Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:\n" +
+				"- /memory/user/ (read only)\n" + "- /memory/project/ (read and write)\n" + "</attachments>"},
+		{name: ContextAttachmentsMemory, data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp(nil), "Memory": []memoryLine{{"user", true}, {"project", false}}},
+			want: "<attachments>\n" + "Memory folders, kept across sessions. read, write, edit, glob and grep reach them, and so does a command that uses only ls, cat, head, tail, wc, grep, find, sort, uniq, cut, mkdir, rm, mv, cp, touch and the shell's builtins; any other program does not see them. Write a file empty to forget it:\n" +
 				"- /memory/user/ (read only)\n" + "- /memory/project/ (read and write)\n" + "</attachments>"},
 		{name: ContextAttachmentsMemory, data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp{{"tide-tables", "Tide tables", "https://tide-tables.apps.example.com", "tide-tables"}}, "Memory": []memoryLine{{"project", false}}},
 			want: "<attachments>\n" + "Apps, each a checkout of its source in the working directory, on your branch agents/assistant/ses_1:\n" +
 				`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
-				"Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:\n" +
+				"Memory folders, kept across sessions. read, write, edit, glob and grep reach them, and so does a command that uses only ls, cat, head, tail, wc, grep, find, sort, uniq, cut, mkdir, rm, mv, cp, touch and the shell's builtins; any other program does not see them. Write a file empty to forget it:\n" +
 				"- /memory/project/ (read and write)\n" + "</attachments>"},
 		{name: "context/connections-v1", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP": []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},

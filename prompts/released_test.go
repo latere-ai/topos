@@ -311,4 +311,6 @@ var released = map[string]string{
 	"results/memory/too-large-v1.md":                 "48c6eecb7247f117c63cc4f4720da2791707149502c0b08b279d931a39c713b6",
 	"results/memory/unlisted-v1.md":                  "4ea149d173d2de98d2632bb581dffccc91cb34ba0b43eb70b8047250f1d011ec",
 	"results/memory/unreachable-v1.md":               "5be62827c8add472f425e253fe10cbef3319ea1d0de280798a14c89ac768a74e",
+	"context/attachments-v3.md":                      "78f7edcfede774df3c4478944c2965a7aeee9cce4b371d264b0f26553bba5ede",
+	"results/bash/dir-in-memory-v1.md":               "c13c351fffd471893fa1bd81d9d66c1e3c39330cc178dd2c09e5420a882cb8b1",
 }

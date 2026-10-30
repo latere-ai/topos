@@ -593,14 +593,19 @@ const (
 
 // The results of bash (spec 008).
 const (
-	BashEmpty      Name = "results/bash/empty-v1"
-	BashDirGone    Name = "results/bash/dir-gone-v1"
-	BashNotStarted Name = "results/bash/not-started-v1"
-	BashBackground Name = "results/bash/background-v1"
-	BashNoOutput   Name = "results/bash/no-output-v1"
-	BashTimeout    Name = "results/bash/timeout-v1"
-	BashCanceled   Name = "results/bash/canceled-v1"
-	BashExitCode   Name = "results/bash/exit-code-v1"
+	BashEmpty   Name = "results/bash/empty-v1"
+	BashDirGone Name = "results/bash/dir-gone-v1"
+	// BashDirInMemory takes Dir and Workdir: a command that runs on the
+	// machine while the persistent directory is in a memory folder, which
+	// the machine does not have, so it ran in the working directory (spec
+	// 097).
+	BashDirInMemory Name = "results/bash/dir-in-memory-v1"
+	BashNotStarted  Name = "results/bash/not-started-v1"
+	BashBackground  Name = "results/bash/background-v1"
+	BashNoOutput    Name = "results/bash/no-output-v1"
+	BashTimeout     Name = "results/bash/timeout-v1"
+	BashCanceled    Name = "results/bash/canceled-v1"
+	BashExitCode    Name = "results/bash/exit-code-v1"
 	// BashMoved takes Grace, Ports, PID and Log: a foreground server
 	// moved to the background (spec 045).
 	BashMoved Name = "results/bash/moved-v1"
@@ -708,8 +713,9 @@ const (
 	// does, and Memory, each with Name and ReadOnly: the attachments block
 	// of a session with memory folders (spec 093), which names the
 	// folders after the apps. A session with none renders
-	// ContextAttachments, so its bytes are unchanged.
-	ContextAttachmentsMemory Name = "context/attachments-v2"
+	// ContextAttachments, so its bytes are unchanged. Version 3 says
+	// which commands reach the folders (spec 097).
+	ContextAttachmentsMemory Name = "context/attachments-v3"
 	// ContextConnections takes Branch, the session's branch, Token, the
 	// variable of the connection service's placeholder, HTTP, each with
 	// Title, Account, APIURL, APIExample, GitURL, Env and Notes, MCP, each with Title,
