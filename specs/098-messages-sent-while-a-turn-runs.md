@@ -1,6 +1,6 @@
 ---
 title: "Messages sent while a turn runs: a person's message is read at the next step, placed where it was read and marked as sent during the work, a trigger's or a wake's waits for the turn's end, send now moves a running command to the background and cuts what still runs after a grace, and a message not yet read can be withdrawn"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 045-a-server-cannot-hold-a-turn.md, 086-proactive-agents.md]
 affects: [session/, harness/, harness/tools/, machine/, machine/host/, machine/cella/, cmd/topos-machine/, runner/, prompts/, internal/server/, test/tasks/, api/openapi.yaml, docs/]
@@ -135,6 +135,10 @@ harness appends `messages.read`:
 The harness names the messages from the log it has seen, appends the
 event, and folds the log the append returns, so a message withdrawn in
 between is left out ([Withdrawing a message](#withdrawing-a-message)).
+The append returns what other writers appended since the step's last
+commit; a message among it that the step reads is named by another
+`messages.read` before the request, up to four in a step, and one that
+arrives after the last waits for the next step.
 `messages.read` is written by the runner, is never sent by a client,
 and is the one record that a waiting message was read.
 
@@ -223,16 +227,21 @@ A person withdraws a waiting message they sent with `user.withdraw`:
 The send route asks `session.interrupt` for it, as for `user.interrupt`:
 it starts nothing and spends nothing. The server appends it after the
 log its check read, and checks again when another writer appended
-first, as for an answer ([[015-api]]). The check refuses with
-`conflict` and one fixed sentence each:
+first, as for an answer ([[015-api]]). The check refuses with the
+code below, whose `message` is the code's one sentence, and a `detail`
+that names the event and the case:
 
-| The named event | `message` |
+| The named event | Code |
 |---|---|
-| is not a `user.message` of this session | `There is no such message in this session.` |
-| was sent by another subject | `Only the person who sent a message can withdraw it.` |
-| is not waiting | `A message sent while the session was idle has started its turn and cannot be withdrawn.` |
-| is named by a `messages.read` | `The agent has already read this message.` |
-| was withdrawn | `This message was already withdrawn.` |
+| is absent from the payload | `invalid_request` |
+| is not a `user.message` of this session's own thread | `conflict` |
+| was sent by another subject | `forbidden` |
+| is not waiting: it was sent while the session was idle and started its turn | `conflict` |
+| is named by a `messages.read` | `conflict` |
+| was withdrawn | `conflict` |
+
+A client tells the cases apart by the message's state in the log, which
+it already shows, and words its own sentence for the person.
 
 A withdrawn message is never read, renders nowhere, has its files
 written to no machine, and is no pending input. A `messages.read`
@@ -268,11 +277,11 @@ Every state is read from the log alone:
 | `machine.ExecRequest.MoveNow` | machine request member | above |
 | `while_working` | member of a suite task's `task.yaml` ([[025-task-suite]]) | `{tool, text}`: the run's driver sends `text` as the person once the first call of `tool` has started |
 
-Spec 004's event table gains `user.withdraw` and `messages.read`,
-`send_now` on `user.message`, and `names_reads` on `model.request`, each
-added by this spec. Spec 015's send
-route takes `user.withdraw`. Spec 016's step 5 says a message sent
-during a turn is read at the next step.
+The events and members above join those of [[004-session-log]], which
+is complete and keeps its table as built. [[015-api]]'s send route takes
+`user.withdraw`, [[016-runners]]'s step 5 says a person's message sent
+during a turn is read at the next step, and [[005-harness-loop]]'s
+`Outcome.Pending` and request build name the waiting messages.
 
 ## Decisions
 
@@ -313,19 +322,20 @@ and controls a client offers, and commands a client runs itself.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A person's message appended while a step's calls run is named by a `messages.read` before the next request, rendered after the step's tool results and led by `transcript/while-working-v1`, in the same turn | `harness.TestAMessageWhileCallsRunIsReadAtTheNextStep` | not built |
-| A message appended while a request is in flight is placed after that request's answer, in the same turn when the answer calls tools and in the next turn when it ends the turn | `harness.TestAMessageDuringARequestIsReadAfterItsAnswer` | not built |
-| A log with no `messages.read` folds byte for byte as before; a named message renders at the event's place and counts there for a compaction's range | `session.TestAFoldWithoutReadsIsUnchanged`, `session.TestAReadMessageRendersWhereItWasRead` | not built |
-| A trigger's or a wake's message appended while a turn runs is not read by it, ends it with `Outcome.Pending`, and is read by the next turn's first request with no line | `harness.TestAFiringWaitsForTheTurnsEnd`, `runner.TestAWaitingFiringStartsTheNextTurn` | not built |
-| `HasPendingInput` holds for an idle session with an unread waiting message, and not for one whose waiting messages were read or withdrawn | `session.TestAnUnreadWaitingMessageIsPendingInput` | not built |
-| A held message is no pending input while the session waits for a person, and the turn the person's answer starts reads it; a session that ends on idle reads a held message before it ends | `session.TestAHeldMessageWaitsWithTheSession`, `harness.TestAHeldMessageIsReadByTheAnswersTurn`, `harness.TestEndOnIdleReadsAHeldMessageFirst` | not built |
-| `send_now` during a request, or after the request in flight was built, cancels it, ends the turn `interrupted` `send_now`, and the next turn reads the message led by `transcript/sent-now-v1`; a `send_now` message the request in flight already read cuts nothing | `harness.TestSendNowCutsARequest`, `runner.TestSendNowStartsTheNextTurn` | not built |
-| `send_now` while `bash` runs moves the command, answers it with `results/bash/moved-now-v1`, and the next request of the same turn reads the message | `harness.TestSendNowMovesACommand`, `harness/tools.TestAMovedCommandSaysSo` | not built |
-| A call that cannot move and runs past `harness.SendNowGrace` is canceled and the turn ends `interrupted` `send_now` | `harness.TestSendNowCutsACallPastTheGrace` | not built |
-| `MoveNow` moves a running foreground command on the host machine and through the `m` frame in a sandbox, with `Moved` set and no `Ports` | `machine/host.TestMoveNow`, `machine/cella.TestMoveNowSendsTheFrame`, `cmd/topos-machine.TestRunMovesOnTheMoveFrame` | not built |
-| `send_now` on an idle session starts a turn as any message does | `runner.TestSendNowOnAnIdleSession` | not built |
-| `user.withdraw` asks `session.interrupt`, is appended for a waiting message its sender sent and nothing read, and is refused `conflict` with its sentence in each other case, a `messages.read` appended first included | `internal/server.TestWithdraw`, `internal/server.TestAWithdrawalAfterTheReadIsRefused` | not built |
-| A withdrawn message is not read, not rendered, not pending and has no files delivered; a `messages.read` after its withdrawal skips it | `session.TestAWithdrawnMessageIsNotRead`, `harness.TestAWithdrawalBeforeTheRequestKeepsItOut` | not built |
+| A person's message appended while a step's calls run is named by a `messages.read` before the next request, rendered after the step's tool results and led by `transcript/while-working-v1`, in the same turn | `harness.TestAMessageWhileCallsRunIsReadAtTheNextStep`, `harness.TestAMessageAfterTheLastCommitIsReadByTheStep` | built |
+| A message appended while a request is in flight is placed after that request's answer, in the same turn when the answer calls tools and in the next turn when it ends the turn | `harness.TestAMessageDuringARequestIsReadAfterItsAnswer`, `harness.TestEndOnIdleReadsAHeldMessageFirst` | built |
+| A log with no `messages.read` folds byte for byte as before; a named message renders at the event's place and counts there for a compaction's range | `session.TestAFoldWithoutReadsIsUnchanged`, `session.TestAReadMessageRendersWhereItWasRead` | built |
+| A trigger's or a wake's message appended while a turn runs is not read by it, ends it with `Outcome.Pending`, and is read by the next turn's first request with no line | `harness.TestAFiringWaitsForTheTurnsEnd`, `runner.TestAWaitingFiringStartsTheNextTurn`, `session.TestAFiringWaitsWhileItsTurnRuns` | built |
+| `HasPendingInput` holds for an idle session with an unread waiting message, and not for one whose waiting messages were read or withdrawn | `session.TestAnUnreadWaitingMessageIsPendingInput`, `session.TestAMessageSentWhileIdleIsNotWaiting` | built |
+| A held message is no pending input while the session waits for a person, and the turn the person's answer starts reads it; a session that ends on idle reads a held message before it ends | `session.TestAHeldMessageWaitsWithTheSession`, `harness.TestAMessageStandsInForAnAnswer` (a message before the question), `harness.TestEndOnIdleReadsAHeldMessageFirst` | built |
+| `send_now` during a request, or after the request in flight was built, cancels it, ends the turn `interrupted` `send_now`, and the next turn reads the message led by `transcript/sent-now-v1`; a `send_now` message the request in flight already read cuts nothing | `harness.TestSendNowCutsARequest`, `harness.TestSendNowIgnoresAMessageTheStepRead`, `runner.TestSendNowStartsTheNextTurn`, `session.TestTheSentNowLineLeadsAMessageThatCutItsTurn` | built |
+| `send_now` while `bash` runs moves the command, answers it with `results/bash/moved-now-v1`, and the next request of the same turn reads the message | `harness.TestSendNowMovesACommand`, `harness.TestSendNowWaitsForCallsThatReturn`, `harness/tools.TestAMovedCommandSaysSo` | built |
+| A call that cannot move and runs past `harness.SendNowGrace` is canceled and the turn ends `interrupted` `send_now` | `harness.TestSendNowCutsACallPastTheGrace` | built |
+| `MoveNow` moves a running foreground command on the host machine and through the `m` frame in a sandbox, with `Moved` set and no `Ports` | `machine/host.TestMoveNow`, `machine/cella.TestMoveNowSendsTheFrame`, `cmd/topos-machine.TestRunMovesOnTheMoveFrame` | built |
+| `send_now` on an idle session starts a turn as any message does, and cuts nothing of it | `harness.TestSendNowOnAnIdleSessionChangesNothing` | built |
+| `user.withdraw` asks `session.interrupt`, is appended for a waiting message its sender sent and nothing read, and is refused with its code in each other case, a `messages.read` appended first included | `internal/server.TestWithdraw`, `internal/server.TestAWithdrawalAfterTheReadIsRefused` | built |
+| A withdrawn message is not read, not rendered, not pending and has no files delivered; a `messages.read` after its withdrawal skips it | `session.TestAWithdrawnMessageIsNotRead`, `session.TestAWaitingMessagesFilesWaitWithIt`, `harness.TestAWithdrawalBeforeTheRequestKeepsItOut` | built |
 | The OpenAPI document, the schema and the API guide describe `send_now`, `user.withdraw`, `messages.read` and the states | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestOpenAPIMatchesHandlers`, `docs/messages-while-working.md` | not built |
 | End to end over the stubs: a message sent while a command runs reaches the next request; `send_now` moves the command; a withdrawn message is not read | `cmd/toposd.TestMessagesWhileATurnRuns` | not built |
+| A turn a runner took over with no status closing the one before counts that turn as closed, so its held messages are read | `session.TestATurnNobodyClosedClosesAtTheNext` | built |
 | A task in the suite: the person changes what they asked while the agent's first command runs, and the agent does the changed task | `test/tasks/instructions/redirected` | not built |

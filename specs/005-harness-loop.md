@@ -96,8 +96,10 @@ instruction files the harness renders ([[011-instructions-and-skills]]).
 
 `RunTurn` reads nothing but its arguments, the machine and the log's
 blobs, appends only through `l`, and returns when the session is idle
-or ended. `Outcome.Pending` reports a person's event appended after the
-turn's last request was built, which the model has not seen; the runner
+or ended. `Outcome.Pending` reports a person's answer appended after the
+turn's last request was built, which the model has not seen, and a
+waiting message no request read that starts a turn of its own
+([[098-messages-sent-while-a-turn-runs]]); the runner
 starts the next turn from it at once ([[016-runners]]). Every way out of
 a turn closes it with a `session.status`, except one: an `Append` error
 (a lost lease, a store failure) stops the turn at once with no further
@@ -126,7 +128,10 @@ fold refuses the log, [[004-session-log]]) and ends the turn idle with
       calls) stops with `error`; the turn deadline passed stops with
       `turn_limit`; the budget's pre-request check ([[007-models]])
       failing stops with `budget`.
-   2. Build the request: the fold, the context management of
+   2. Build the request: in the session's own thread, after the
+      `messages.read` that names the waiting messages the request is
+      the first to read ([[098-messages-sent-while-a-turn-runs]]); the
+      fold, the context management of
       [[010-context]], the prompt parts of [[011-instructions-and-skills]],
       the tool definitions of the registry, `max_tokens` as Output
       limits below sets it, and the agent's effort.
@@ -374,6 +379,11 @@ outcome `canceled`; `bash` sends its process group `SIGTERM` and
 `SIGKILL` 5 seconds later. A call whose tool returned before the cancel
 keeps its result; only a call cut short is `canceled`. Then the turn
 stops with `interrupted`.
+
+A person's message sent with `send_now` while a turn runs cuts it the
+same way, after the running commands were asked to move to the
+background and a grace passed, and the turn stops `interrupted` with
+detail `send_now` ([[098-messages-sent-while-a-turn-runs]]).
 
 ### Streaming deltas versus events
 

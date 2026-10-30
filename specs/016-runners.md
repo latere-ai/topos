@@ -104,13 +104,15 @@ one (`ErrNotFound`).
    the same before each step's request, so a file sent during the turn
    is there before the model reads its path.
 4. Recover the open step, below.
-5. Run turns ([[005-harness-loop]]). A `user.message` that arrives
-   during a turn waits for that turn's end: it is appended before the
-   turn's closing status, so the harness reports it as
+5. Run turns ([[005-harness-loop]]). A person's `user.message` that
+   arrives during a turn is read at the turn's next step; a trigger's
+   or a wake's waits for the turn's end, which reports it as
    `Outcome.Pending`, and the runner starts the next turn from it
-   without releasing. The runner watches the store while a turn runs
-   and cancels the turn's context on a `user.interrupt`, which brings
-   the step boundary forward ([[005-harness-loop]]). Once a step of
+   without releasing ([[098-messages-sent-while-a-turn-runs]]). The
+   runner watches the store while a turn runs and cancels the turn's
+   context on a `user.interrupt`, which brings the step boundary
+   forward ([[005-harness-loop]]), and hands the harness each
+   person's message sent with `send_now`. Once a step of
    the session's own thread is committed, the local images its answer
    shows and the local files it links are read from the open machine,
    stored as blobs and recorded by `files.kept`; a machine the turn did
