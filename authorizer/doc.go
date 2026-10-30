@@ -269,12 +269,14 @@
 // release reads no files member.
 //
 // session.send is asked of every event a person sends to a session but
-// an interrupt, and its resource carries the event's type as event_type:
-// user.message, a message; user.tool_confirmation, the allow or deny of
-// a tool call that waits for a person; user.tool_result, the result of a
-// tool a client runs; and user.answer, a person's answer to a question
-// the agent put to them with its question tool. A user.interrupt is
-// asked as session.interrupt. An answer, like a confirmation, continues
+// an interrupt and a withdrawal, and its resource carries the event's
+// type as event_type: user.message, a message; user.tool_confirmation,
+// the allow or deny of a tool call that waits for a person;
+// user.tool_result, the result of a tool a client runs; and user.answer,
+// a person's answer to a question the agent put to them with its
+// question tool. A user.interrupt is asked as session.interrupt, and so
+// is a user.withdraw, which takes back a message the agent has not read
+// and, like an interrupt, starts nothing and spends nothing. An answer, like a confirmation, continues
 // a turn the person already started, so an endpoint that meters messages
 // tells them apart by event_type; a message sent in place of an answer
 // is a user.message. An endpoint that lists the event types it allows

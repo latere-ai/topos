@@ -137,6 +137,18 @@ func (c *call) sendEvent() error {
 		}
 		p.Sender = sender
 		payload, action = p, authorizer.ActionSessionInterrupt
+	case session.TypeUserWithdraw:
+		// A withdrawal starts nothing and spends nothing, as an interrupt
+		// does (spec 098).
+		var p session.UserWithdraw
+		if err := strict(b.Payload, &p); err != nil {
+			return err
+		}
+		if p.EventID == "" {
+			return refuse(CodeInvalidRequest, "a user.withdraw names the event_id of the message it withdraws")
+		}
+		p.Sender = sender
+		payload, action = p, authorizer.ActionSessionInterrupt
 	case session.TypeUserToolConfirmation:
 		var p session.UserToolConfirmation
 		if err := strict(b.Payload, &p); err != nil {
@@ -235,11 +247,12 @@ func (c *call) sendEvent() error {
 
 // sentTypes are the event types a person sends to a session, in the
 // order the send route's description names them. Each but user.interrupt
-// is asked of the authorizer as session.send with the type as its
-// event_type, which an authorizer that lists the types it allows reads.
+// and user.withdraw is asked of the authorizer as session.send with the
+// type as its event_type, which an authorizer that lists the types it
+// allows reads.
 var sentTypes = []string{
-	string(session.TypeUserMessage), string(session.TypeUserInterrupt), string(session.TypeUserToolConfirmation),
-	string(session.TypeUserToolResult), string(session.TypeUserAnswer),
+	string(session.TypeUserMessage), string(session.TypeUserInterrupt), string(session.TypeUserWithdraw),
+	string(session.TypeUserToolConfirmation), string(session.TypeUserToolResult), string(session.TypeUserAnswer),
 }
 
 // answering is the check of a sent event against the log it is appended
@@ -274,8 +287,40 @@ func answering(typ session.Type, payload any, initiator string) func([]session.E
 		return awaits(typ, p.ToolUseID, session.AnswerResult)
 	case session.UserAnswer:
 		return func(evs []session.Event) error { return fits(evs, p) }
+	case session.UserWithdraw:
+		return func(evs []session.Event) error { return withdrawable(evs, p) }
 	}
 	return nil
+}
+
+// withdrawable refuses a withdrawal of anything but a waiting message its
+// sender sent that no request read and nobody withdrew (spec 098). The
+// check runs on the log the append follows, so a withdrawal and the
+// runner's messages.read of the same message never both stand.
+func withdrawable(evs []session.Event, p session.UserWithdraw) error {
+	sent := slices.IndexFunc(evs, func(e session.Event) bool {
+		return e.ID == p.EventID && e.Type == session.TypeUserMessage && e.Subagent == ""
+	})
+	if sent < 0 {
+		return refuse(CodeConflict, "user.withdraw names %s, which is no message of this session", p.EventID)
+	}
+	var m session.UserMessage
+	if err := evs[sent].Decode(&m); err != nil || m.Sender.Subject != p.Sender.Subject {
+		return refuse(auth.CodeForbidden, "only the person who sent %s withdraws it", p.EventID)
+	}
+	for _, w := range session.WaitingMessages(evs) {
+		if w.Event.ID != p.EventID {
+			continue
+		}
+		switch w.State {
+		case session.MessageRead:
+			return refuse(CodeConflict, "user.withdraw names %s, which a request already read", p.EventID)
+		case session.MessageWithdrawn:
+			return refuse(CodeConflict, "user.withdraw names %s, which was already withdrawn", p.EventID)
+		}
+		return nil
+	}
+	return refuse(CodeConflict, "user.withdraw names %s, which was sent while the session was idle and started its turn", p.EventID)
 }
 
 // callName is the name of the tool the call toolUseID of evs calls, ""

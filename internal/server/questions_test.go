@@ -525,9 +525,9 @@ func TestTheSendRouteShowsAnAnswer(t *testing.T) {
 
 // TestTheAuthorizerDocNamesEveryEventType: the wire documentation an
 // authorizer's author reads names each event_type a session.send
-// carries, the answer among them, and the interrupt's own action, since
-// an authorizer that lists the event types it allows must accept a new
-// one before a server that sends it rolls out.
+// carries, the answer among them, and the action of the interrupt and of
+// the withdrawal, since an authorizer that lists the event types it
+// allows must accept a new one before a server that sends it rolls out.
 func TestTheAuthorizerDocNamesEveryEventType(t *testing.T) {
 	b, err := os.ReadFile("../../authorizer/doc.go")
 	if err != nil {
@@ -535,14 +535,14 @@ func TestTheAuthorizerDocNamesEveryEventType(t *testing.T) {
 	}
 	doc := strings.Join(strings.Fields(strings.ReplaceAll(string(b), "//", "")), " ")
 	for _, typ := range sentTypes {
-		if typ == string(session.TypeUserInterrupt) {
+		if typ == string(session.TypeUserInterrupt) || typ == string(session.TypeUserWithdraw) {
 			continue
 		}
 		if !strings.Contains(doc, typ) {
 			t.Errorf("the authorizer's documentation does not name the event_type %s", typ)
 		}
 	}
-	for _, want := range []string{"user.interrupt is asked as session.interrupt", "before a server that sends it"} {
+	for _, want := range []string{"user.interrupt is asked as session.interrupt", "so is a user.withdraw", "before a server that sends it"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("the authorizer's documentation does not say %q", want)
 		}

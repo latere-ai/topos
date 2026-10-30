@@ -75,9 +75,11 @@ var shapes = map[string]bodyShape{
 var payloadTypes = map[session.Type]reflect.Type{
 	session.TypeUserMessage:          typeOf[session.UserMessage](),
 	session.TypeUserInterrupt:        typeOf[session.UserInterrupt](),
+	session.TypeUserWithdraw:         typeOf[session.UserWithdraw](),
 	session.TypeUserToolConfirmation: typeOf[session.UserToolConfirmation](),
 	session.TypeUserToolResult:       typeOf[session.UserToolResult](),
 	session.TypeUserAnswer:           typeOf[session.UserAnswer](),
+	session.TypeMessagesRead:         typeOf[session.MessagesRead](),
 	session.TypeAgentMessage:         typeOf[session.AgentMessage](),
 	session.TypeAgentToolUse:         typeOf[session.AgentToolUse](),
 	session.TypeToolResult:           typeOf[session.ToolResult](),
@@ -117,6 +119,7 @@ var payloadTypes = map[session.Type]reflect.Type{
 var sentPayloads = map[session.Type]reflect.Type{
 	session.TypeUserMessage:          typeOf[messageBody](),
 	session.TypeUserInterrupt:        typeOf[session.UserInterrupt](),
+	session.TypeUserWithdraw:         typeOf[session.UserWithdraw](),
 	session.TypeUserToolConfirmation: typeOf[session.UserToolConfirmation](),
 	session.TypeUserToolResult:       typeOf[session.UserToolResult](),
 	session.TypeUserAnswer:           typeOf[session.UserAnswer](),
@@ -154,6 +157,7 @@ var requestRequired = map[reflect.Type][]string{
 // sendEvent takes whose type is also an event's payload.
 var sentRequired = map[reflect.Type][]string{
 	typeOf[session.UserInterrupt]():        {},
+	typeOf[session.UserWithdraw]():         {"event_id"},
 	typeOf[session.UserToolConfirmation](): {"decision"},
 	typeOf[session.UserToolResult]():       {"tool_use_id"},
 }

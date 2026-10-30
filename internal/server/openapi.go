@@ -514,7 +514,7 @@ var opDescriptions = map[string]string{
 		"spec.model is required, but an inline subagent's spec may leave it out: that subagent runs, at each of its turns, the model, connection and reasoning level the agent that started it stands on then, "+
 		"the model the session's routed name resolved to included; a model given without a name is invalid_manifest. "+
 		"An agent with subagents holds the tools agent and send_message, so neither is a client tool's name in it.", manifest.MaxDisplayName),
-	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. "+
+	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.withdraw, user.tool_confirmation, user.tool_result or user.answer. "+
 		"A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most %d of at most %d bytes each), "+
 		"and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most %d of at most %d bytes each, the name one path segment of at most %d bytes). "+
 		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path, source, inline}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
@@ -551,9 +551,16 @@ var opDescriptions = map[string]string{
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
 		"A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. "+
+		"A user.message appended while the session's turn runs waits: a person's is read by the turn's next request, after the results of the calls then running, led by a line that says it was sent while the agent worked; "+
+		"a trigger's, a wake's or any other sender's is read by the first request of a later turn, and a trigger's or a wake's starts one once the turn ends, unless the session then waits for a person, whose answer starts the turn that reads it. "+
+		"messages.read {event_ids}, which the runner appends before a request, names the waiting messages that request is the first to read, and a client reads each waiting message's state from the log: waiting, read once a messages.read names it, or withdrawn. "+
+		"send_now true on a person's user.message sent while a turn runs asks that it be read at once: a request in flight is canceled; the running commands are moved to the background, and the calls still running %s later are canceled. "+
+		"A turn cut for it ends idle, stop_reason interrupted with detail send_now, and the next turn reads the message, led by a line that says the person stopped the work to send it; a step whose calls all returned in time is not cut, and its next request reads the message. "+
+		"user.withdraw {event_id} takes back a waiting message its sender sent before any messages.read names it, so no request reads it and its files are written to no machine; "+
+		"it is asked of the authorizer as session.interrupt, and is conflict for a message that is no waiting message of this session or that was read or withdrawn already, and forbidden for another sender's. "+
 		SendNetworkRule+ConnectionsRule+" "+AnswerRules,
 		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject, models.MaxDetail, session.MessageModelBusyChange, harness.MaxModelSwitches, harness.MessageModelBusy, harness.FailedRejected,
-		session.OutcomeToolAsText, harness.FailedToolAsText, session.ReasonToolAsText, session.MessageToolAsTextChange, harness.MaxRepeatedCalls, harness.MessageRepeatedCall),
+		session.OutcomeToolAsText, harness.FailedToolAsText, session.ReasonToolAsText, session.MessageToolAsTextChange, harness.MaxRepeatedCalls, harness.MessageRepeatedCall, spoken(harness.SendNowGrace)),
 	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
 		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
 		"or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. "+

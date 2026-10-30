@@ -106,6 +106,7 @@ type messageBody struct {
 	Attachments []attachmentBody `json:"attachments,omitempty"`
 	Askable     bool             `json:"askable,omitempty"`
 	Answers     *string          `json:"answers,omitempty"`
+	SendNow     bool             `json:"send_now,omitempty"`
 }
 
 // attachmentBody is one file as a client sends it: its bytes as base64
@@ -205,7 +206,7 @@ func (m messageBody) check(sender session.Sender, blobs bool) (session.UserMessa
 	if m.Content == nil {
 		m.Content = []lux.Block{}
 	}
-	return session.UserMessage{Sender: sender, Content: m.Content}, files, nil
+	return session.UserMessage{Sender: sender, Content: m.Content, SendNow: m.SendNow}, files, nil
 }
 
 // checkAnswers refuses an answers that is present and names no ask: one
