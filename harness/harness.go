@@ -1060,21 +1060,27 @@ func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
 	sctx, cancel := context.WithCancel(ctx)
 	t.cut.Store(false)
 	t.cutNow.Store(false)
+	t.answered.Store(false)
 	t.moveNow = nil
 	var intr <-chan struct{}
 	if t.h.c.Interrupt != nil {
 		intr = t.h.c.Interrupt()
 	}
 	var now <-chan session.Event
+	var move chan struct{}
 	if t.thread == "" && t.h.c.SendNow != nil {
 		now = t.h.c.SendNow()
-		t.moveNow = make(chan struct{})
+		move = make(chan struct{})
+		t.moveNow = move
 	}
 	if intr == nil && now == nil {
 		return sctx, cancel
 	}
-	done := make(chan struct{})
+	// The watcher ends before the step's stop returns, so a cut it makes
+	// is the step's own and never the next one's.
+	done, exited := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(exited)
 		cut := func(byNow bool) {
 			t.cutNow.Store(byNow)
 			t.cut.Store(true)
@@ -1093,7 +1099,7 @@ func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
 					cut(true)
 					return
 				}
-				close(t.moveNow)
+				close(move)
 				grace := time.NewTimer(SendNowGrace)
 				defer grace.Stop()
 				select {
@@ -1111,6 +1117,7 @@ func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
 	}()
 	return sctx, func() {
 		close(done)
+		<-exited
 		cancel()
 	}
 }
