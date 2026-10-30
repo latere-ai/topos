@@ -707,10 +707,23 @@ func TestAMessageStandsInForAnAnswer(t *testing.T) {
 		if _, open := session.OpenQuestion(e.all()); !open || len(e.outcomes()) != 0 {
 			t.Fatalf("a message before the question closed it: results %v", e.outcomes())
 		}
-		// The model has not read that message, so the runner claims again,
-		// and the claim keeps the question waiting.
-		if !out.Pending {
-			t.Fatal("a message the model has not read is not pending")
+		// The model has not read that message, and the session waits for
+		// the person: the message waits with it, and the turn the answer
+		// starts reads it after the question's result (spec 098).
+		if out.Pending || session.HasPendingInput(e.all()) {
+			t.Fatal("a message held by an open question is pending")
+		}
+		e.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{text("Small, on SQLite.")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if len(last.Blocks) != 2 || last.Blocks[0].ToolResult == nil || last.Blocks[1].Text != "And keep it small." {
+				return fmt.Errorf("the model did not read the answer and then the message: %+v", last)
+			}
+			return nil
+		}})
+		e.answer(ctx, "toolu_q", session.AnswerEntry{Selected: []string{"SQLite"}}, session.AnswerEntry{Selected: []string{"Europe"}})
+		e.running(ctx)
+		if out := e.turn(ctx); out.StopReason != session.StopEndTurn || out.Pending {
+			t.Fatalf("the answer's turn %+v", out)
 		}
 	})
 

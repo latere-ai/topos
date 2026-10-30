@@ -161,6 +161,15 @@ type Config struct {
 	// running calls are canceled at once. Nil sees interrupts only at step
 	// boundaries, through the log.
 	Interrupt func() <-chan struct{}
+	// SendNow returns the current turn's channel of the user.message
+	// events a person sent to be read now (spec 098), which the runner's
+	// watch of the log sends on. The session's own thread acts on one
+	// appended after the turn began that no request of the turn read: its
+	// in-flight request is canceled, or its running commands are asked to
+	// move to the background and the calls still running after
+	// SendNowGrace are canceled. Nil reads such a message at the next
+	// step, as any other.
+	SendNow func() <-chan session.Event
 	// Sleep waits between attempts; nil waits on a timer.
 	Sleep    func(ctx context.Context, d time.Duration) error
 	Observer Observer
@@ -487,8 +496,15 @@ type turn struct {
 	// bias how far the provider's count was from it.
 	lastEstimate int64
 	bias         int64
-	// cut is set when an interrupt canceled the current step.
-	cut atomic.Bool
+	// cut is set when an interrupt canceled the current step, and cutNow
+	// when a message sent to be read now did (spec 098).
+	cut, cutNow atomic.Bool
+	// answered is set once the step's response arrived, so a message sent
+	// to be read now finds the step running its calls rather than waiting
+	// for the model; moveNow is closed then, which asks each running
+	// command of the session's own thread to move to the background.
+	answered atomic.Bool
+	moveNow  chan struct{}
 	// model is the session's model as the turn runs it, its via the routed
 	// name it was picked for, and switches the moves the turn made off a
 	// model that could not serve (spec 051). A thread's turn holds neither:
@@ -575,7 +591,9 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 	// A session that waits for its own wake is not ended by end_on_idle: it
 	// stays open for the wake and ends at the idle after its last (spec
 	// 086).
-	if t.s.EndOnIdle && reason == session.StopEndTurn && session.PendingWake(t.events()) == nil {
+	// Nor is one that holds a message the turn did not read, which the
+	// next turn reads first (spec 098).
+	if t.s.EndOnIdle && reason == session.StopEndTurn && session.PendingWake(t.events()) == nil && !session.PendingWaiting(t.events()) {
 		status, reason = session.StatusEnded, session.StopCompleted
 	}
 	cp, cerr := t.checkpoint(ctx)
@@ -636,10 +654,11 @@ func LastCheckpoint(log []session.Event, thread string) string {
 	return ""
 }
 
-// pending reports a person's event after the last sequence a request
-// was built from, an answer to a question among them, and an interrupt
-// that closed a question whose result is still owed: the runner claims
-// again at once, and the claim closes the call.
+// pending reports a person's answer after the last sequence a request
+// was built from, a waiting message that starts a turn of its own and
+// that no request read (spec 098), and an interrupt that closed a
+// question whose result is still owed: the runner claims again at once,
+// and the claim closes the call or reads the message.
 func (t *turn) pending() bool {
 	evs := t.events()
 	for _, e := range evs {
@@ -647,11 +666,11 @@ func (t *turn) pending() bool {
 			continue
 		}
 		switch e.Type {
-		case session.TypeUserMessage, session.TypeUserToolConfirmation, session.TypeUserToolResult, session.TypeUserAnswer:
+		case session.TypeUserToolConfirmation, session.TypeUserToolResult, session.TypeUserAnswer:
 			return true
 		}
 	}
-	return session.Dismissed(evs)
+	return session.PendingWaiting(evs) || session.Dismissed(evs)
 }
 
 func (t *turn) sessionError(code, message string, retryable bool, detail string) (session.Event, error) {
@@ -887,6 +906,11 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	if !t.h.c.Clock().Before(t.deadline) {
 		return t.finish(ctx, session.StopTurnLimit, "")
 	}
+	if t.thread == "" {
+		if err := t.markReads(ctx); err != nil {
+			return err
+		}
+	}
 	evs := t.events()
 	tr, err := t.fold(ctx, evs, false)
 	if errors.Is(err, session.ErrRedactionUncompacted) {
@@ -949,7 +973,9 @@ func (t *turn) stepOnce(ctx context.Context) error {
 		limit := t.h.c.Entry.MaxOutputTokens
 		began := t.h.c.Clock()
 		moves := t.switchable()
+		t.answered.Store(false)
 		res, attempts, err := t.send(sctx, req, moves)
+		t.answered.Store(err == nil)
 		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began), reminder: reminder, shares: t.shares(req)}
 		if err != nil {
 			if t.cut.Load() {
@@ -1025,21 +1051,62 @@ func (t *turn) signaled() bool {
 }
 
 // interruptible is the context one step's request and calls run under:
-// an interrupt cancels it and marks the step cut.
+// an interrupt cancels it and marks the step cut. In the session's own
+// thread, a message sent to be read now that the step's request did not
+// read cancels it too, at once while the request is in flight, and once
+// the running commands were asked to move and SendNowGrace passed while
+// the calls run (spec 098).
 func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
 	sctx, cancel := context.WithCancel(ctx)
 	t.cut.Store(false)
-	if t.h.c.Interrupt == nil {
+	t.cutNow.Store(false)
+	t.moveNow = nil
+	var intr <-chan struct{}
+	if t.h.c.Interrupt != nil {
+		intr = t.h.c.Interrupt()
+	}
+	var now <-chan session.Event
+	if t.thread == "" && t.h.c.SendNow != nil {
+		now = t.h.c.SendNow()
+		t.moveNow = make(chan struct{})
+	}
+	if intr == nil && now == nil {
 		return sctx, cancel
 	}
-	ch := t.h.c.Interrupt()
 	done := make(chan struct{})
 	go func() {
-		select {
-		case <-ch:
+		cut := func(byNow bool) {
+			t.cutNow.Store(byNow)
 			t.cut.Store(true)
 			cancel()
-		case <-done:
+		}
+		for {
+			select {
+			case <-intr:
+				cut(false)
+				return
+			case e := <-now:
+				if !t.sendsNow(e) {
+					continue
+				}
+				if !t.answered.Load() {
+					cut(true)
+					return
+				}
+				close(t.moveNow)
+				grace := time.NewTimer(SendNowGrace)
+				defer grace.Stop()
+				select {
+				case <-intr:
+					cut(false)
+				case <-grace.C:
+					cut(true)
+				case <-done:
+				}
+				return
+			case <-done:
+				return
+			}
 		}
 	}()
 	return sctx, func() {
@@ -1058,7 +1125,7 @@ func (t *turn) canceledRequest(ctx context.Context, si sendInfo) error {
 	if err != nil {
 		return err
 	}
-	return t.finish(ctx, session.StopInterrupted, "", mr)
+	return t.finish(ctx, session.StopInterrupted, t.cutDetail(), mr)
 }
 
 // interrupted reports a user.interrupt appended since the turn began.
@@ -1116,7 +1183,7 @@ func (t *turn) sentRequest(si sendInfo) session.ModelRequest {
 	return session.ModelRequest{
 		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
 		ToolsSHA256: si.toolsSHA, MaxTokens: si.maxTokens, LatencyMS: si.latency.Milliseconds(), Attempts: si.attempts,
-		Reminder: si.reminder, Context: t.contextReport(si.shares, 0),
+		Reminder: si.reminder, Context: t.contextReport(si.shares, 0), NamesReads: true,
 	}
 }
 
@@ -1576,7 +1643,7 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 		}
 	}
 	if interrupted {
-		return t.finish(ctx, session.StopInterrupted, "")
+		return t.finish(ctx, session.StopInterrupted, t.cutDetail())
 	}
 	if waiting {
 		return t.finish(ctx, reason, "")
