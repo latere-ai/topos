@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.62.0 - 2026-10-31
+
 ### Added
 
 - **A person's message sent while a turn runs is read at the agent's next step.** A `user.message` of the session's own conversation appended after a `session.status` `running` and before the status that closes the turn waits. The person's waiting messages are read by the turn's next request, after the results of the calls running when they arrived, each led by `transcript/while-working-v1`: `<name> sent this while you were working:`. A trigger's run, a wake or another session's message never steers a running turn: it is read by the first request of the next turn, which a trigger's or a wake's message starts once the turn ends, unless the session then waits for the person, whose answer starts that turn. See `docs/messages-while-working.md`.
