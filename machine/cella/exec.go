@@ -131,9 +131,13 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 		args = append(args, "-report-dir")
 	}
 	if r.ServerGrace > 0 {
-		// A server the command starts moves to a job log beside the
-		// background jobs' (spec 045).
-		args = append(args, "-server-grace", r.ServerGrace.String(), "-jobs", m.jobsDir())
+		args = append(args, "-server-grace", r.ServerGrace.String())
+	}
+	if r.ServerGrace > 0 || r.MoveNow != nil {
+		// A command moved to the background, a server it starts (spec
+		// 045) or the command itself on a move frame (spec 098), writes
+		// to a job log beside the background jobs'.
+		args = append(args, "-jobs", m.jobsDir())
 	}
 	framed := len(r.Command) > inlineScript
 	if framed {
@@ -167,6 +171,9 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 	}
 	go st.input(r.Stdin)
 	go st.watch(ctx)
+	if r.MoveNow != nil {
+		go st.moveOn(r.MoveNow)
+	}
 	return st, nil
 }
 
@@ -298,6 +305,20 @@ func (st *stream) watch(ctx context.Context) {
 	case <-t.C:
 		st.force()
 	}
+}
+
+// moveOn asks the helper once to move the command to the background
+// when now is closed (spec 098). The helper answers with the exit of a
+// moved command, or, when the move cannot be made, lets the command run
+// on and says why in its exit.
+func (st *stream) moveOn(now <-chan struct{}) {
+	select {
+	case <-st.done:
+		return
+	case <-now:
+	}
+	// A failed frame is the session failing, which its reader reports.
+	_ = st.w.frame(frameMove, nil)
 }
 
 // force closes the session of a canceled command; its end reads as a

@@ -30,6 +30,7 @@ const (
 	frameInput  = 'i'
 	frameEOF    = 'e'
 	frameKill   = 'k'
+	frameMove   = 'm'
 	frameStart  = 's'
 	frameFail   = 'f'
 	frameOutput = 'o'
