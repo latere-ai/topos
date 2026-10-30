@@ -130,10 +130,45 @@ A line runs under the call's timeout and the turn's context: past the
 timeout it is stopped and answered as a timed-out command, and a cancel
 answers it canceled. Its messages begin `/bin/sh: 2:`, as a machine's,
 whose shell runs the line after the line that reports its directory.
-Output is bounded as a machine bounds it, and a result past the tool's
-bound is written to a spill file on the session's machine, as a file
-tool's long result on the memory machine is: that call opens the
-machine to write it.
+A result past the tool's bound is written to a spill file on the
+session's machine, as a file tool's long result on the memory machine
+is: that call opens the machine to write it.
+
+### What a line takes of toposd
+
+A line on the memory machine runs inside toposd, beside every other
+session's calls, so what one line can take of the process is bounded
+whatever the model writes. The bounds are the shell's own (Cella spec
+088), at its defaults: 50 000 steps, 10 seconds, a value of 256 KiB,
+1 MiB of variables, 16 MiB held at once, 64 MiB of files read and
+50 000 names listed, with a line refused before it runs when it is
+longer than 64 KiB, nests deeper than 64, has a command of more than 16
+expansions, more than 32 pipes or a pattern of more than 8 wildcards.
+`Time` and `Steps` are taken between statements, and the sizes hold
+one statement's cost to a few seconds. A line that reaches a bound
+stops where it is and answers the shell's message with status 2:
+
+```text
+/bin/sh: 2: the line ran more than 50000 steps
+```
+
+It is a command that ran, not a timed-out one, and it never moves to
+the session's machine halfway. What it changed before the bound stays
+changed, and the command that reached the bound writes no file. A line refused for its size runs on the
+session's machine, counted with the reason `size`, as any line the
+shell does not run.
+
+The memory machine adds two bounds of its own:
+
+- **Output.** A line keeps at most `memory.MaxFileBytes`, 1 MiB, of
+  output, against a machine's 64 MiB. The tool shows 32 KiB of a result
+  and spills the rest, so a spill still holds a whole long listing or
+  a whole file read, and what is past 1 MiB is dropped as what is past
+  64 MiB is on a machine.
+- **Lines at once.** At most half the process's processors, and at
+  least one, run lines at once. A line past them waits for a place
+  under its own timeout and the turn's context, and its 10 seconds
+  start once it has one.
 
 ### The working directory
 
@@ -231,6 +266,10 @@ and these questions are open:
 | The record | a log line and two counters | a member on `session.machine`: clients read that event, it is not appended at each drive's open, and why a machine opened is the installation's question |
 | The counters' attributes | tool, where and reason, each a closed set | the program as an attribute: any word of a line, an unbounded series |
 | What the model is told | `context/attachments-v3`, naming the programs | keep version 2: it says commands do not reach the folders, which is no longer true; say commands reach them: a model would run `python` over a folder and find nothing |
+| What a line takes of toposd | the shell's bounds on steps, time, values, bytes held, read and listed, with sizes refused before the line runs | send every loop to the session's machine: it bounds nothing else, since one command's expansions, a pipe into `sort` and a pattern over a large folder take memory without a loop, and a `for` over a folder's files is the commonest loop over notes; the call's timeout alone: it bounds time, not memory, and a line doubling a value reaches 110 MB in 17 ms; Go's memory limit: it is the process's, and a line past it slows every session instead of stopping |
+| A line past a bound | stops with the shell's message and status 2 | answer it timed out: it did not run out of time, and a model reads a timeout as a reason to run it again with more; hand it to the machine: what it changed by then cannot be undone |
+| The output a line keeps | `memory.MaxFileBytes`, 1 MiB | 64 MiB as a machine keeps: a machine's output is in its own memory, the memory machine's in toposd's; 32 KiB, the tool's bound: nothing would spill, and the tail of a long listing, what a model reads most, would be lost |
+| Lines at once | half the process's processors, at least one, waiting under the call's timeout | no cap: the bounds hold one line, not a session that sends many; one at a time: a session's line over memory would wait on another's store calls; refuse past the cap: the model would read a busy process as a broken shell |
 
 ## Roll order
 
@@ -255,7 +294,10 @@ spec 088. A workspace served from Storage, beyond its questions above.
 | A store's refusal, a store not reached, and a file past the bound are printed in the shell's words | `memory/arca.TestTheStoreRefusesALine` | built |
 | A folder past the listing's bound is stat and written on the version a stat answers | `memory/arca.TestAFolderPastTheListing` | built |
 | A folder of conversations is listed and read, and changes nothing | `memory/arca.TestAFolderOfConversationsOnALine` | built |
-| A background command, one with input or variables, and a refused line are not run in the process; a line past its timeout is timed out and a canceled one canceled | `memory/arca.TestWhatALineDoesNotRun` | built |
+| A background command, one with input or variables, and a refused line are not run in the process | `memory/arca.TestWhatALineDoesNotRun` | built |
+| A line past its timeout is timed out and a canceled one canceled, whether it waits on the store or for a place; a line waits for a place and runs once it has one | `memory/arca.TestALineThatRunsPastItsTimeout` | built |
+| An endless loop stops with the shell's message and status 2 and opens no machine; a line keeps 1 MiB of output; half the processors run lines at once | `memory/arca.TestALineIsBounded` | built |
+| Each bound stops a hostile line in seconds with a bounded allocation: doubling by assignment and by `read`, a pipe into `sort` and `uniq`, an endless loop, deep nesting, wide expansion, and a pattern over 2 000 files | Cella's `shell.TestADoublingValueStops`, `TestADoublingReadStops`, `TestAPipeIntoSortOrUniqStops`, `TestAnEndlessLoopStops`, `TestDeepNestingIsRefused`, `TestWideExpansionIsRefused`, `TestAGiantGlobStops` | built |
 | In a turn, a memory-only bash call neither starts nor opens the machine and answers as a machine's shell; a call that runs a program opens it, starts in the working directory with the note, and is logged and counted with its reason and program | `harness.TestABashCallOverMemoryOpensNoMachine` | built |
 | A long line over memory opens the machine to spill alone, recorded as `spill` | `harness.TestALongLineOverMemorySpills` | built |
 | The counters count by their closed attributes | `internal/hosted.TestTheMeterCountsRunsAndOpens` | built |
@@ -268,5 +310,6 @@ spec 088. A workspace served from Storage, beyond its questions above.
 Built on 2026-10-30 on Cella's `shell` package: the memory machine's
 `Runs` and `Exec`, its file system over the memory folders, the
 routing, the working directory's note, `context/attachments-v3`, and
-the log line and counters. Every criterion above is proven by its
-test. The status is `testing` until a release carries it.
+the log line and counters, and the bounds on what one line takes of
+toposd: the shell's, a megabyte of output, and half the processors at
+once. Every criterion above is proven by its test. The status is `testing` until a release carries it.
