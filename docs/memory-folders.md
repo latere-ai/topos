@@ -7,7 +7,8 @@ folders for a session, the session's file tools reach each one at
 `/memory/<name>/`, and the next session with the same folder reads what
 the last one wrote. The runner carries every call to the files service
 with the session's own token, so no sandbox holds a credential, and a
-session that only talks and remembers never opens a sandbox. This page is
+session that only talks, remembers, and lists or searches its memory
+with `bash` never opens a sandbox. This page is
 the contract an installation's authorizer and its files service follow.
 The field names are the wire's.
 
@@ -56,14 +57,39 @@ never reads the address or the owner:
 `/memory/<name>/<path>`. A call whose every path is under `/memory/` runs
 on the runner, not in the session's sandbox, and opens no sandbox. A
 relative path, or a path that climbs out of `/memory` once cleaned, is the
-sandbox's. Commands do not reach the folders, and `bash` is unchanged.
+sandbox's.
+
+`bash` reaches them too, for a command line that only works with files
+there:
+
+```sh
+cd /memory/user && ls && grep -rn tide . && cat plan.md
+```
+
+A line whose every program is `ls`, `cat`, `head`, `tail`, `wc`, `grep`,
+`find`, `sort`, `uniq`, `cut`, `mkdir`, `rm`, `mv`, `cp`, `touch` or a
+shell builtin, and whose every path is under `/memory/`, runs on the
+runner and opens no sandbox. It answers as the sandbox's `/bin/sh` would,
+with GNU's output and messages, and its reads and writes are the file
+tools' calls below, with the same preconditions. The runner decides this
+before the line runs. Any other line, one that runs another program, uses
+a path outside the folders, or runs in the background, runs in the
+sandbox as before, and the sandbox does not see the folders. A line that
+empties a file forgets it, and `touch` makes no empty file. A read-only
+folder answers a change with `Read-only file system`.
+
+The runner logs which call opened a session's sandbox, `a tool call
+opened the session's machine` with the tool and the reason, and counts
+bash calls by where they ran in `latere.topos.bash.runs` and the calls
+that opened a sandbox in `latere.topos.machine.opens`, so an installation
+sees how many sandboxes its sessions' memory still opens.
 
 Every request of the session names the folders in its attachments block,
 the same bytes on every turn:
 
 ```text
 <attachments>
-Memory folders, kept across sessions. read, write, edit, glob and grep reach them and commands do not; write a file empty to forget it:
+Memory folders, kept across sessions. read, write, edit, glob and grep reach them, and so does a command that uses only ls, cat, head, tail, wc, grep, find, sort, uniq, cut, mkdir, rm, mv, cp, touch and the shell's builtins; any other program does not see them. Write a file empty to forget it:
 - /memory/user/ (read only)
 - /memory/project/ (read and write)
 </attachments>
@@ -86,14 +112,15 @@ escaped.
 |---|---|
 | a file's size and kind | `HEAD`; a refusal is read again with `GET` for its error body |
 | a read | `GET`, following a redirect to a signed address without the bearer; the answer's `ETag` is kept |
-| a listing, for `glob` and `grep` | `GET <url>/files/<owner>/<path>?list=1&limit=1000&cursor=<next_cursor>`, at most 2,000 files a folder |
+| a listing, for `glob`, `grep` and a `bash` line | `GET <url>/files/<owner>/<path>?list=1&limit=1000&cursor=<next_cursor>`, at most 2,000 files a folder |
 | a write of a file the session read | `PUT` with `If-Match: <the ETag it read>` |
 | a write of a new file | `PUT` with `If-None-Match: *` |
+| a `bash` write of a file the session never read | `PUT` with `If-Match: <the ETag the listing or a HEAD answers now>` |
 | a forget | `DELETE` with `If-Match: <the ETag it read>`, without `permanent=1`, so the file goes to the trash |
 
-A Markdown file is written as `text/markdown; charset=utf-8`. A rename and
-a command under `/memory/` are refused, and a change to a `read_only`
-folder is refused before any request. A file holds at most 1 MiB; an
+A Markdown file is written as `text/markdown; charset=utf-8`. A `bash`
+`mv` writes the file at its new path and forgets the old one, and a
+change to a `read_only` folder is refused before any request. A file holds at most 1 MiB; an
 installation bounds it lower by refusing the write.
 
 `glob` and `grep` read the folder's listing, then the files they search.
@@ -220,7 +247,8 @@ read is allowed and a write blocked, as every write is. Name `memory` in
 `always_confirm` to ask the person about every memory call, reads
 included, or a pattern such as `write(/memory/project/*)` to ask about
 some. A decision service never changes a memory call's verdict: in
-`progressive` the rules' verdict stands without asking it.
+`progressive` the rules' verdict stands without asking it. A `bash` call
+over the folders is decided as any command is.
 
 ## What a client shows
 
