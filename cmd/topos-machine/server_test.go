@@ -143,6 +143,56 @@ func TestRunMovesAServerToTheBackground(t *testing.T) {
 	eventually(t, "the log's end", func() bool { return readLog(t, exit.Log) == want })
 }
 
+// TestRunMovesOnTheMoveFrame: a move frame moves a running command to
+// the background whatever it listens on, with no server grace, and with
+// no jobs directory, or one that cannot be made, it moves nothing and
+// the command runs to its end (spec 098).
+func TestRunMovesOnTheMoveFrame(t *testing.T) {
+	dir := tempDir(t)
+	jobs := filepath.Join(dir, "spill", "jobs")
+	d := drive(t, t.Context(), "-dir", dir, "-report-dir", "-jobs", jobs, "--", "echo started; while :; do echo tick; /bin/sleep 0.05; done")
+	d.started(t)
+	d.until(t, "started\n")
+	d.send(t, frameMove, "")
+	frames, code := d.rest(t)
+	out, gotDir, exit := outcome(t, frames)
+	if pid := exit.PID; pid > 0 {
+		t.Cleanup(func() {
+			if err := signalGroup(pid, syscall.SIGKILL); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	if code != 0 || gotDir != "" || !exit.Moved || exit.PID <= 0 || filepath.Dir(exit.Log) != jobs || len(exit.Ports) != 0 || exit.ServerErr != "" ||
+		strings.Trim(out, "tick\n") != "" {
+		t.Fatalf("code %d, output %q, dir %q, exit %+v", code, out, gotDir, exit)
+	}
+	eventually(t, "the log pump's copy of the command's output", func() bool { return strings.Contains(readLog(t, exit.Log), "tick\n") })
+	if err := syscall.Kill(-exit.PID, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	ended := fmt.Sprintf("\n[job %d output ended]\n", exit.PID)
+	eventually(t, "the log's end", func() bool { return strings.HasSuffix(readLog(t, exit.Log), ended) })
+
+	file := filepath.Join(dir, "file")
+	writeFile(t, file, "x")
+	for name, args := range map[string][]string{
+		"no jobs directory":         {"-dir", dir},
+		"a jobs directory not made": {"-dir", dir, "-jobs", filepath.Join(file, "jobs")},
+	} {
+		d := drive(t, t.Context(), append(args, "--", "echo started; /bin/sleep 0.3; echo done")...)
+		d.started(t)
+		d.until(t, "started\n")
+		d.send(t, frameMove, "")
+		frames, code := d.rest(t)
+		out, _, exit := outcome(t, frames)
+		if code != 0 || out != "done\n" || exit.Moved || exit.Code != 0 || (name == "no jobs directory") != (exit.ServerErr == "") ||
+			(exit.ServerErr != "" && !strings.Contains(exit.ServerErr, "create the job directory")) {
+			t.Errorf("%s: code %d, output %q, exit %+v", name, code, out, exit)
+		}
+	}
+}
+
 func TestRunKeepsAServerItCannotMove(t *testing.T) {
 	if !machine.SeesServers {
 		t.Skip("this system's listening sockets are not read")

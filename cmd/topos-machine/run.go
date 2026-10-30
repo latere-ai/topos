@@ -42,6 +42,8 @@ const killGrace = 5 * time.Second
 // end frame, before the command's own input.
 // The timeout kills the group; a kill frame, standard input ending, or a
 // signal to the helper cancels it with SIGTERM and SIGKILL after the grace.
+// With a jobs directory, a move frame moves the command to the background
+// whatever it listens on, as the server grace moves a server.
 func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -77,13 +79,14 @@ func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, std
 	if err := out.frame(frameStart, nil); err != nil {
 		return sent(errors.Join(err, c.abort()))
 	}
-	kill := make(chan struct{})
-	var once sync.Once
+	kill, now := make(chan struct{}), make(chan struct{})
+	var once, moveOnce sync.Once
 	cancel := func() { once.Do(func() { close(kill) }) }
-	go c.input(stdin, cancel)
+	move := func() { moveOnce.Do(func() { close(now) }) }
+	go c.input(stdin, cancel, move)
 	c.pumped = make(chan error, 1)
 	go c.pumpTo(out, cancel)
-	res, moved, err := c.wait(ctx, *timeout, *grace, kill, server{grace: *serverGrace, jobs: *jobs, out: out, cancel: cancel})
+	res, moved, err := c.wait(ctx, *timeout, *grace, kill, now, server{grace: *serverGrace, jobs: *jobs, out: out, cancel: cancel})
 	if moved {
 		// The command runs on as a job: its output is the log pump's,
 		// and its shell has not exited, so it has no final directory to
@@ -209,9 +212,9 @@ func (c *command) closeInput() error {
 }
 
 // input reads the machine's frames: bytes for the command's input, the
-// input's end, and a kill. Standard input ending is the exec session
-// ending, and cancels the command.
-func (c *command) input(stdin io.Reader, cancel func()) {
+// input's end, a kill, and a move to the background. Standard input
+// ending is the exec session ending, and cancels the command.
+func (c *command) input(stdin io.Reader, cancel, move func()) {
 	for {
 		kind, payload, err := readFrame(stdin)
 		if err != nil {
@@ -232,6 +235,8 @@ func (c *command) input(stdin io.Reader, cancel func()) {
 			_ = c.closeInput()
 		case frameKill:
 			cancel()
+		case frameMove:
+			move()
 		}
 	}
 }
@@ -281,8 +286,9 @@ func (c *command) finalDir() string {
 
 // server is the check that moves a server to the background (spec 045):
 // the grace before the first look at the group's sockets, the jobs
-// directory its log goes in, and the output pump's writer and cancel,
-// which a move that could not be made starts again.
+// directory its log goes in, which a move frame's move uses too, and the
+// output pump's writer and cancel, which a move that could not be made
+// starts again.
 type server struct {
 	grace  time.Duration
 	jobs   string
@@ -295,8 +301,10 @@ type server struct {
 // so a stray child cannot hold the output open. It is the host machine's
 // wait. With a server grace, a command still running after it whose
 // group listens on a server port is moved to the background instead, and
-// wait reports the move with the group left running.
-func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <-chan struct{}, srv server) (exitBody, bool, error) {
+// once now is closed, a command still running is moved whatever it
+// listens on (spec 098); wait reports the move with the group left
+// running.
+func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill, now <-chan struct{}, srv server) (exitBody, bool, error) {
 	pgid := c.cmd.Process.Pid
 	exited := make(chan error, 1)
 	go func() { exited <- c.cmd.Wait() }()
@@ -312,6 +320,11 @@ func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <
 		probe = time.NewTimer(srv.grace)
 		defer probe.Stop()
 		probed = probe.C
+	}
+	if srv.jobs == "" {
+		// A moved command's output goes to a job log, which needs the jobs
+		// directory; without one, a move frame moves nothing.
+		now = nil
 	}
 	var res exitBody
 	var werr, kerr error
@@ -362,6 +375,18 @@ waiting:
 			case err == nil:
 				probe.Reset(machine.ServerPoll)
 			}
+		case <-now:
+			log, after, err := c.handOver(ctx, srv, pgid)
+			if err == nil {
+				moved := exitBody{Moved: true, PID: pgid, Log: log}
+				if after != nil {
+					moved.ServerErr = after.Error()
+				}
+				return moved, true, nil
+			}
+			// The move cannot be made for this command; it goes on in the
+			// foreground under its timeout, and the exit says why.
+			res.ServerErr, now = err.Error(), nil
 		}
 	}
 	kerr = errors.Join(kerr, signalGroup(pgid, syscall.SIGKILL), c.closeInput(), c.remove())

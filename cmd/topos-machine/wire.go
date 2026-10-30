@@ -28,6 +28,7 @@ const (
 	frameInput = 'i' // bytes of the command's standard input
 	frameEOF   = 'e' // the input ended
 	frameKill  = 'k' // cancel the command
+	frameMove  = 'm' // move the command to the background now
 	// Helper to machine.
 	frameStart  = 's' // the command started, or the file opened
 	frameFail   = 'f' // a failure, an errorBody
@@ -141,8 +142,9 @@ func kindOf(err error) string {
 }
 
 // exitBody is how a command ended, or that it moved to the background
-// (spec 045): its group's leader, its job log, the server ports it
-// listens on, and why the check for a server stopped early, if it did.
+// (specs 045 and 098): its group's leader, its job log, the server ports
+// it listens on, none for a move frame's move, and why the check for a
+// server stopped early or a move frame moved nothing, if either did.
 type exitBody struct {
 	Code      int    `json:"code"`
 	TimedOut  bool   `json:"timedOut,omitempty"`
