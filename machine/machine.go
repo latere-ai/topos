@@ -135,6 +135,13 @@ type ExecRequest struct {
 	// into a job log. Zero waits for the command's end. A machine that
 	// cannot see its commands' sockets leaves the command to Timeout.
 	ServerGrace time.Duration
+	// MoveNow, once it is closed, moves a foreground command still
+	// running to the background as ServerGrace moves a server, whatever
+	// it listens on (spec 098): the call returns at once with Moved set
+	// and no Ports, and the group runs on with its output drained into a
+	// job log. A nil channel never moves the command. A machine that
+	// cannot move a command ignores it.
+	MoveNow <-chan struct{}
 }
 
 // ExecResult is a finished command, or a started background job.
@@ -152,17 +159,18 @@ type ExecResult struct {
 	// PID and Log name a background job.
 	PID int
 	Log string
-	// Moved is a foreground command ServerGrace moved to the background:
-	// PID leads its process group, Log receives what it writes from the
-	// move on, Ports are the server ports it listens on, and Output is
-	// what it wrote before the move. The machine stops the job when the
-	// session ends, as it stops a background job.
+	// Moved is a foreground command ServerGrace or MoveNow moved to the
+	// background: PID leads its process group, Log receives what it
+	// writes from the move on, Ports are the server ports it listens on,
+	// none for a move by MoveNow, and Output is what it wrote before the
+	// move. The machine stops the job when the session ends, as it stops
+	// a background job.
 	Moved bool
 	Ports []int
 	// ServerErr is why the check of ServerGrace stopped early for this
-	// command: its group's sockets could not be read, or the job log a
-	// move needs could not be made. The command went on under its
-	// timeout.
+	// command, or why MoveNow did not move it: its group's sockets could
+	// not be read, or the job log a move needs could not be made. The
+	// command went on under its timeout.
 	ServerErr error
 	// Stopped is set when the machine stopped under the command, which
 	// then has no exit of its own: Output is what it wrote before, and

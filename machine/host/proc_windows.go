@@ -23,6 +23,12 @@ func shell() (string, error) {
 	})
 }
 
+// movesCommands is whether a foreground command can be moved to the
+// background on request. It cannot here: os.Pipe is an anonymous pipe
+// that takes no read deadline, so the stream's read cannot be stopped
+// for a job log to take the pipe, and a move would end the command.
+const movesCommands = false
+
 // group is the Job Object a command runs in. Windows has no process
 // group a signal ends: the job holds the shell and every process the
 // shell starts, and terminating the job ends them all.

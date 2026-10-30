@@ -662,7 +662,7 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	go func() {
 		defer close(s.done)
 		var mv *move
-		s.res, mv, s.err = h.wait(ctx, cmd, g, r.Timeout, r.ServerGrace)
+		s.res, mv, s.err = h.wait(ctx, cmd, g, r.Timeout, r.ServerGrace, r.MoveNow)
 		if mv != nil {
 			// The shell has not exited, so its final directory is not
 			// waited for: the directory pipe's reader ends with it.
@@ -682,8 +682,9 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 }
 
 // move is a foreground command wait moved to the background: the
-// server ports it listens on, the job log its output goes to from the
-// move on, and the shell's exit, which the job waits for.
+// server ports it listens on, none for a move asked for now, the job log
+// its output goes to from the move on, and the shell's exit, which the
+// job waits for.
 type move struct {
 	ports  []int
 	log    *os.File
@@ -694,9 +695,10 @@ type move struct {
 // when ctx ends, and once the shell has exited, so a stray child cannot
 // hold the output open. With grace positive, a command still running
 // after grace whose group listens on a server port is moved instead
-// (spec 045): wait returns at once with the move, and the group is left
-// running for adopt.
-func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout, grace time.Duration) (machine.ExecResult, *move, error) {
+// (spec 045), and once now is closed, a command still running is moved
+// whatever it listens on (spec 098): wait returns at once with the move,
+// and the group is left running for adopt.
+func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout, grace time.Duration, now <-chan struct{}) (machine.ExecResult, *move, error) {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	var timer <-chan time.Time
@@ -711,6 +713,11 @@ func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout, grace
 		probe = time.NewTimer(grace)
 		defer probe.Stop()
 		probed = probe.C
+	}
+	if !movesCommands {
+		// The command cannot leave the foreground here; it runs on as if
+		// no move was asked for.
+		now = nil
 	}
 	var res machine.ExecResult
 	var werr, kerr error
@@ -750,6 +757,14 @@ waiting:
 			case err == nil:
 				probe.Reset(machine.ServerPoll)
 			}
+		case <-now:
+			log, err := h.jobLog()
+			if err == nil {
+				return machine.ExecResult{Moved: true, PID: cmd.Process.Pid, Log: log.Name()}, &move{log: log, exited: exited}, nil
+			}
+			// The move cannot be made for this command; it goes on in the
+			// foreground under its timeout, and the result says why.
+			res.ServerErr, now = err, nil
 		}
 	}
 	kerr = errors.Join(kerr, g.kill(), g.close())

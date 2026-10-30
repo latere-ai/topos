@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	osexec "os/exec"
@@ -443,6 +444,79 @@ func testBackgroundJobsEndWithTheSession(t *testing.T, f fixture) {
 	}
 	if err := f.h.Release(t.Context(), true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestMoveNow: a foreground command still running when MoveNow closes
+// moves to the background at once, whatever it listens on, with what it
+// wrote before the move in its stream and what it writes after in its
+// job log, and ends with the session as a background job does (spec
+// 098).
+func TestMoveNow(t *testing.T) {
+	if !movesCommands {
+		t.Skip("a command on this system cannot leave the foreground")
+	}
+	f := open(t)
+	now := make(chan struct{})
+	s, err := f.h.ExecStream(t.Context(), machine.ExecRequest{
+		Command: "echo started; while :; do echo tick; /bin/sleep 0.05; done", Timeout: time.Minute, ReportDir: true, MoveNow: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before bytes.Buffer
+	for buf := make([]byte, 64); !strings.HasPrefix(before.String(), "started\n"); {
+		n, err := s.Read(buf)
+		before.Write(buf[:n])
+		if err != nil {
+			t.Fatalf("read %q: %v", before.String(), err)
+		}
+	}
+	begun := time.Now()
+	close(now)
+	rest, rerr := io.ReadAll(s)
+	res, err := s.Wait()
+	if took := time.Since(begun); took > 5*time.Second {
+		t.Errorf("the move took %s", took)
+	}
+	before.Write(rest)
+	if rerr != nil || err != nil || !res.Moved || res.PID <= 0 || filepath.Dir(res.Log) != filepath.Join(f.h.SpillDir(), "jobs") ||
+		len(res.Ports) != 0 || res.ServerErr != nil || res.Canceled || res.TimedOut || res.Dir != "" {
+		t.Fatalf("a command moved now = %+v %v %v", res, rerr, err)
+	}
+	if strings.Trim(strings.TrimPrefix(before.String(), "started\n"), "tick\n") != "" {
+		t.Errorf("output before the move %q", before.String())
+	}
+	logged := func() string {
+		b, err := os.ReadFile(res.Log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(logged(), "tick\n"); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the moved command never wrote its log: %q", logged())
+		}
+	}
+	if err := f.h.Release(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(logged(), fmt.Sprintf("[job %d exited with code", res.PID)); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the moved command outlived the session: %q", logged())
+		}
+	}
+
+	// A move whose job log cannot be made leaves the command in the
+	// foreground to its end, and the result says why.
+	g := open(t)
+	write(t, filepath.Join(g.h.SpillDir(), "jobs"), "a file where the job directory goes")
+	moved := make(chan struct{})
+	close(moved)
+	kept := run(t, g.h, machine.ExecRequest{Command: "echo started; /bin/sleep 0.2; echo done", MoveNow: moved})
+	if kept.Moved || kept.ExitCode != 0 || string(kept.Output) != "started\ndone\n" || kept.ServerErr == nil || !strings.Contains(kept.ServerErr.Error(), "create the job directory") {
+		t.Errorf("a move with no job log = %+v %q", kept, kept.Output)
 	}
 }
 

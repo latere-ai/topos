@@ -19,6 +19,11 @@ const Shell = "/bin/sh"
 // shell is the shell a command runs under.
 func shell() (string, error) { return Shell, nil }
 
+// movesCommands is whether a foreground command can be moved to the
+// background on request: its output pipe takes a read deadline, which
+// stops the stream's read so the job log's drain can take the pipe.
+const movesCommands = true
+
 // group is the process group a command runs in. The shell leads it, so
 // the shell's pid is the group's id, and a signal to the group reaches
 // every process the shell started that did not leave it.
