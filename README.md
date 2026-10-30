@@ -187,6 +187,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [docs/trigger-reach.md](docs/trigger-reach.md): a trigger's reach, a
   kind the authorizer maps, and a firing that runs once per due scope or
   not at all when nothing is new.
+- [docs/messages-while-working.md](docs/messages-while-working.md): a
+  message sent while the agent works, read at its next step, sent to be
+  read now, or withdrawn before the agent reads it.
 
 ## Contributing
 
