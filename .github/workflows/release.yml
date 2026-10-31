@@ -120,12 +120,12 @@ jobs:
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -o "dist/helpers/topos-machine-${os}-${arch}" ./cmd/topos-machine
           done
           (cd dist && sha256sum toposd_linux_* helpers/* | tee checksums.txt)
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build and push the image by digest, under no tag
         id: image
         env:
@@ -156,7 +156,7 @@ jobs:
           OWNER: ${{ steps.owner.outputs.owner }}
         run: cosign sign --yes "${REGISTRY}/${OWNER}/${IMAGE}@${{ steps.image.outputs.digest }}"
       - name: The bill of materials of the image
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE }}@${{ steps.image.outputs.digest }}
           format: spdx-json
@@ -189,12 +189,12 @@ jobs:
     env:
       OWNER: ${{ needs.build.outputs.owner }}
     steps:
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Tag the digest
         run: |
           docker buildx imagetools create -t "${REGISTRY}/${OWNER}/${IMAGE}:${GITHUB_REF_NAME}" \
