@@ -158,8 +158,8 @@ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8
 gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 latere.ai/x/cella v0.22.5 h1:6RQkloNDfbEbAPc5514mB/RXwDqKlkj8FxqmBtje0y8=
 latere.ai/x/cella v0.22.5/go.mod h1:fwu1tNdKYuEqZMIAtZYQZz+CFJq+oDHir18iKWM4BeY=
-latere.ai/x/ci-gate v0.58.0 h1:Zo3ELheJ9Rbk112XpgSgUGd5xuSm5UfxL9E9XkOW1z4=
-latere.ai/x/ci-gate v0.58.0/go.mod h1:SYUdCY8Ob6oNGc+23pS0u7qoxafBFixY6IrpH2UgHzQ=
+latere.ai/x/ci-gate v0.59.1 h1:QR4IDJMkMtOeKUjLH7Sf2eIwJglJRaVlBIEsZVyxhmA=
+latere.ai/x/ci-gate v0.59.1/go.mod h1:SYUdCY8Ob6oNGc+23pS0u7qoxafBFixY6IrpH2UgHzQ=
 latere.ai/x/pkg v0.110.2 h1:+KCH8EXEXkW/sAhKR2ExowMJBUYxfp8HRXWUKsHkG98=
 latere.ai/x/pkg v0.110.2/go.mod h1:neEq6JP/IEi6keAMCdlHzADcdgv1o5kJePrLKYjVb4M=
 latere.ai/x/sdk-go v0.10.0 h1:GE2h5iWHxCBFhMMt/xSauIdoJbk60uEdxEp7/bxJabI=
