@@ -22,10 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	mdtext "github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
 	"golang.org/x/net/html"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -106,7 +104,7 @@ type ref struct {
 // scheme, never a file of the machine, and is not read.
 func fileRefs(src string) []ref {
 	source := []byte(src)
-	doc := goldmark.New().Parser().Parse(mdtext.NewReader(source))
+	doc := parser.New().Parse(source)
 	var out []ref
 	at := map[string]int{}
 	add := func(r ref) {
@@ -120,41 +118,26 @@ func fileRefs(src string) []ref {
 		at[r.Dest] = len(out)
 		out = append(out, r)
 	}
-	// The destination as CommonMark reads it: backslash escapes and
-	// character references resolved, which the parser leaves to its
-	// renderer.
-	resolved := func(dest []byte) string {
-		return string(util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(dest))))
-	}
 	// Walk never fails: the walker returns no error.
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 		switch n := n.(type) {
+		// A destination's value is as CommonMark reads it: backslash
+		// escapes and character references resolved.
 		case *ast.Image:
-			add(ref{Dest: resolved(n.Destination), Image: true})
+			add(ref{Dest: n.Destination.Value(source), Image: true})
 		case *ast.Link:
-			add(ref{Dest: resolved(n.Destination)})
+			add(ref{Dest: n.Destination.Value(source)})
+		// Raw HTML, inline or a block with its closing line, is the source
+		// as written.
 		case *ast.RawHTML:
-			var b bytes.Buffer
-			for i := range n.Segments.Len() {
-				s := n.Segments.At(i)
-				b.Write(s.Value(source))
-			}
-			for _, r := range htmlRefs(b.Bytes()) {
+			for _, r := range htmlRefs(n.Value.Bytes(source)) {
 				add(r)
 			}
 		case *ast.HTMLBlock:
-			var b bytes.Buffer
-			for i := range n.Lines().Len() {
-				s := n.Lines().At(i)
-				b.Write(s.Value(source))
-			}
-			if n.HasClosure() {
-				b.Write(n.ClosureLine.Value(source))
-			}
-			for _, r := range htmlRefs(b.Bytes()) {
+			for _, r := range htmlRefs(n.Value.Bytes(source)) {
 				add(r)
 			}
 		}
