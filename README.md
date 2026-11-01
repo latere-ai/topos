@@ -169,6 +169,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   trigger, the week its runs have spent, and the pace each run is told.
 - [docs/unattended-turns.md](docs/unattended-turns.md): how a turn
   nobody watches is decided, and the `attended` the log records.
+- [docs/how-a-call-was-decided.md](docs/how-a-call-was-decided.md): the
+  layer and the rule that decided each call, `decided_by`, so a client
+  tells a rule from what a decision service learned.
 - [docs/context-report.md](docs/context-report.md): how full a
   conversation's context is, and what fills it.
 - [docs/cost-and-progress.md](docs/cost-and-progress.md): what a session

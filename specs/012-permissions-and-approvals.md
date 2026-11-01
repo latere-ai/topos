@@ -399,6 +399,15 @@ service cannot suggest past both ask for it, and `plan` applies the
 hold once more after the decider. Its first use is the `publish` call
 that changes who can open an app ([[043-publishing-a-folder]]).
 
+Built on 2026-11-01 and released in v0.65.0, "Which layer decided":
+each decision of `Policy.Decide`, `Settle`, `held`, the question tool's
+overrule and the decision service records its layer and rule, and the
+harness writes them on `agent.tool_use` as `decided_by` and
+`decided_by_rule`. `matchPattern` replaced `matchAny` so a list
+decision names the pattern that matched. `harness.TestEveryDecisionNamesItsLayer`
+holds one case per value; [docs/how-a-call-was-decided.md](../docs/how-a-call-was-decided.md)
+is the client's page.
+
 Open: the operating-system sandbox on a macOS or Linux host (its driver
 is in `machine/host`, and `topos` does not apply it yet), hooks, an ask
 that holds no lease, the egress step-up, and the score of a sandbox that
