@@ -98,3 +98,21 @@ Built as designed, with every criterion's test. The runner role reads
 `TOPOS_DECISIONS_URL` and `TOPOS_DECISIONS_TOKEN` and not the audience,
 because it holds no identity provider; an installation whose runners
 run in the serve role, as the hosted one does, needs only the audience.
+
+## Amendment, 2026-11-01: how much the service decides
+
+`TOPOS_DECISIONS_MODE` replaces the shadow switch with three modes for
+`progressive`: `shadow` (asked and recorded everywhere, decides nowhere),
+`learned`, and `decide` (the behavior this spec shipped with). In
+`learned` the service decides a call only where its prediction rests on
+the person's answers, which it says with `ask_kind`: its `allow`, its
+`block`, and an `ask` it calls `split`. An `ask` it calls `unsure`, a
+prediction with no `ask_kind` from an older service, and a service that
+does not answer leave the call to the rules and the risk score, as
+without a service, so turning a service on never asks a person more than
+the score did; the score's automatic verdicts are picked for review at
+the service's audit rate, so the rules' error rate is measured too.
+`decided_by` is `learned` only where the suggestion decided.
+`TOPOS_DECISIONS_SHADOW=true` is read as `shadow` for one release.
+Proved by `internal/decisions.TestLearnedDecidesWhereItHasEvidence`,
+`TestLearnedAuditsTheRules` and `internal/config.TestDecisions`.

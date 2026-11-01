@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- `TOPOS_DECISIONS_MODE`: `shadow`, `learned` or `decide`. In `learned`,
+  the decision service decides a `progressive` call only where it has
+  evidence about the person: its `allow`, its `block`, and an `ask` on
+  answers that disagree. Where it has too few answers, or does not
+  answer, the rules and the risk score decide as without a service, and
+  automatic verdicts are still picked for review at the service's audit
+  rate. `decide` is the behavior of v0.63 to v0.65 without shadow.
+
+### Deprecated
+
+- `TOPOS_DECISIONS_SHADOW=true` is read as `TOPOS_DECISIONS_MODE=shadow`
+  for this release, and refused beside `TOPOS_DECISIONS_MODE`.
+
 ## v0.65.0 - 2026-11-01
 
 ### Added

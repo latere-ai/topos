@@ -42,10 +42,14 @@ or the person's own text, never the call's input.
 
 Every value but `learned` is a rule: the same call under the same
 settings is decided the same way. `learned` appears only when a decision
-service's suggestion decided the call, in `progressive` outside shadow
-(`TOPOS_DECISIONS_SHADOW`, [configuration.md](configuration.md)). In
-`confirm`, in shadow, and on a person's own computer, the service only
-suggests: the call records the rule that decided it, and its
+service's suggestion decided the call, in `progressive`, in the modes
+`decide` and `learned` (`TOPOS_DECISIONS_MODE`,
+[configuration.md](configuration.md)). In `learned`, the service decides
+only where it has evidence about the person: its `allow`, its `block`,
+and an `ask` on answers that disagree. Where it has too few answers, the
+call records the rule or the score that decided it, with the suggestion
+beside it. In `confirm`, in `shadow`, and on a person's own computer, the
+service only suggests: the call records the rule that decided it, and its
 `suggestion` beside it.
 
 A call a decision service decided keeps the service's `suggestion`, with
