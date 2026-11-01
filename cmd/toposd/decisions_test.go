@@ -200,4 +200,10 @@ func TestDeciderFromTheConfiguration(t *testing.T) {
 	if _, err := decider(config.Config{DecisionsURL: "https://decisions.example"}, nil, log); err == nil || !strings.Contains(err.Error(), "TOPOS_DECISIONS_URL") {
 		t.Errorf("a decision service with no token: %v", err)
 	}
+	if _, err := decider(config.Config{DecisionsURL: "https://decisions.example", DecisionsToken: "t", DecisionsMode: "sometimes"}, nil, log); err == nil || !strings.Contains(err.Error(), "TOPOS_DECISIONS_MODE") {
+		t.Errorf("an unknown mode: %v", err)
+	}
+	if d, err := decider(config.Config{DecisionsURL: "https://decisions.example", DecisionsToken: "t", DecisionsMode: "learned"}, nil, log); d == nil || err != nil {
+		t.Errorf("learned: %v %v", d, err)
+	}
 }

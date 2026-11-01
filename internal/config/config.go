@@ -194,10 +194,13 @@ type Config struct {
 	DecisionsURL      string
 	DecisionsAudience string
 	DecisionsToken    string
-	// DecisionsShadow is TOPOS_DECISIONS_SHADOW: the decision service is
-	// asked and learns in every mode and decides in none, so a progressive
-	// session decides by the rules and the risk score as without it.
-	DecisionsShadow bool
+	// DecisionsMode is TOPOS_DECISIONS_MODE, how much the decision
+	// service decides in progressive: shadow (it learns and decides
+	// nothing), learned (it decides where it has evidence about the
+	// person, the rules and risk score elsewhere) or decide (it decides
+	// every call the rules leave open). Empty is decide.
+	// TOPOS_DECISIONS_SHADOW=true is accepted as shadow for one release.
+	DecisionsMode string
 }
 
 // Defaults of the runner variables.
@@ -603,12 +606,22 @@ func (c *Config) readDecisions(getenv Getenv, server bool) []string {
 	if server {
 		c.DecisionsAudience = strings.TrimSpace(getenv("TOPOS_DECISIONS_AUDIENCE"))
 	}
+	c.DecisionsMode = strings.TrimSpace(getenv("TOPOS_DECISIONS_MODE"))
+	switch c.DecisionsMode {
+	case "", "shadow", "learned", "decide":
+	default:
+		problems = append(problems, "TOPOS_DECISIONS_MODE is "+strconv.Quote(c.DecisionsMode)+", one of shadow, learned or decide")
+	}
 	if v := strings.TrimSpace(getenv("TOPOS_DECISIONS_SHADOW")); v != "" {
 		on, err := strconv.ParseBool(v)
-		if err != nil {
+		switch {
+		case err != nil:
 			problems = append(problems, "TOPOS_DECISIONS_SHADOW is "+strconv.Quote(v)+", either true or false")
+		case c.DecisionsMode != "":
+			problems = append(problems, "TOPOS_DECISIONS_SHADOW is set beside TOPOS_DECISIONS_MODE; it is the old name of TOPOS_DECISIONS_MODE=shadow, so unset it")
+		case on:
+			c.DecisionsMode = "shadow"
 		}
-		c.DecisionsShadow = on
 	}
 	if c.DecisionsURL == "" {
 		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience} {

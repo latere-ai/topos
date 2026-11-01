@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/verdict"
+
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
@@ -520,7 +522,7 @@ func TestShadowLeavesProgressiveToTheRules(t *testing.T) {
 		s := &service{next: p}
 		srv := httptest.NewServer(s)
 		t.Cleanup(srv.Close)
-		d, err := New(Options{URL: srv.URL, Token: "tok", Shadow: true, Rand: func() float64 { return 0.01 }})
+		d, err := New(Options{URL: srv.URL, Token: "tok", Mode: ModeShadow, Rand: func() float64 { return 0.01 }})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -559,7 +561,7 @@ func TestDecidedByTheService(t *testing.T) {
 	s := &service{next: allowSuggestion()}
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
-	d, err := New(Options{URL: srv.URL, Token: "tok", Shadow: true})
+	d, err := New(Options{URL: srv.URL, Token: "tok", Mode: ModeShadow})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,4 +576,99 @@ func TestDecidedByTheService(t *testing.T) {
 		t.Errorf("confirm: decided by %q, want the rules' %q", out.DecidedBy, wantConfirm.DecidedBy)
 	}
 	settle(d2)
+}
+
+// In learned mode the service decides a progressive call where it has
+// evidence about the person, and the rules and the risk score decide where
+// it has too few answers, says no kind of ask, or does not answer.
+func TestLearnedDecidesWhereItHasEvidence(t *testing.T) {
+	ctx := context.Background()
+	call := bash(harness.ModeProgressive, "make")
+	_, rules, err := harness.Rules{}.Decide(ctx, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	learned := func(p prediction, status int) (*service, harness.Decision) {
+		t.Helper()
+		s := &service{next: p, status: status}
+		srv := httptest.NewServer(s)
+		t.Cleanup(srv.Close)
+		d, err := New(Options{URL: srv.URL, Token: "tok", Mode: ModeLearned, Rand: func() float64 { return 0.5 },
+			Timeout: 200 * time.Millisecond, Report: func(error) { s.mu.Lock(); s.reported++; s.mu.Unlock() }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, out, err := d.Decide(ctx, call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settle(d)
+		return s, out
+	}
+	with := func(v, kind string) prediction {
+		p := allowSuggestion()
+		p.Verdict, p.AskKind = v, kind
+		return p
+	}
+
+	// Evidence: the suggestion decides, recorded as learned.
+	for _, c := range []struct{ verdict, kind string }{{"allow", ""}, {"block", ""}, {"ask", AskSplit}} {
+		s, out := learned(with(c.verdict, c.kind), 0)
+		if string(out.Verdict) != c.verdict || out.DecidedBy != session.DecidedLearned || out.Suggestion == nil {
+			t.Errorf("%s %s: %+v", c.verdict, c.kind, out)
+		}
+		if len(s.decided) != 1 || s.decided[0].Source != SourceProgressive {
+			t.Errorf("%s %s: decisions %+v", c.verdict, c.kind, s.decided)
+		}
+	}
+	// No evidence: the rules decide, with the suggestion beside them.
+	for _, kind := range []string{AskUnsure, ""} {
+		s, out := learned(with("ask", kind), 0)
+		if out.Verdict != rules.Verdict || out.DecidedBy != rules.DecidedBy || out.DecidedBy == session.DecidedLearned {
+			t.Errorf("ask %q: decided %+v, want the rules' %+v", kind, out, rules)
+		}
+		if out.Suggestion == nil || out.Suggestion.Verdict != "ask" || out.Draw == nil {
+			t.Errorf("ask %q: the suggestion and the draw are recorded: %+v", kind, out)
+		}
+		if len(s.decided) != 1 || s.decided[0].Verdict != string(rules.Verdict) {
+			t.Errorf("ask %q: decisions %+v", kind, s.decided)
+		}
+	}
+	// A service that does not answer: the rules decide, not a fallback ask.
+	s, out := learned(allowSuggestion(), http.StatusServiceUnavailable)
+	if out.Verdict != rules.Verdict || out.DecidedBy != rules.DecidedBy || out.Suggestion != nil || s.reported == 0 {
+		t.Errorf("a failing service in learned mode: %+v (reported %d)", out, s.reported)
+	}
+}
+
+// In learned mode an automatic verdict the rules decide is still picked
+// for review at the service's audit rate.
+func TestLearnedAuditsTheRules(t *testing.T) {
+	call := bash(harness.ModeProgressive, "make")
+	_, rules, _ := harness.Rules{}.Decide(context.Background(), call)
+	p := allowSuggestion()
+	p.Verdict, p.AskKind, p.AuditRate = "ask", AskUnsure, 0.5
+	s := &service{next: p}
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+	d, err := New(Options{URL: srv.URL, Token: "tok", Mode: ModeLearned, Rand: func() float64 { return 0.1 }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := d.Decide(context.Background(), call)
+	want, prob := verdict.Decide(rules.Verdict, verdict.Allow, 0.5, 0.1)
+	if out.Verdict != want || out.ReviewProbability != prob {
+		t.Errorf("audited %+v, want %s at %v", out, want, prob)
+	}
+}
+
+func TestParseMode(t *testing.T) {
+	for _, m := range []Mode{ModeShadow, ModeLearned, ModeDecide} {
+		if got, err := ParseMode(string(m)); err != nil || got != m {
+			t.Errorf("%s: %v %v", m, got, err)
+		}
+	}
+	if _, err := ParseMode("sometimes"); err == nil {
+		t.Error("an unknown mode is refused")
+	}
 }

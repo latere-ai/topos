@@ -564,7 +564,11 @@ func decider(cfg config.Config, identities *idp.Client, log *slog.Logger) (harne
 	if cfg.DecisionsURL == "" {
 		return nil, nil
 	}
-	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Shadow: cfg.DecisionsShadow, Report: func(err error) {
+	mode, err := decisions.ParseMode(cmp.Or(cfg.DecisionsMode, string(decisions.ModeDecide)))
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_DECISIONS_MODE: %w", err)
+	}
+	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Mode: mode, Report: func(err error) {
 		log.Warn("decision service", "err", err)
 	}}
 	if identities != nil && cfg.DecisionsAudience != "" {

@@ -84,12 +84,40 @@ type Options struct {
 	// that failed, so the call was asked, or a decision or answer that could
 	// not be sent. Nil drops them.
 	Report func(error)
-	// Shadow asks and records the service in every mode and lets it decide
-	// in none: a progressive call is decided by the rules and the risk
-	// score, as without a service, with the service's suggestion recorded
-	// beside it, as a confirm-mode call is. The service learns from every
-	// answer and changes no verdict.
-	Shadow bool
+	// Mode is how much the service decides in progressive; zero is
+	// [ModeDecide]. Confirm and plan are the same in every mode.
+	Mode Mode
+}
+
+// Mode is how much a decision service decides in progressive mode.
+type Mode string
+
+const (
+	// ModeShadow asks and records the service in every mode and lets it
+	// decide in none: a progressive call is decided by the rules and the
+	// risk score, as without a service, with the service's suggestion
+	// recorded beside it, as a confirm-mode call is.
+	ModeShadow Mode = "shadow"
+	// ModeLearned lets the service decide a progressive call where it has
+	// evidence about the person: its allow, its block, and an ask on
+	// answers that disagree (ask_kind split). Where it has too few answers
+	// (ask_kind unsure), where its prediction carries no ask_kind, or where
+	// it does not answer, the rules and the risk score decide, as without a
+	// service, with the suggestion recorded beside them.
+	ModeLearned Mode = "learned"
+	// ModeDecide lets the service's suggestion decide every progressive
+	// call the rules leave open, and a call it cannot answer waits for a
+	// person.
+	ModeDecide Mode = "decide"
+)
+
+// ParseMode reads a mode by its name.
+func ParseMode(s string) (Mode, error) {
+	switch m := Mode(s); m {
+	case ModeShadow, ModeLearned, ModeDecide:
+		return m, nil
+	}
+	return "", fmt.Errorf("decisions: the mode %q is not shadow, learned or decide", s)
 }
 
 // Decider decides calls with a decision service.
@@ -103,8 +131,8 @@ type Decider struct {
 	confirm time.Duration
 	rand    func() float64
 	report  func(error)
-	// shadow records the service's suggestion and never applies it.
-	shadow bool
+	// mode is how much the service decides in progressive.
+	mode Mode
 	// pending holds the confirm-mode decisions still being sent, by key,
 	// each closed when its send ends, so an answer is never sent before the
 	// decision it answers.
@@ -135,7 +163,7 @@ func New(o Options) (*Decider, error) {
 	d := &Decider{
 		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: o.Org,
 		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), confirm: cmp.Or(o.ConfirmTimeout, ConfirmTimeout),
-		rand: o.Rand, report: o.Report, shadow: o.Shadow, pending: map[key]chan struct{}{},
+		rand: o.Rand, report: o.Report, mode: cmp.Or(o.Mode, ModeDecide), pending: map[key]chan struct{}{},
 	}
 	if d.client == nil {
 		d.client = otel.HTTPClient()
@@ -207,6 +235,10 @@ type prediction struct {
 	AuditRate   float64    `json:"audit_rate"`
 	Source      string     `json:"source"`
 	Reason      string     `json:"reason"`
+	// EvidenceRatio and AskKind say how much the person's answers settle
+	// the prediction; a service that predates them sends neither.
+	EvidenceRatio *float64 `json:"evidence_ratio,omitempty"`
+	AskKind       string   `json:"ask_kind,omitempty"`
 }
 
 type decision struct {
@@ -258,7 +290,7 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 	case harness.ModePlan:
 		return risk, rules, nil
 	case harness.ModeProgressive:
-		if d.shadow {
+		if d.mode == ModeShadow {
 			return risk, d.watch(ctx, a, rules, SourceProgressive), nil
 		}
 		if settled, ok := c.Policy.Settle(c, risk); ok {
@@ -266,6 +298,12 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 			return risk, settled, nil
 		}
 		p, perr := d.predict(ctx, a)
+		if d.mode == ModeLearned && (perr != nil || !p.hasEvidence()) {
+			if perr != nil {
+				d.report(perr)
+			}
+			return risk, d.byRules(ctx, a, rules, p, perr == nil), nil
+		}
 		if perr != nil {
 			d.report(perr)
 			v := verdict.OnFailure(verdict.Allow)
@@ -282,6 +320,35 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 		return risk, d.watch(ctx, a, rules, SourceConfirm), nil
 	}
 }
+
+// byRules applies the rules' decision of a progressive call in learned
+// mode, where the service has no evidence about the person: the risk score
+// decides as without a service, an automatic verdict is picked for review
+// at the service's audit rate when it answered, and the suggestion is
+// recorded beside the decision. decided_by stays the rules' layer.
+func (d *Decider) byRules(ctx context.Context, a action, rules harness.Decision, p prediction, predicted bool) harness.Decision {
+	if predicted {
+		u := d.rand()
+		v, prob := verdict.Decide(rules.Verdict, verdict.Allow, p.AuditRate, u)
+		rules.Verdict, rules.ReviewProbability, rules.Draw = v, prob, &u
+		rules.Suggestion = suggestion(p)
+	}
+	d.record(ctx, a, rules, SourceProgressive, predicted)
+	return rules
+}
+
+// hasEvidence is whether a prediction rests on the person's answers: an
+// allow, a block, or an ask on answers that disagree. An ask with too few
+// answers, or from a service that does not say which ask it is, does not.
+func (p prediction) hasEvidence() bool {
+	return p.Verdict != string(verdict.Ask) || p.AskKind == AskSplit
+}
+
+// The kinds of ask a prediction can carry.
+const (
+	AskUnsure = "unsure"
+	AskSplit  = "split"
+)
 
 // watch records the rules' decision with the service's suggestion beside
 // it, the prediction bounded by the confirm timeout and the decision sent

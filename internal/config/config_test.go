@@ -698,12 +698,20 @@ func TestDecisions(t *testing.T) {
 		t.Fatalf("a server's own token: %+v %v", c, err)
 	}
 	c, err = Load(RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_TOKEN", "tok")))
-	if err != nil || c.DecisionsToken != "tok" || c.DecisionsShadow {
+	if err != nil || c.DecisionsToken != "tok" || c.DecisionsMode != "" {
 		t.Fatalf("a fixed bearer: %+v %v", c, err)
 	}
 	c, err = Load(RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_SHADOW", " true ")))
-	if err != nil || !c.DecisionsShadow {
+	if err != nil || c.DecisionsMode != "shadow" {
 		t.Fatalf("shadow: %+v %v", c, err)
+	}
+	c, err = Load(RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_MODE", " learned ")))
+	if err != nil || c.DecisionsMode != "learned" {
+		t.Fatalf("learned: %+v %v", c, err)
+	}
+	c, err = Load(RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_SHADOW", "false")))
+	if err != nil || c.DecisionsMode != "" {
+		t.Fatalf("shadow false is the default mode: %+v %v", c, err)
 	}
 	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
 		"TOPOS_DECISIONS_URL": "https://decisions.example", "TOPOS_DECISIONS_TOKEN": "tok"}))
@@ -723,6 +731,8 @@ func TestDecisions(t *testing.T) {
 		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_TOKEN", "tok")), "TOPOS_DECISIONS_TOKEN needs TOPOS_DECISIONS_URL"},
 		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_AUDIENCE", "d")), "TOPOS_DECISIONS_AUDIENCE needs TOPOS_DECISIONS_URL"},
 		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_SHADOW", "watch")), `TOPOS_DECISIONS_SHADOW is "watch", either true or false`},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_MODE", "sometimes")), `TOPOS_DECISIONS_MODE is "sometimes", one of shadow, learned or decide`},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_MODE", "learned", "TOPOS_DECISIONS_SHADOW", "true")), "TOPOS_DECISIONS_SHADOW is set beside TOPOS_DECISIONS_MODE"},
 		{RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
 			"TOPOS_DECISIONS_URL": "https://decisions.example"}), "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_TOKEN"},
 	} {
