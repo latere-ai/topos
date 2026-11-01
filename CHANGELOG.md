@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.63.0 - 2026-11-01
+
 ### Added
 
 - **Hosted sessions are decided by a decision service.** With `TOPOS_DECISIONS_URL`, every session `toposd` runs, in `serve` and in `runner`, decides its calls as `topos run` does with a decision service (spec 099). In `progressive` mode the service's suggestion decides each call the rules leave open, and a random part of these automatic verdicts is held for review. In `confirm` mode the rules decide, and the service learns. Each decision and each confirmation is sent to the service, and a call waits for a person when the service does not answer. A server with an identity provider asks the service with its own token for `TOPOS_DECISIONS_AUDIENCE`; a server without one, and `toposd runner`, send `TOPOS_DECISIONS_TOKEN`. Unset, sessions decide by the rules, as before.
