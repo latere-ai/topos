@@ -1,12 +1,12 @@
 ---
 title: "Messages sent while a turn runs: a person's message is read at the next step, placed where it was read and marked as sent during the work, a trigger's or a wake's waits for the turn's end, send now moves a running command to the background and cuts what still runs after a grace, and a message not yet read can be withdrawn"
-status: in-progress
+status: complete
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 045-a-server-cannot-hold-a-turn.md, 086-proactive-agents.md]
 affects: [session/, harness/, harness/tools/, machine/, machine/host/, machine/cella/, cmd/topos-machine/, runner/, prompts/, internal/server/, test/tasks/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-30
-updated: 2026-10-30
+updated: 2026-11-01
 author: changkun
 ---
 
@@ -339,3 +339,13 @@ and controls a client offers, and commands a client runs itself.
 | End to end over the stubs: a message sent while a command runs reaches the next request; `send_now` moves the command; a withdrawn message is not read | `cmd/toposd.TestMessagesWhileATurnRuns` | built |
 | A turn a runner took over with no status closing the one before counts that turn as closed, so its held messages are read | `session.TestATurnNobodyClosedClosesAtTheNext` | built |
 | A task in the suite: the person changes what they asked while the agent's first command runs, and the agent does the changed task | `test/tasks/instructions/redirected` (its solution passes and its wrong solution fails by `test/tasks.TestScriptedSolutions`, the solution reading the message at the step after the command; on a model, the instruction tier, `go test -tags instructions ./test/tasks`, Claude Haiku 5.5 passed all three runs on 2026-10-30) | built |
+
+## Outcome
+
+Shipped as designed in v0.62.0 (2026-10-31), every criterion above
+built. sdk-go v0.18.0 carries `SendNow`, the withdrawal, both event
+types and `agents.WaitingMessages`, the third step of the roll order
+followed: Latere Chat, Latere Studio on the Mac, the iPhone and the
+iPad, the `latere` command line and the platform console send while a
+turn runs, show the messages that wait, and offer send now, edit and
+remove.
