@@ -185,6 +185,15 @@ type Config struct {
 	// PDF of a session's folder to with the session's own token (spec
 	// 080); empty sends none, and read answers a PDF as a binary file.
 	ParsingURL string
+	// DecisionsURL is TOPOS_DECISIONS_URL, the decision service every
+	// hosted session's calls are decided with (spec 037); empty decides by
+	// the rules alone. A server with an identity provider asks it with its
+	// own token for DecisionsAudience, TOPOS_DECISIONS_AUDIENCE; a server
+	// without one, and a runner, with DecisionsToken, the fixed bearer
+	// TOPOS_DECISIONS_TOKEN.
+	DecisionsURL      string
+	DecisionsAudience string
+	DecisionsToken    string
 }
 
 // Defaults of the runner variables.
@@ -272,6 +281,7 @@ func Load(role string, getenv Getenv) (Config, error) {
 	c.RunnerTokens = list(strings.TrimSpace(getenv("TOPOS_RUNNER_TOKEN")), false)
 	if role == RoleRunner {
 		problems = append(problems, c.readRunner(getenv)...)
+		problems = append(problems, c.readDecisions(getenv, false)...)
 		c.InternalURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_INTERNAL_URL")), "/")
 		if c.InternalURL == "" {
 			problems = append(problems, "TOPOS_INTERNAL_URL is required; it is the toposd internal listener the runner claims from")
@@ -296,6 +306,7 @@ func Load(role string, getenv Getenv) (Config, error) {
 	if role == RoleServe || role == RoleCheck {
 		problems = append(problems, c.readRunner(getenv)...)
 		problems = append(problems, c.readCredentials(getenv)...)
+		problems = append(problems, c.readDecisions(getenv, true)...)
 		if c.PublicURL == "" {
 			problems = append(problems, "TOPOS_PUBLIC_URL is required; it is the base of every URL toposd writes")
 		}
@@ -571,6 +582,43 @@ func (c *Config) readCredentials(getenv Getenv) []string {
 		if c.SearchKey != "" {
 			problems = append(problems, "TOPOS_SEARCH_KEY is set beside TOPOS_SESSION_KEYS_URL; sessions search with their own keys, so unset it")
 		}
+	}
+	return problems
+}
+
+// readDecisions reads the decision service of spec 037. A server with
+// an identity provider asks it with its own token for the service's
+// audience, so the fixed bearer would be a second credential beside the
+// one it replaces; a runner holds no identity provider and sends the
+// fixed bearer. server says whether the role reads the identity
+// provider's variables.
+func (c *Config) readDecisions(getenv Getenv, server bool) []string {
+	var problems []string
+	c.DecisionsURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_DECISIONS_URL")), "/")
+	c.DecisionsToken = strings.TrimSpace(getenv("TOPOS_DECISIONS_TOKEN"))
+	if server {
+		c.DecisionsAudience = strings.TrimSpace(getenv("TOPOS_DECISIONS_AUDIENCE"))
+	}
+	if c.DecisionsURL == "" {
+		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience} {
+			if v != "" {
+				problems = append(problems, name+" needs TOPOS_DECISIONS_URL, the decision service it is for")
+			}
+		}
+		return problems
+	}
+	if err := checkURL(c.DecisionsURL); err != nil {
+		problems = append(problems, "TOPOS_DECISIONS_URL "+err.Error())
+	}
+	switch {
+	case server && c.IdentityURL != "" && c.DecisionsAudience == "":
+		problems = append(problems, "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_AUDIENCE, the audience of the token toposd asks the decision service with")
+	case server && c.IdentityURL != "" && c.DecisionsToken != "":
+		problems = append(problems, "TOPOS_DECISIONS_TOKEN is set beside TOPOS_IDENTITY_URL; toposd asks the decision service with its own token for TOPOS_DECISIONS_AUDIENCE, so unset it")
+	case c.IdentityURL == "" && c.DecisionsAudience != "":
+		problems = append(problems, "TOPOS_DECISIONS_AUDIENCE needs TOPOS_IDENTITY_URL, which mints the token for that audience")
+	case c.IdentityURL == "" && c.DecisionsToken == "":
+		problems = append(problems, "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_TOKEN, the bearer sent to the decision service, unless TOPOS_IDENTITY_URL mints toposd's own token for it")
 	}
 	return problems
 }

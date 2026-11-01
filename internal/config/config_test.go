@@ -673,6 +673,60 @@ func TestTheFilesAudience(t *testing.T) {
 	}
 }
 
+// TestDecisions (spec 037): TOPOS_DECISIONS_URL is unset by default. A
+// server with an identity provider names the audience of its own token
+// for the service and no fixed bearer; a server without one, and a
+// runner role, which holds no identity provider, name the fixed bearer.
+func TestDecisions(t *testing.T) {
+	minting := map[string]string{"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a",
+		"TOPOS_IDENTITY_URL": "https://auth.example", "TOPOS_IDENTITY_CLIENT_ID": "topos-host", "TOPOS_IDENTITY_SECRET_FILE": "/run/secret"}
+	with := func(base map[string]string, kv ...string) map[string]string {
+		m := maps.Clone(base)
+		if m == nil {
+			m = map[string]string{}
+		}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	if c, err := Load(RoleServe, serve(minting)); err != nil || c.DecisionsURL != "" {
+		t.Fatalf("no decision service: %+v %v", c, err)
+	}
+	c, err := Load(RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", " https://decisions.example/ ", "TOPOS_DECISIONS_AUDIENCE", " decisions ")))
+	if err != nil || c.DecisionsURL != "https://decisions.example" || c.DecisionsAudience != "decisions" || c.DecisionsToken != "" {
+		t.Fatalf("a server's own token: %+v %v", c, err)
+	}
+	c, err = Load(RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_TOKEN", "tok")))
+	if err != nil || c.DecisionsToken != "tok" {
+		t.Fatalf("a fixed bearer: %+v %v", c, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+		"TOPOS_DECISIONS_URL": "https://decisions.example", "TOPOS_DECISIONS_TOKEN": "tok"}))
+	if err != nil || r.DecisionsURL != "https://decisions.example" || r.DecisionsToken != "tok" {
+		t.Fatalf("a runner role: %+v %v", r, err)
+	}
+	for _, c := range []struct {
+		role string
+		env  Getenv
+		want string
+	}{
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example")), "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_AUDIENCE"},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_TOKEN", "tok")), "TOPOS_DECISIONS_TOKEN is set beside TOPOS_IDENTITY_URL"},
+		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d")), "TOPOS_DECISIONS_AUDIENCE needs TOPOS_IDENTITY_URL"},
+		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "https://decisions.example")), "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_TOKEN"},
+		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "ftp://decisions.example", "TOPOS_DECISIONS_TOKEN", "tok")), "TOPOS_DECISIONS_URL is"},
+		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_TOKEN", "tok")), "TOPOS_DECISIONS_TOKEN needs TOPOS_DECISIONS_URL"},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_AUDIENCE", "d")), "TOPOS_DECISIONS_AUDIENCE needs TOPOS_DECISIONS_URL"},
+		{RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+			"TOPOS_DECISIONS_URL": "https://decisions.example"}), "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_TOKEN"},
+	} {
+		if _, err := Load(c.role, c.env); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", c.role, err, c.want)
+		}
+	}
+}
+
 // TestParsingURL (spec 082): TOPOS_PARSING_URL is read without its
 // trailing slash by the server and a runner, and a URL that is not one
 // stops the start.

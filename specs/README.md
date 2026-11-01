@@ -152,6 +152,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [096](096-what-a-session-has-cost-so-far-and-how-far-its-to-do-list-is.md) | What a session has cost so far and how far its to-do list is: the budget counts the log through `last_seq` and each `model.request` and `tool.result` carries what it added, so no event of its own reports the spending; a `todo` call's result records the list, described as `TodoResultMeta`; and no progress count beyond the to-do list until workflow runs count their nodes | small | testing | 008, 023, 033, 047, 056, 082 |
 | [097](097-a-bash-call-over-memory-folders-runs-in-the-process.md) | A bash call over memory folders runs in the process: a line whose every program is one Cella's shell package provides and whose every path is in a memory folder runs on the memory machine with no sandbox, decided before anything runs, every write on the version the session read; any other line runs on the session's machine as before; and a log line and two counters say which call opened the machine and why | medium | testing | 008, 012, 023, 048, 093, 094 |
 | [098](.archive/098-messages-sent-while-a-turn-runs.md) | Messages sent while a turn runs: a person's message read at the next step where it was read and marked as sent during the work, a trigger's or a wake's held for the turn's end, send now moving running commands to the background and cutting the rest after a grace, `messages.read` and `user.withdraw` | large | complete | 004, 005, 009, 012, 015, 016, 045, 086 |
+| [099](.archive/099-hosted-sessions-decided-by-a-decision-service.md) | Hosted sessions decided by a decision service: toposd and the runner role ask the installation's decision service, a server with an identity provider with its own token for the service's audience, and any other process with a fixed bearer | small | complete | 002, 016, 018, 037 |
 
 ## Dependency graph
 
@@ -256,6 +257,7 @@ flowchart BT
   S096[096 cost so far and the to-do list]
   S097[097 a bash call over memory runs in the process]
   S098[098 messages sent while a turn runs]
+  S099[099 hosted sessions decided by a decision service]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -457,6 +459,10 @@ flowchart BT
   S098 --> S016
   S098 --> S045
   S098 --> S086
+  S099 --> S002
+  S099 --> S016
+  S099 --> S018
+  S099 --> S037
 ```
 
 ## Build order
