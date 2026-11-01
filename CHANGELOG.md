@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.63.1 - 2026-11-01
+
 ### Fixed
 
 - The release publishes its image. The v0.63.0 release built the image but
