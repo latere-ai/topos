@@ -27,6 +27,10 @@ committed: the commit log already holds that.
   is one answer. An allow that adds the host to the session's network
   answers this call only. A fetch outside the network already sent its
   confirmation as the fetch's answer.
+- `TOPOS_CELLA_INSECURE`, the explicit consent for `TOPOS_CELLA_URL` to
+  be `http://` on a host other than loopback, for a control plane
+  reached over a network you trust; bumps `latere.ai/x/cella` to
+  v0.22.6, whose client refuses such a URL without it.
 
 ### Deprecated
 
