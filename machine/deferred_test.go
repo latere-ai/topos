@@ -195,6 +195,92 @@ func TestADeferredMachineThatCannotOpen(t *testing.T) {
 	}
 }
 
+// TestTheEndLetsGoOfWhatAFailedOpenLeft: an open that failed after it
+// made something, a sandbox whose probe failed, names a Discard; an idle
+// release keeps it, and the session's end runs it once, when no machine
+// opened.
+func TestTheEndLetsGoOfWhatAFailedOpenLeft(t *testing.T) {
+	ctx := t.Context()
+	cause := errors.New("probe the sandbox: the environment is unavailable")
+	discarded := 0
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		return nil, &LeftBehind{Err: cause, Discard: func(context.Context) error {
+			discarded++
+			return nil
+		}}
+	})
+	err := d.Open(ctx)
+	if oe, ok := errors.AsType[*OpenError](err); !ok || oe.Code != CodeUnavailable || !errors.Is(err, cause) {
+		t.Fatalf("the open: %v", err)
+	}
+	if err := d.Release(ctx, false); err != nil || discarded != 0 {
+		t.Fatalf("an idle release: %v, %d discards", err, discarded)
+	}
+	if err := d.Release(ctx, true); err != nil || discarded != 1 {
+		t.Fatalf("the end: %v, %d discards", err, discarded)
+	}
+	if err := d.Release(ctx, true); err != nil || discarded != 1 {
+		t.Fatalf("a second end: %v, %d discards", err, discarded)
+	}
+}
+
+// TestTheEndAnswersADiscardThatFailed: a Discard that fails is the end's
+// failure, and the machine is not taken for released, so the next end
+// tries it again.
+func TestTheEndAnswersADiscardThatFailed(t *testing.T) {
+	ctx := t.Context()
+	refused := errors.New("delete the sandbox: unavailable")
+	tries := 0
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		return nil, &LeftBehind{Err: errors.New("probe failed"), Discard: func(context.Context) error {
+			tries++
+			if tries == 1 {
+				return refused
+			}
+			return nil
+		}}
+	})
+	if err := d.Open(ctx); err == nil {
+		t.Fatal("the open succeeded")
+	}
+	if err := d.Release(ctx, true); !errors.Is(err, refused) {
+		t.Fatalf("the end: %v", err)
+	}
+	if err := d.Release(ctx, true); err != nil || tries != 2 {
+		t.Fatalf("the end again: %v, %d tries", err, tries)
+	}
+}
+
+// TestAnOpenMachineIsReleasedInsteadOfTheLeftover: a failed open's
+// Discard is not run once a later open opened the machine, whose own
+// release lets go of the sandbox.
+func TestAnOpenMachineIsReleasedInsteadOfTheLeftover(t *testing.T) {
+	ctx := t.Context()
+	under := &fake{}
+	tries, discarded := 0, 0
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		if tries++; tries == 1 {
+			return nil, &LeftBehind{Err: errors.New("probe failed"), Discard: func(context.Context) error {
+				discarded++
+				return nil
+			}}
+		}
+		return under, nil
+	})
+	if err := d.Open(ctx); err == nil {
+		t.Fatal("the first open succeeded")
+	}
+	if err := d.Open(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Release(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if discarded != 0 || len(under.released) != 1 || !under.released[0] {
+		t.Fatalf("%d discards, releases %v", discarded, under.released)
+	}
+}
+
 func TestADeferredMachinesFailedHookLeavesItOpen(t *testing.T) {
 	ctx := t.Context()
 	under := &fake{}

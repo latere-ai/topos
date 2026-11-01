@@ -17,6 +17,15 @@ committed: the commit log already holds that.
 - The release publishes its image. The v0.64.0 release built and signed
   the image but stopped at its attestation, which could not find the
   registry login, so v0.64.0 has no published image; use this release.
+- A session's end deletes the sandbox a failed machine open left. When
+  Cella created a session's sandbox and the runner then could not reach
+  it, as when Cella's environment briefly drops its connections, the
+  session opened no machine, and its end left the sandbox running until
+  Cella stopped it for idleness, after the environment's idle stop.
+  Meanwhile it held a place in its owner's limit of running sandboxes, so
+  the owner's next session was refused `machine_unavailable` with
+  `quota_exceeded`. The end now deletes that sandbox and the Secrets
+  applied for it, as it does an open machine's.
 
 ## v0.64.0 - 2026-11-01
 

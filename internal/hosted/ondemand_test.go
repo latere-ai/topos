@@ -393,6 +393,34 @@ func TestAStartRefusedForTheRunningCeilingIsTheCallsResult(t *testing.T) {
 	}
 }
 
+// TestASessionsEndDeletesTheSandboxAFailedOpenLeft: a session whose
+// sandbox Cella created and whose probe then failed, as when the
+// environment's API drops its connections, opened no machine, yet the
+// sandbox runs and holds a place in its owner's count of running
+// sandboxes. The session's end deletes it, as it deletes an open
+// machine's, so a run that ends this way leaves its owner's next run the
+// place it held.
+func TestASessionsEndDeletesTheSandboxAFailedOpenLeft(t *testing.T) {
+	c := newCloud(t, func(s *session.Session) { s.EndOnIdle = true })
+	c.cella.Fail(cellastub.OpExec, cellastub.Failure{Status: 503, Code: "driver_unavailable", Detail: "exec: the environment's API closed the connection", Times: 100})
+	c.driveAfter(session.StopCompleted, []session.Event{c.message("Look.")}, bash("toolu_1", "ls"), said("The machine is unavailable."))
+	var se session.SessionError
+	if errs := c.events(session.TypeSessionError); len(errs) != 1 || errs[0].Decode(&se) != nil || se.Code != machine.CodeUnavailable {
+		t.Fatalf("session.error %+v", errs)
+	}
+	if n := c.cella.Count(cellastub.OpCreate); n != 1 {
+		t.Fatalf("%d sandboxes created", n)
+	}
+	name := cella.SandboxName(c.s.ID)
+	if sb, ok := c.cella.Sandbox(name); ok {
+		t.Fatalf("the sandbox the failed open left runs on after the session's end: %s %s", sb.Status.ID, sb.Status.Phase)
+	}
+	s, err := c.st.Get(t.Context(), c.s.ID)
+	if err != nil || s.Status != session.StatusEnded {
+		t.Fatalf("the session: %+v %v", s.Status, err)
+	}
+}
+
 // TestTheSandboxReachesItsRepositoriesHosts: a session's repositories'
 // git host is on its sandbox's egress allowlist, beside the agent's own
 // hosts, and one that cannot be cloned is reported as

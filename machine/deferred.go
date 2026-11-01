@@ -61,6 +61,21 @@ func (e *OpenError) Error() string { return e.Code + ": " + e.Err.Error() }
 
 func (e *OpenError) Unwrap() error { return e.Err }
 
+// LeftBehind is an open's failure that may have left something of the
+// session behind, such as a sandbox Cella made before the helper could be
+// put in it, and Discard lets go of it. The open stays failed: Discard
+// runs only at the session's end, from a Deferred whose machine never
+// opened (Deferred.Release), so what a failed open left ends with the
+// session, as an open machine's sandbox does.
+type LeftBehind struct {
+	Err     error
+	Discard func(ctx context.Context) error
+}
+
+func (e *LeftBehind) Error() string { return e.Err.Error() }
+
+func (e *LeftBehind) Unwrap() error { return e.Err }
+
 // errNoFetch is a fetch on a deferred machine whose machine cannot fetch.
 var errNoFetch = errors.New("machine: this machine does not fetch")
 
@@ -95,6 +110,10 @@ type Deferred struct {
 	// answered (spec 080), which every later open answers without asking
 	// the computer again, until AskAgain.
 	held error
+	// leftover is the Discard of the last failed open that named one
+	// (LeftBehind), which a release at the session's end runs when no
+	// machine opened.
+	leftover func(ctx context.Context) error
 }
 
 // Defer is a machine of kind that open makes on first use, under ctx.
@@ -173,6 +192,11 @@ func (d *Deferred) openCoded() (Machine, error) {
 	m, err := d.open(d.ctx)
 	if err == nil {
 		return m, nil
+	}
+	if lb, ok := errors.AsType[*LeftBehind](err); ok && lb.Discard != nil {
+		d.mu.Lock()
+		d.leftover = lb.Discard
+		d.mu.Unlock()
 	}
 	if _, coded := errors.AsType[*OpenError](err); !coded {
 		err = &OpenError{Code: CodeUnavailable, Err: err}
@@ -423,8 +447,11 @@ func (d *Deferred) Fetch(ctx context.Context, r FetchRequest) (FetchResult, erro
 // behind is the session's to find by name and stops by its own idle
 // rule. A release at the session's end waits for it, so the end removes
 // what the start made. A machine that never opened has nothing to let go
-// of; after Release(ctx, true) every operation answers ErrReleased
-// either way.
+// of but what a failed open left behind (LeftBehind), which the end lets
+// go of: a sandbox made by an open whose probe failed would otherwise run
+// on after the session, holding a place in its owner's sandbox count
+// until Cella stops it for idleness. After Release(ctx, true) every
+// operation answers ErrReleased either way.
 func (d *Deferred) Release(ctx context.Context, end bool) error {
 	d.mu.Lock()
 	starting := d.starting
@@ -433,7 +460,7 @@ func (d *Deferred) Release(ctx context.Context, end bool) error {
 		<-starting
 	}
 	d.mu.Lock()
-	m, prepared := d.m, d.prepared
+	m, prepared, leftover := d.m, d.prepared, d.leftover
 	d.mu.Unlock()
 	var err error
 	if m != nil {
@@ -442,9 +469,12 @@ func (d *Deferred) Release(ctx context.Context, end bool) error {
 	if prepared != nil {
 		err = errors.Join(err, prepared.Release(ctx, end))
 	}
+	if end && m == nil && prepared == nil && leftover != nil {
+		err = leftover(ctx)
+	}
 	if end && err == nil {
 		d.mu.Lock()
-		d.released, d.prepared = true, nil
+		d.released, d.prepared, d.leftover = true, nil, nil
 		d.mu.Unlock()
 	}
 	return err

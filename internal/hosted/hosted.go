@@ -315,7 +315,12 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			return m, nil
 		}
 		se, _ := errors.AsType[*runner.SetupError](machineSetup(err))
-		return nil, &machine.OpenError{Code: se.Code, Err: se.Err}
+		oe := &machine.OpenError{Code: se.Code, Err: se.Err}
+		// What the failed open left, the session's end lets go of.
+		if lb, ok := errors.AsType[*machine.LeftBehind](err); ok {
+			return nil, &machine.LeftBehind{Err: oe, Discard: lb.Discard}
+		}
+		return nil, oe
 	})
 	if cfg.Memory, err = b.memory(ctx, s, cfg.Machine); err != nil {
 		return harness.Config{}, err
@@ -739,7 +744,7 @@ func Cella(o CellaOptions) Machines {
 			mach, err = cella.Open(ctx, co)
 		}
 		if err != nil {
-			return nil, err
+			return nil, leftBehind(c, s.ID, secrets, err)
 		}
 		// The sandbox reaches the connection service only when it mounts the
 		// service's Secret: one created without it, by the retry above or by
@@ -752,7 +757,7 @@ func Cella(o CellaOptions) Machines {
 			switch {
 			case sec.audience == AudienceOrigo:
 				if err := gitConfig(ctx, mach, o.OrigoURL); err != nil {
-					return nil, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false))
+					return nil, leftBehind(c, s.ID, secrets, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false)))
 				}
 			case sec.env == session.ConnectionsToken && !mounted:
 				// Applied and not mounted, it is not renewed, and the
@@ -777,10 +782,27 @@ func Cella(o CellaOptions) Machines {
 		// repository, so one on a connected git host is cloned through it.
 		if err := sm.ApplyConnections(ctx, harness.HTTPConnections(s.Connections)); err != nil {
 			stop()
-			return nil, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false))
+			return nil, leftBehind(c, s.ID, secrets, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false)))
 		}
 		return sm, nil
 	}
+}
+
+// leftBehind is a failed open of a session's sandbox, which Cella may hold
+// all the same: one the open created before its probe or its setup failed,
+// or one found by name that answers no probe. Its Discard deletes the
+// sandbox by name, then the Secrets applied for it, as an open machine's
+// release at the session's end does (sessionMachine.Release), so a sandbox
+// no machine holds does not run on after its session in its owner's count
+// of running sandboxes. A sandbox already gone is no failure.
+func leftBehind(c *client.Client, sessionID string, secrets []*sandboxSecret, err error) error {
+	name := cella.SandboxName(sessionID)
+	return &machine.LeftBehind{Err: err, Discard: func(ctx context.Context) error {
+		if _, err := c.Delete(ctx, client.KindSandbox, name); err != nil && client.CodeOf(err) != "not_found" {
+			return fmt.Errorf("delete the sandbox %s that a failed open left: %w", name, err)
+		}
+		return remove(ctx, c, secrets)
+	}}
 }
 
 // CodeSecretHostConflict is Cella's refusal of a sandbox that mounts two
