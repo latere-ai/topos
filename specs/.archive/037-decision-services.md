@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 012-permissions-and-approv
 affects: [harness/, session/, internal/decisions/, internal/toposcli/]
 effort: medium
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-11-01
 author: changkun
 ---
 
@@ -191,3 +191,18 @@ its test.
 - **What remains** is listed under Not in this spec: `toposd`'s hosted
   runners decide by the rules alone until a session records its
   organization.
+
+## Amendment, 2026-11-01: answers to network approvals
+
+A person's confirmation of a network approval ([[052-a-sessions-network]])
+is also an answer. An approval names the call whose connection raised
+it, and when `resume` settles the approval, after its
+`approval.decided`, the confirmation is sent as an answer to that call:
+`allow` as an approval, `deny` as a denial, best effort, and after the
+call's decision is sent, as for a confirmation of the call. A call that
+raised several approvals sends one answer for each confirmation. An
+allow that joins the host to the session's network answers this call
+only. A message in place of an answer is not sent, as for a call. A
+fetch outside the session's network asks as a call, so its confirmation
+is already sent as the fetch's answer. Proved by
+`harness.TestNetworkAnswersReachTheLearner`.

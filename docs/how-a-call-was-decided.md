@@ -56,6 +56,22 @@ A call a decision service decided keeps the service's `suggestion`, with
 the approval probability and the thresholds. Show the service's
 `reason` to the person, never to the agent.
 
+The service learns from the person's answers. Topos sends it these
+answers:
+
+- A person's confirmation of a call that asked, such as a fetch of a
+  host outside the session's network.
+- A person's confirmation of a network approval. The approval names the
+  call whose connection was refused, and Topos sends the answer as an
+  answer to that call. A call can cause more than one approval. Topos
+  sends one answer for each confirmation. If the person allows the host
+  for the rest of the session, the answer applies to this call only.
+
+`allow` is an approval and `deny` is a denial. Topos sends each answer
+after the call's decision. A message in place of an answer is not an
+answer. If the service does not receive an answer, the call or the
+approval continues as it would without a service.
+
 ```json
 {
   "type": "agent.tool_use",

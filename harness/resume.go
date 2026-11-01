@@ -153,14 +153,15 @@ func rememberedPatterns(log []session.Event) []string {
 	return out
 }
 
-// forwardAnswer tells a learning decider the person's answer to an asked
-// call (spec 037). It is best effort: the call is settled as it would be
-// without a decision service, whatever the decider says.
-func (t *turn) forwardAnswer(ctx context.Context, c pendingCall) {
+// forwardAnswer tells a learning decider a person's confirmation as the
+// answer to the call toolUseID (spec 037): the confirmation of an asked
+// call, or of a network approval that call's connection raised. It is
+// best effort: the call or the approval is settled as it would be without
+// a decision service, whatever the decider says.
+func (t *turn) forwardAnswer(ctx context.Context, toolUseID string, c session.UserToolConfirmation) {
 	l, ok := t.h.decider().(Learner)
 	if !ok {
 		return
 	}
-	approve := c.confirmation.Decision == session.DecisionAllow
-	_ = l.Answered(ctx, t.s, c.use.ToolUseID, approve, c.confirmation.Sender.Subject)
+	_ = l.Answered(ctx, t.s, toolUseID, c.Decision == session.DecisionAllow, c.Sender.Subject)
 }

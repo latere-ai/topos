@@ -19,6 +19,12 @@ committed: the commit log already holds that.
   answer, the rules and the risk score decide as without a service, and
   automatic verdicts are still picked for review at the service's audit
   rate. `decide` is the behavior of v0.63 to v0.65 without shadow.
+- A person's answer to a network approval goes to the decision service
+  as an answer to the call whose connection was refused, after the
+  call's decision, the same as a confirmation of the call. Each approval
+  is one answer. An allow that adds the host to the session's network
+  answers this call only. A fetch outside the network already sent its
+  confirmation as the fetch's answer.
 
 ### Deprecated
 

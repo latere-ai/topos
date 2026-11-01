@@ -316,7 +316,9 @@ func (t *turn) refusals(ctx context.Context, toolUseID string, since time.Time, 
 // machine refused appends a session.error network_unavailable before its
 // approval.decided, and the model reads that the host stays out of reach.
 // An approval nothing answered leaves the step waiting for a
-// confirmation.
+// confirmation. A learning decider is told each confirmation, after its
+// approval.decided, as an answer to the call whose connection raised it
+// (spec 037); a message in place of an answer is not one, as for a call.
 func (t *turn) settleApprovals(ctx context.Context, w *waits) error {
 	for _, a := range session.Approvals(t.events()) {
 		if !a.Open() || a.Subagent != t.thread {
@@ -343,6 +345,9 @@ func (t *turn) settleApprovals(ctx context.Context, w *waits) error {
 		}
 		if err := t.commit(ctx, e); err != nil {
 			return err
+		}
+		if a.Confirmation != nil && a.Request.ToolUseID != "" {
+			t.forwardAnswer(ctx, a.Request.ToolUseID, *a.Confirmation)
 		}
 	}
 	return nil

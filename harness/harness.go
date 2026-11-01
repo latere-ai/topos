@@ -798,7 +798,7 @@ func (t *turn) resume(ctx context.Context) error {
 			}
 		case c.use.Verdict == string(VerdictAsk):
 			if c.confirmation != nil {
-				t.forwardAnswer(ctx, c)
+				t.forwardAnswer(ctx, c.use.ToolUseID, *c.confirmation)
 			}
 			switch {
 			case c.message != nil:

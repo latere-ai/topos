@@ -406,6 +406,63 @@ func TestARefusedConnectionAsksAfterTheCall(t *testing.T) {
 	}
 }
 
+// TestNetworkAnswersReachTheLearner: a learning decider is told a
+// person's confirmation of a fetch outside the network as the fetch's
+// answer, and each confirmation of an approval a bash call's connection
+// raised as an answer to that call, after its approval.decided and whatever
+// the decider says; an approval a message settles is not an answer, as a
+// call a message settles is not (spec 037).
+func TestNetworkAnswersReachTheLearner(t *testing.T) {
+	ctx := t.Context()
+	fl := &learner{}
+	fetch := newNetEnv(t, func(c *Config) { c.Decider = fl }, allowlist(true, "docs.example.com"))
+	fetch.stub.Script(model, reply(ir.StopToolUse, fetchCall("toolu_1", "https://other.example.com/x")), reply(ir.StopEndTurn, text("read")))
+	fetch.send(ctx, "Read.")
+	if out := fetch.turn(ctx); out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("fetch outcome %+v", out)
+	}
+	fetch.confirm(ctx, session.UserToolConfirmation{ToolUseID: "toolu_1", Decision: session.DecisionAllow})
+	if out := fetch.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("after the allow %+v", out)
+	}
+	if !slices.Equal(fl.decided, []string{"toolu_1"}) || !slices.Equal(fl.answered, []string{"toolu_1"}) || !fl.approve[0] || fl.by[0] != "usr_ada" {
+		t.Fatalf("fetch: decided %v, answered %v %v by %v", fl.decided, fl.answered, fl.approve, fl.by)
+	}
+
+	l := &learner{}
+	ne := newNetEnv(t, func(c *Config) { c.Decider = l }, allowlist(true, "docs.example.com"))
+	ne.m.refused = []machine.Connection{{Host: "a.example.com", Port: 443}, {Host: "b.example.com", Port: 443}, {Host: "c.example.com", Port: 443}}
+	ne.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "bash", `{"command":"make deps"}`)), reply(ir.StopEndTurn, text("done")))
+	ne.send(ctx, "Install.")
+	if out := ne.turn(ctx); out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("outcome %+v", out)
+	}
+	var ps []session.ApprovalRequested
+	for _, e := range ne.events(ctx, session.TypeApprovalRequested) {
+		var p session.ApprovalRequested
+		if err := e.Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		ps = append(ps, p)
+	}
+	if len(ps) != 3 || len(l.answered) != 0 {
+		t.Fatalf("requests %+v, answered %v before any answer", ps, l.answered)
+	}
+	ne.confirm(ctx, session.UserToolConfirmation{ApprovalID: ps[0].ApprovalID, Decision: session.DecisionAllow})
+	ne.confirm(ctx, session.UserToolConfirmation{ApprovalID: ps[1].ApprovalID, Decision: session.DecisionDeny, Note: "use the mirror"})
+	ne.m.refused = nil
+	ne.send(ctx, "Skip the last one.")
+	if out := ne.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("after the answers %+v", out)
+	}
+	if n := len(ne.events(ctx, session.TypeApprovalDecided)); n != 3 {
+		t.Fatalf("%d approvals decided", n)
+	}
+	if !slices.Equal(l.answered, []string{"toolu_1", "toolu_1"}) || !slices.Equal(l.approve, []bool{true, false}) || !slices.Equal(l.by, []string{"usr_ada", "usr_ada"}) {
+		t.Fatalf("answered %v %v by %v", l.answered, l.approve, l.by)
+	}
+}
+
 // TestASendsNetworkReachesTheMachineBeforeTheTurn: a change an
 // authorizer's send made is given to the running machine before the
 // turn's first request, and the hosts a person allowed stay; a network

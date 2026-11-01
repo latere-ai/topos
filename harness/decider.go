@@ -146,7 +146,9 @@ func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
 
 // Learner is a Decider that also learns from the person's answers to the
 // calls it decided (spec 037). Resume tells it each confirmation it
-// settles; an error is not the session's, and the call goes on as it would.
+// settles, of an asked call or of a network approval, which answers the
+// call whose connection raised it; an error is not the session's, and the
+// call goes on as it would.
 type Learner interface {
 	Answered(ctx context.Context, s session.Session, toolUseID string, approve bool, by string) error
 }
