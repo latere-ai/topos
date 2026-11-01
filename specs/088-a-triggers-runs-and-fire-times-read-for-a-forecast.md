@@ -1,12 +1,12 @@
 ---
 title: "A trigger's runs and fire times, read for a forecast: every firing a person counts as a run is recorded with its turn's cost where the firing is recorded and where the logs are already read, one read answers an owner's triggers with their runs since a time, the mean cost of a run and the times each fires up to a time, and a trigger's createdAt is its first apply"
-status: in-progress
+status: testing
 track: core
 depends_on: [.archive/022-triggers.md, 074-one-owners-triggers-and-agents-and-an-agent-deleted.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md]
 affects: [internal/store/, internal/triggers/, internal/server/, manifest/trigger/, manifest/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-11-01
 author: changkun
 ---
 

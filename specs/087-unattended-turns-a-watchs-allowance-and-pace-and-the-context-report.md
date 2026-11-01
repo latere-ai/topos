@@ -1,12 +1,12 @@
 ---
 title: "Unattended turns, a watch's allowance and pace, and the context report: a turn a trigger began decides by the session's mode without the person's remembered allows and says so to a decision service, a trigger's weekly allowance the server enforces with skipped_budget and a proposal carries as the agent's estimate, the spend and pace it writes and tells the turn, and the context every model request records"
-status: in-progress
+status: testing
 track: core
 depends_on: [.archive/004-session-log.md, .archive/007-models.md, 010-context.md, 012-permissions-and-approvals.md, 015-api.md, .archive/022-triggers.md, .archive/037-decision-services.md, 086-proactive-agents.md]
 affects: [harness/, session/, internal/decisions/, internal/triggers/, internal/store/, internal/server/, manifest/v1/, manifest/trigger/, prompts/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-23
-updated: 2026-10-25
+updated: 2026-11-01
 author: changkun
 ---
 
