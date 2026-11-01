@@ -393,6 +393,44 @@ func TestAStartRefusedForTheRunningCeilingIsTheCallsResult(t *testing.T) {
 	}
 }
 
+// TestARunWhoseMachineIsRefusedEnds: a rollout's run whose sandbox Cella
+// refuses to create, because its owner runs as many sandboxes as the
+// ceiling allows, ends at once with stop_reason failed and
+// machine_unavailable in its detail, after the call's result and the
+// session.error: the model is not asked again, since no person attends
+// the run and its caller runs it again once a machine is free (spec 077).
+// A session of no rollout keeps the refusal as the call's result
+// (TestAStartRefusedForTheRunningCeilingIsTheCallsResult).
+func TestARunWhoseMachineIsRefusedEnds(t *testing.T) {
+	c := newCloud(t, func(s *session.Session) {
+		s.Rollout = "cel_01.main"
+		s.EndOnIdle = true
+	})
+	c.cella.Fail(cellastub.OpCreate, cellastub.Failure{Status: 422, Code: "quota_exceeded", Detail: "the owner runs 4 sandboxes of a ceiling of 4", Times: 10})
+	c.driveAfter(session.StopFailed, []session.Event{c.message("Build something.")},
+		bash("toolu_1", "pwd"), said("I've hit the sandbox limit. Let me connect to an existing one instead."), said("Done."))
+	if n := len(c.lux.Requests()); n != 1 {
+		t.Fatalf("the model was asked %d times, want once: the run went on after its machine was refused", n)
+	}
+	var se session.SessionError
+	if errs := c.events(session.TypeSessionError); len(errs) != 1 || errs[0].Decode(&se) != nil || se.Code != machine.CodeUnavailable {
+		t.Fatalf("session.error %+v", errs)
+	}
+	var res session.ToolResult
+	if results := c.events(session.TypeToolResult); len(results) != 1 || results[0].Decode(&res) != nil || !res.IsError {
+		t.Fatalf("the refused call's result: %+v", results)
+	}
+	s, err := c.st.Get(t.Context(), c.s.ID)
+	if err != nil || s.Status != session.StatusEnded || s.StopReason != session.StopFailed {
+		t.Fatalf("the run after the refusal: %s %s %v", s.Status, s.StopReason, err)
+	}
+	statuses := c.events(session.TypeSessionStatus)
+	var last session.SessionStatus
+	if err := statuses[len(statuses)-1].Decode(&last); err != nil || last.Detail != machine.CodeUnavailable {
+		t.Fatalf("the closing status %+v %v", last, err)
+	}
+}
+
 // TestASessionsEndDeletesTheSandboxAFailedOpenLeft: a session whose
 // sandbox Cella created and whose probe then failed, as when the
 // environment's API drops its connections, opened no machine, yet the

@@ -106,6 +106,70 @@ func TestAMachineThatCannotOpenIsTheCallsResult(t *testing.T) {
 	}
 }
 
+// unavailableRun is a rollout's run whose machine, opened on demand,
+// cannot be had: Cella refuses its sandbox.
+func unavailableRun(t *testing.T, mut func(*Config)) *env {
+	t.Helper()
+	return setupSession(t, func(c *Config) {
+		c.Machine = machine.Defer(t.Context(), machine.KindCella, func(context.Context) (machine.Machine, error) {
+			return nil, errors.New("Cella refused to create the sandbox: You have reached your limit of running sandboxes.")
+		})
+		if mut != nil {
+			mut(c)
+		}
+	}, func(s *session.Session) { s.Rollout = "cel_01.main" })
+}
+
+// TestARunsUnavailableMachineEndsIt: in a rollout's run, a call whose
+// machine cannot be opened is answered and recorded as in any session,
+// the step's other calls are answered, and then the turn ends the session
+// failed with machine_unavailable in its detail, without asking the model
+// again (spec 077). TestAMachineThatCannotOpenIsTheCallsResult is a
+// session of no rollout, whose model goes on.
+func TestARunsUnavailableMachineEndsIt(t *testing.T) {
+	e := unavailableRun(t, nil)
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_a", "echo", `{"text":"a"}`), call("toolu_b", "echo", `{"text":"b"}`)),
+		reply(ir.StopEndTurn, text("Let me connect to an existing one instead.")),
+	)
+	e.send(ctx, "Look.")
+	if out := e.turn(ctx); out.Status != session.StatusEnded || out.StopReason != session.StopFailed || out.Detail != machine.CodeUnavailable {
+		t.Fatalf("outcome %+v", out)
+	}
+	if n := len(e.stub.Requests()); n != 1 {
+		t.Fatalf("the model was asked %d times after the machine was refused", n)
+	}
+	if n := len(e.events(ctx, session.TypeToolResult)); n != 2 || len(e.echo.ran()) != 0 {
+		t.Fatalf("%d results, %d runs", n, len(e.echo.ran()))
+	}
+	var se session.SessionError
+	if errs := e.events(ctx, session.TypeSessionError); len(errs) == 0 || errs[0].Decode(&se) != nil || se.Code != machine.CodeUnavailable {
+		t.Fatalf("session.error %+v", errs)
+	}
+}
+
+// TestARunsSubagentEndsTheRunOnAnUnavailableMachine: a subagent of a run
+// shares the run's machine, so a call of its that cannot open it ends the
+// subagent's turn and then the run's, without asking either model again.
+func TestARunsSubagentEndsTheRunOnAnUnavailableMachine(t *testing.T) {
+	e := unavailableRun(t, helperSub)
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_a", ToolAgent, `{"subagent":"helper","task":"Count the files."}`)),
+		reply(ir.StopToolUse, call("toolu_h", "echo", `{"text":"h"}`)),
+		reply(ir.StopEndTurn, text("I will go on without the machine.")),
+		reply(ir.StopEndTurn, text("The helper could not count.")),
+	)
+	e.send(ctx, "Count.")
+	if out := e.turn(ctx); out.Status != session.StatusEnded || out.StopReason != session.StopFailed || out.Detail != machine.CodeUnavailable {
+		t.Fatalf("outcome %+v", out)
+	}
+	if n := len(e.stub.Requests()); n != 2 {
+		t.Fatalf("the models were asked %d times, want the lead's and the helper's first", n)
+	}
+}
+
 // TestACoreRefusingTheMachineForSpendStopsTheTurn: a machine whose core
 // refuses it for spend stops the turn with budget, as a call the core
 // refuses does.

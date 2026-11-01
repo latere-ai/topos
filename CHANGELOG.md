@@ -10,6 +10,33 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A rollout's run ends when its machine is unavailable.** In a session
+  created with `rollout`, a tool call whose machine cannot be opened with
+  `machine_unavailable`, such as a sandbox Cella refuses because its owner
+  runs as many sandboxes as their limit allows, is answered and recorded
+  as before; once the step's other calls are answered, the session ends
+  with `stop_reason` `failed` and `detail` `machine_unavailable`, and the
+  model is not asked again. No person attends a run to resume it, and its
+  caller counts it failed for the machine whatever the agent does next,
+  so the caller can run it again sooner and nothing is spent on an agent
+  working around the missing machine. A subagent of a run that meets it
+  ends the run the same way. A session of no rollout keeps the failure as
+  the call's result, and its agent goes on.
+
+### Fixed
+
+- A session's end deletes the sandbox a failed machine open left. When
+  Cella created a session's sandbox and the runner then could not reach
+  it, as when Cella's environment briefly drops its connections, the
+  session opened no machine, and its end left the sandbox running until
+  Cella stopped it at the environment's idle stop. Meanwhile it held a
+  place in its owner's limit of running sandboxes, so the owner's next
+  session was refused `machine_unavailable` with `quota_exceeded`. The
+  end now deletes that sandbox and the Secrets applied for it, as it does
+  an open machine's.
+
 ## v0.64.1 - 2026-11-01
 
 ### Fixed
@@ -17,15 +44,6 @@ committed: the commit log already holds that.
 - The release publishes its image. The v0.64.0 release built and signed
   the image but stopped at its attestation, which could not find the
   registry login, so v0.64.0 has no published image; use this release.
-- A session's end deletes the sandbox a failed machine open left. When
-  Cella created a session's sandbox and the runner then could not reach
-  it, as when Cella's environment briefly drops its connections, the
-  session opened no machine, and its end left the sandbox running until
-  Cella stopped it for idleness, after the environment's idle stop.
-  Meanwhile it held a place in its owner's limit of running sandboxes, so
-  the owner's next session was refused `machine_unavailable` with
-  `quota_exceeded`. The end now deletes that sandbox and the Secrets
-  applied for it, as it does an open machine's.
 
 ## v0.64.0 - 2026-11-01
 

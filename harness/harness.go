@@ -604,6 +604,10 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 	if t.s.EndOnIdle && reason == session.StopEndTurn && session.PendingWake(t.events()) == nil && !session.PendingWaiting(t.events()) {
 		status, reason = session.StatusEnded, session.StopCompleted
 	}
+	// A run's turn that failed ends its session (runUnopened).
+	if reason == session.StopFailed {
+		status = session.StatusEnded
+	}
 	cp, cerr := t.checkpoint(ctx)
 	if cerr != nil {
 		se, err := t.sessionError(CodeCheckpointFailed, cerr.Error(), true, "")
@@ -1962,6 +1966,9 @@ func (t *turn) callsStopped(ctx context.Context, err error) error {
 	if w, ok := errors.AsType[*machine.Waiting](err); ok {
 		return t.machineWaiting(ctx, w)
 	}
+	if ru, ok := errors.AsType[*runUnopened](err); ok {
+		return t.finish(ctx, session.StopFailed, ru.code)
+	}
 	code, spent := models.SpendRefused(err)
 	if !spent {
 		return err
@@ -1984,9 +1991,13 @@ func isPause(err error) bool {
 
 // isSpent reports whether a call's error stops the turn once the step's
 // calls are answered, beside the call's own result: a core's refusal for
-// spend, or a person's computer the session has to wait for (spec 080).
+// spend, a person's computer the session has to wait for (spec 080), or
+// a run's machine that could not be opened (runUnopened).
 func isSpent(err error) bool {
 	if _, waiting := errors.AsType[*machine.Waiting](err); waiting {
+		return true
+	}
+	if _, run := errors.AsType[*runUnopened](err); run {
 		return true
 	}
 	_, spent := models.SpendRefused(err)
@@ -2208,7 +2219,8 @@ const MessageMachineRefused = "The computer did not allow this session."
 // refusal for spend stops the turn with budget as a tool's does; any
 // other failure is appended as a session.error with its code and is the
 // call's result, so the model can go on without the machine or try
-// again.
+// again, except in a rollout's run, which machine_unavailable ends
+// (runUnopened).
 func (t *turn) unopened(ctx context.Context, err error) (tools.Result, error) {
 	// A person's computer that is offline, or whose owner has not allowed
 	// the session yet, answers the call so and stops the turn to wait for
@@ -2253,8 +2265,30 @@ func (t *turn) unopened(ctx context.Context, err error) (tools.Result, error) {
 	if cerr := t.commit(ctx, e); cerr != nil {
 		return tools.Result{}, cerr
 	}
-	return tools.Text(tools.OutcomeError, prompts.Render(prompts.CallMachineUnavailable, prompts.Data{"Error": err.Error()})), nil
+	res := tools.Text(tools.OutcomeError, prompts.Render(prompts.CallMachineUnavailable, prompts.Data{"Error": err.Error()}))
+	if t.s.Isolated() && code == machine.CodeUnavailable {
+		return res, &runUnopened{code: code, err: err}
+	}
+	return res, nil
 }
+
+// runUnopened stops the turn of a rollout's run whose machine could not be
+// opened (spec 077): no person attends the run to resume it once a machine
+// is free, and its caller counts it failed for the machine whatever the
+// model does next, so the turn ends the session with stop_reason failed
+// and the code in its detail once the step's calls are answered, rather
+// than spending on a model that goes on without the machine. The caller
+// sees the end and runs the run again; the end lets go of what the failed
+// open left (machine.LeftBehind). A session of no rollout keeps the
+// failure as the call's result, and its model goes on.
+type runUnopened struct {
+	code string
+	err  error
+}
+
+func (e *runUnopened) Error() string { return e.code + ": " + e.err.Error() }
+
+func (e *runUnopened) Unwrap() error { return e.err }
 
 // settle turns what a tool returned into the result the model sees: a
 // cancel that cut the call short is canceled, a tool's own error is the

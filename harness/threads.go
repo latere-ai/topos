@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -740,6 +741,11 @@ func (t *turn) drive(ctx context.Context) (tools.Result, error) {
 		return tools.Result{}, &errPause{reason: out.StopReason}
 	}
 	stopped := prompts.Render(prompts.SubagentStopped, prompts.Data{"Thread": t.thread, "Reason": string(out.StopReason), "Detail": out.Detail})
+	// A run's thread that met an unavailable machine stops the run's turn
+	// too, since the thread and the run share the one machine.
+	if out.StopReason == session.StopFailed {
+		return tools.Text(tools.OutcomeError, stopped), &runUnopened{code: out.Detail, err: errors.New(stopped)}
+	}
 	return tools.Text(tools.OutcomeError, stopped), nil
 }
 
