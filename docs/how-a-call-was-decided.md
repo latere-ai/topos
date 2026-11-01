@@ -33,7 +33,7 @@ alone, as for a value your client does not know.
 | `memory` | a call that reaches memory folders alone runs ([memory-folders.md](memory-folders.md)) | none |
 | `question` | a question tool's call is itself put to a person ([questions.md](questions.md)) | none |
 | `learned` | a decision service's suggestion decided | the service's model, such as `learned/3` |
-| `fallback` | the decision service did not answer, so the call asks | none |
+| `fallback` | in the mode `decide`, the decision service did not answer, so the call asks. In `learned` and `shadow`, the rules decide such a call, and the call records their layer | none |
 
 A rule is named by what the rule says: a pattern is the organization's
 or the person's own text, never the call's input.
@@ -44,17 +44,31 @@ Every value but `learned` is a rule: the same call under the same
 settings is decided the same way. `learned` appears only when a decision
 service's suggestion decided the call, in `progressive`, in the modes
 `decide` and `learned` (`TOPOS_DECISIONS_MODE`,
-[configuration.md](configuration.md)). In `learned`, the service decides
-only where it has evidence about the person: its `allow`, its `block`,
-and an `ask` on answers that disagree. Where it has too few answers, the
-call records the rule or the score that decided it, with the suggestion
-beside it. In `confirm`, in `shadow`, and on a person's own computer, the
-service only suggests: the call records the rule that decided it, and its
-`suggestion` beside it.
+[configuration.md](configuration.md)). In `confirm`, in `shadow`, and on
+a person's own computer, the service only suggests. The call records the
+rule that decided it, and its `suggestion` beside it.
+
+In `learned`, the service decides only where it has evidence about the
+person: its `allow`, its `block`, and an `ask` on answers that disagree.
+Where it has too few answers, the call records the rule or the score that
+decided it, with the suggestion beside it. If the service does not
+answer, the call records the rule or the score that decided it, with no
+suggestion.
 
 A call a decision service decided keeps the service's `suggestion`, with
 the approval probability and the thresholds. Show the service's
 `reason` to the person, never to the agent.
+
+A `suggestion` also records how much the person's answers settle it, if
+the service sends this:
+
+- `ask_kind`: for an `ask`, `unsure` if the person gave too few answers,
+  or `split` if the answers disagree.
+- `evidence_ratio`: how much of the suggestion the person's answers
+  settle.
+
+An older service sends neither field, and an event that an older Topos
+wrote has neither. Show such a suggestion without them.
 
 The service learns from the person's answers. Topos sends it these
 answers:

@@ -10,6 +10,26 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A suggestion records why it asks.** The `suggestion` of an
+  `agent.tool_use` keeps the decision service's `ask_kind` and
+  `evidence_ratio` when the service sends them: for an `ask`, `unsure`
+  (too few answers) or `split` (answers that disagree), and how much the
+  person's answers settle the suggestion. A client can show why a call
+  asks without asking the service. A service that sends neither, and an
+  event written before this release, leave both out. See
+  `docs/how-a-call-was-decided.md`.
+
+### Fixed
+
+- **The documents say what each `TOPOS_DECISIONS_MODE` does when the
+  decision service fails.** Only `decide` makes the call wait for a
+  person, recorded as `fallback`. In `learned` the rules and the risk
+  score decide with no random review, and in `shadow` the rules decide.
+  `topos run` does not read the mode and always decides as `decide`. The
+  behavior did not change.
+
 ## v0.67.0 - 2026-11-01
 
 ### Added

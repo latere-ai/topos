@@ -94,6 +94,8 @@ and the runner refuse that configuration at their start, and a sandbox
 whose connections token would share a host with another of its secrets
 opens without it. An agent that names `history` reads back what its
 context cleared or summarized, from the session's log as it was written.
+A decision service's suggestion on a call keeps the service's
+`ask_kind` and `evidence_ratio`, so a client can show why a call asks.
 
 Not built yet: write-only credentials, memory stores, MCP servers an
 agent's definition names, external runners and handoff, the event sink,
