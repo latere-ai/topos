@@ -540,3 +540,38 @@ func TestShadowLeavesProgressiveToTheRules(t *testing.T) {
 		}
 	}
 }
+
+// The decision service's suggestion is recorded as having decided only
+// when it did: in progressive, outside shadow. A failure is a fallback,
+// and in shadow and confirm the rules' layer stands.
+func TestDecidedByTheService(t *testing.T) {
+	ctx := context.Background()
+	call := bash(harness.ModeProgressive, "make")
+	_, out, err := newDecider(t, &service{next: allowSuggestion()}, 0.99).Decide(ctx, call)
+	if err != nil || out.DecidedBy != session.DecidedLearned || out.Rule != allowSuggestion().Source {
+		t.Errorf("progressive: %+v, %v", out, err)
+	}
+	_, out, _ = newDecider(t, &service{status: http.StatusServiceUnavailable}, 0.99).Decide(ctx, call)
+	if out.DecidedBy != session.DecidedFallback || out.Verdict != harness.VerdictAsk {
+		t.Errorf("a failing service: %+v", out)
+	}
+	_, want, _ := harness.Rules{}.Decide(ctx, call)
+	s := &service{next: allowSuggestion()}
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+	d, err := New(Options{URL: srv.URL, Token: "tok", Shadow: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ = d.Decide(ctx, call); out.DecidedBy != want.DecidedBy || out.DecidedBy == session.DecidedLearned {
+		t.Errorf("shadow: decided by %q, want the rules' %q", out.DecidedBy, want.DecidedBy)
+	}
+	settle(d)
+	confirm := bash(harness.ModeConfirm, "make")
+	_, wantConfirm, _ := harness.Rules{}.Decide(ctx, confirm)
+	d2 := newDecider(t, &service{next: allowSuggestion()}, 0.99)
+	if _, out, _ = d2.Decide(ctx, confirm); out.DecidedBy != wantConfirm.DecidedBy || out.DecidedBy == session.DecidedLearned {
+		t.Errorf("confirm: decided by %q, want the rules' %q", out.DecidedBy, wantConfirm.DecidedBy)
+	}
+	settle(d2)
+}

@@ -269,13 +269,13 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 		if perr != nil {
 			d.report(perr)
 			v := verdict.OnFailure(verdict.Allow)
-			out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1}
+			out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1, DecidedBy: session.DecidedFallback}
 			d.record(ctx, a, out, SourceProgressive, false)
 			return risk, out, nil
 		}
 		u := d.rand()
 		v, prob := verdict.Decide(verdict.Verdict(p.Verdict), verdict.Allow, p.AuditRate, u)
-		out := harness.Decision{Verdict: v, Reason: reason(p, v), ReviewProbability: prob, Draw: &u, Suggestion: suggestion(p)}
+		out := harness.Decision{Verdict: v, Reason: reason(p, v), ReviewProbability: prob, Draw: &u, Suggestion: suggestion(p), DecidedBy: session.DecidedLearned, Rule: p.Source}
 		d.record(ctx, a, out, SourceProgressive, true)
 		return risk, out, nil
 	default:
