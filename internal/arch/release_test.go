@@ -4,6 +4,7 @@
 package arch
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -79,7 +80,7 @@ func TestTheReleaseImageSharesTheDevelopersRuntime(t *testing.T) {
 	helpers := strings.TrimRight(config.DefaultMachineHelpers, "/") + "/"
 	for _, want := range []string{
 		"\nARG TARGETARCH\nCOPY dist/toposd_linux_${TARGETARCH} /usr/local/bin/toposd\n",
-		"\nCOPY dist/helpers/ " + helpers + "\n",
+		"\nCOPY dist/topos-machine-* " + helpers + "\n",
 	} {
 		if !strings.Contains(release, want) {
 			t.Errorf("Dockerfile.ci lacks %q", strings.TrimSpace(want))
@@ -95,21 +96,29 @@ func TestTheReleaseImageSharesTheDevelopersRuntime(t *testing.T) {
 	}
 }
 
-// workflow is a GitHub Actions workflow, read for its jobs' order, their
-// permissions and their commands.
+// workflow is a GitHub Actions workflow, read for its jobs' order, the
+// reusable workflows they call, their inputs and their permissions.
 type workflow struct {
-	Env  map[string]string `yaml:"env"`
 	Jobs map[string]struct {
 		Needs       any               `yaml:"needs"`
 		Uses        string            `yaml:"uses"`
+		With        map[string]string `yaml:"with"`
 		Permissions map[string]string `yaml:"permissions"`
-		Steps       []struct {
-			Name string            `yaml:"name"`
-			Uses string            `yaml:"uses"`
-			Run  string            `yaml:"run"`
-			Env  map[string]string `yaml:"env"`
-		} `yaml:"steps"`
 	} `yaml:"jobs"`
+}
+
+// readRelease is the release workflow, decoded.
+func readRelease(t *testing.T) (workflow, string) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root(t), ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w workflow
+	if err := yaml.Unmarshal(b, &w); err != nil {
+		t.Fatal(err)
+	}
+	return w, string(b)
 }
 
 // needs is a job's needs as a list, whether written as one name or many.
@@ -129,52 +138,86 @@ func needs(v any) []string {
 	return nil
 }
 
+// stagePrefix is where latere-ai/ci keeps the shared image release
+// stages; a job that calls one names it as stagePrefix + "<file>@<ref>".
+const stagePrefix = "latere-ai/ci/.github/workflows/"
+
 // TestReleasePublishesUnderTheOwnersNamespace is spec 028's release
-// order and namespace, read from the workflow: the image is pushed under
-// the account that pushed the tag, lowered, and no fixed owner; it is
-// pushed by digest in the job that builds it, after the tag's commit
-// passed verify, and tagged only in a later job; the GitHub release comes
-// last, from the family's shared notes pipeline. Only the jobs that write
-// packages or contents hold that permission.
+// order and namespace, read from the workflow. The build stage of
+// latere-ai/ci, after the tag's commit passed verify, builds the image
+// topos from Dockerfile.ci, pushes it by digest under the account that
+// pushed the tag, lowered, and checks it reports the tag's version; no
+// input names a namespace, so a fork's tag publishes under the fork. The
+// publish stage then tags those digests and publishes the release, and
+// the verify stage checks the published release. All three come from one
+// ref of ci, signing and tagging happen in the stages alone, and only the
+// build and publish jobs hold a write permission.
 func TestReleasePublishesUnderTheOwnersNamespace(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join(root(t), ".github", "workflows", "release.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var w workflow
-	if err := yaml.Unmarshal(b, &w); err != nil {
-		t.Fatal(err)
-	}
-	if w.Env["IMAGE"] != "topos" || w.Env["REGISTRY"] != "ghcr.io" {
-		t.Fatalf("the workflow publishes %s/%s, want spec 028's image topos", w.Env["REGISTRY"], w.Env["IMAGE"])
-	}
-	build, publish, release := w.Jobs["build"], w.Jobs["publish"], w.Jobs["release"]
-	if !slices.Equal(needs(build.Needs), []string{"gate-green"}) || !slices.Equal(needs(publish.Needs), []string{"build"}) || !slices.Equal(needs(release.Needs), []string{"publish"}) {
-		t.Fatalf("the order is build after %v, publish after %v, release after %v; want gate-green, build, publish", build.Needs, publish.Needs, release.Needs)
-	}
-	var owner, pushed, tagged bool
-	for _, s := range build.Steps {
-		owner = owner || (strings.Contains(s.Run, "${OVERRIDE:-$GITHUB_REPOSITORY_OWNER}") && strings.Contains(s.Run, "tr '[:upper:]' '[:lower:]'"))
-		pushed = pushed || (strings.Contains(s.Run, "-f Dockerfile.ci") && strings.Contains(s.Run, "name=${REGISTRY}/${OWNER}/${IMAGE},push-by-digest=true"))
-		if strings.Contains(s.Run, "-t ") || strings.Contains(s.Run, "imagetools create") {
-			t.Errorf("the build job tags the image in %q; only publish tags it", s.Name)
+	w, text := readRelease(t)
+	build, publish, verify := w.Jobs["build"], w.Jobs["publish"], w.Jobs["verify"]
+
+	ref := ""
+	for name, file := range map[string]string{"build": "image-build.yml", "publish": "image-publish.yml", "verify": "release-verify.yml"} {
+		uses := w.Jobs[name].Uses
+		at, ok := strings.CutPrefix(uses, stagePrefix+file+"@")
+		if !ok || at == "" {
+			t.Fatalf("the %s job calls %q, want %s%s@<ref>", name, uses, stagePrefix, file)
+		}
+		if ref == "" {
+			ref = at
+		} else if at != ref {
+			t.Errorf("the stages come from different refs of ci: %s and %s", ref, at)
 		}
 	}
-	for _, s := range publish.Steps {
-		tagged = tagged || strings.Contains(s.Run, `imagetools create -t "${REGISTRY}/${OWNER}/${IMAGE}:${GITHUB_REF_NAME}"`)
+	if len(needs(build.Needs)) != 0 || !slices.Equal(needs(publish.Needs), []string{"build"}) || !slices.Equal(needs(verify.Needs), []string{"publish"}) {
+		t.Fatalf("the order is build after %v, publish after %v, verify after %v; want build first, then publish, then verify", build.Needs, publish.Needs, verify.Needs)
 	}
-	if !owner || !pushed || !tagged {
-		t.Errorf("the namespace is the owner's: %v; the build pushes Dockerfile.ci by digest: %v; publish tags the digest with the tag: %v", owner, pushed, tagged)
+	if v := build.With["verify_workflow"]; v != "" && v != "verify.yml" {
+		t.Errorf("the build stage waits for %s, want the per-push verify.yml", v)
 	}
-	if strings.Contains(strings.ToLower(string(b)), "ghcr.io/latere") {
+
+	var image struct {
+		Name          string `json:"name"`
+		Dockerfile    string `json:"dockerfile"`
+		VersionArgs   string `json:"version_args"`
+		VersionExpect string `json:"version_expect"`
+	}
+	if err := json.Unmarshal([]byte(build.With["image_1"]), &image); err != nil {
+		t.Fatalf("image_1 is not JSON: %v", err)
+	}
+	if image.Name != "topos" || image.Dockerfile != "Dockerfile.ci" {
+		t.Errorf("the build stage builds %s from %s, want spec 028's image topos from Dockerfile.ci", image.Name, image.Dockerfile)
+	}
+	if image.VersionArgs != "-version" || image.VersionExpect != "toposd {tag} (" {
+		t.Errorf("the candidate is asked %q and must print %q, want -version and %q", image.VersionArgs, image.VersionExpect, "toposd {tag} (")
+	}
+	if publish.With["images"] != "${{ needs.build.outputs.images }}" {
+		t.Errorf("publish tags %q, want the digests the build stage pushed", publish.With["images"])
+	}
+	if verify.With["images"] != "topos" {
+		t.Errorf("verify checks %q, want the image topos", verify.With["images"])
+	}
+
+	for name, job := range w.Jobs {
+		if job.With["namespace"] != "" {
+			t.Errorf("the %s job names the namespace %q; a fork's tag would publish there", name, job.With["namespace"])
+		}
+	}
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "ghcr.io/latere") {
 		t.Error("the workflow names a fixed owner's namespace; a fork's tag would publish there")
 	}
-	if !strings.HasPrefix(release.Uses, "latere-ai/ci/.github/workflows/notes-release.yml@") {
-		t.Errorf("the release job is %q, want the shared notes pipeline", release.Uses)
+	for _, own := range []string{"cosign", "anchore/sbom-action", "actions/attest-", "imagetools"} {
+		if strings.Contains(lower, own) {
+			t.Errorf("the workflow names %s; signing, attesting and tagging are the stages'", own)
+		}
 	}
 	for name, job := range w.Jobs {
-		writes := job.Permissions["packages"] == "write" || job.Permissions["contents"] == "write"
-		if writes != (name == "build" || name == "publish" || name == "release") {
+		writes := false
+		for _, level := range job.Permissions {
+			writes = writes || level == "write"
+		}
+		if writes != (name == "build" || name == "publish") {
 			t.Errorf("the %s job holds %v", name, job.Permissions)
 		}
 	}
@@ -188,32 +231,24 @@ var helperPlatforms = []string{"linux/amd64", "linux/arm64", "darwin/amd64", "da
 // TestTheReleaseBuildsTheHelperForEveryPlatform is spec 080's release
 // rule: the release workflow and the developer image each build
 // topos-machine for every platform of helperPlatforms, under the name
-// the server reads a build by, topos-machine-<os>-<arch>.
+// the server reads a build by, topos-machine-<os>-<arch>. The release
+// writes the binaries into dist/, flat, where Dockerfile.ci copies them
+// from and the publish stage attaches every file to the release.
 func TestTheReleaseBuildsTheHelperForEveryPlatform(t *testing.T) {
-	dir := root(t)
-	b, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "release.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var w workflow
-	if err := yaml.Unmarshal(b, &w); err != nil {
-		t.Fatal(err)
-	}
-	var build string
-	for _, job := range w.Jobs {
-		for _, step := range job.Steps {
-			if strings.Contains(step.Run, "./cmd/topos-machine") {
-				build = step.Run
-			}
-		}
-	}
-	docker, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	w, _ := readRelease(t)
+	build := w.Jobs["build"].With["archives_command"]
+	docker, err := os.ReadFile(filepath.Join(root(t), "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for name, text := range map[string]string{"release.yml": build, "Dockerfile": string(docker)} {
 		if !strings.Contains(text, "for platform in "+strings.Join(helperPlatforms, " ")) || !strings.Contains(text, "topos-machine-${os}-${arch}") && !strings.Contains(text, "topos-machine-$os-$arch") {
 			t.Errorf("%s does not build the helper for %v as topos-machine-<os>-<arch>:\n%s", name, helperPlatforms, text)
+		}
+	}
+	for _, out := range []string{`-o "dist/toposd_linux_${arch}" ./cmd/toposd`, `-o "dist/topos-machine-${os}-${arch}" ./cmd/topos-machine`} {
+		if !strings.Contains(build, out) {
+			t.Errorf("the release's archives command lacks %q, the path Dockerfile.ci copies from:\n%s", out, build)
 		}
 	}
 }

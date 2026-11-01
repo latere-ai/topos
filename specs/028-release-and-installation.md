@@ -6,7 +6,7 @@ depends_on: [002-scaffold-and-configuration.md, 006-identity.md, 025-task-suite.
 affects: [Dockerfile, deploy/, examples/, docs/install.md, internal/check/, .github/workflows/, CHANGELOG.md]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-11-01
 author: changkun
 ---
 
@@ -56,14 +56,17 @@ never in the upstream's.
 
 ### The release job
 
-The image job is built: on a `v*` tag whose commit passed verify, the
-pipeline compiles `toposd` for `linux/amd64` and `linux/arm64` and the
-`topos-machine` helper for both, builds the image `topos` from them with
+The image job is built, on latere-ai/ci's shared image release stages:
+on a `v*` tag whose commit passed verify, the pipeline compiles `toposd`
+for `linux/amd64` and `linux/arm64` and the `topos-machine` helper for
+linux and darwin on both, builds the image `topos` from them with
 `Dockerfile.ci`, whose runtime stage is the developer `Dockerfile`'s byte
 for byte, pushes it by digest under no tag, checks that it reports the
 tag's version, signs it and attests its bill of materials and its
-provenance, then tags the digest and creates the release notes. The rest
-of this section is not built yet.
+provenance, then tags the digest, publishes the release with its notes,
+the binaries, the bill of materials and signed checksums over them, and
+checks the published release from a runner with no checkout. The rest of
+this section is not built yet.
 
 The pipeline builds the artifacts once, then runs, against the exact
 commit and the built image: the gate, the e2e, postgres and cella tiers
@@ -114,11 +117,11 @@ deployment, which lives in the operator's overlay.
 |---|---|---|
 | The installation document is walked in CI and a session runs to `end_turn` against the stub Lux | the `install` job, `TestInstallDocumentWalks` | not built |
 | `topos` builds for the `windows/amd64` archive, and the module passes `go vet` for it | `machine/host.TestTheModuleBuildsForWindows`, which cross-compiles from the Unix runner; no Windows runner is available, so no Windows binary runs in CI | built |
-| A release built from a fork publishes under the fork's namespace | `internal/arch.TestReleasePublishesUnderTheOwnersNamespace` over the workflow, which also holds the order: verify green, the image pushed by digest, tagged only after, the notes last | built for the image `topos`; `topos-host` and the archives are not built |
+| A release built from a fork publishes under the fork's namespace | `internal/arch.TestReleasePublishesUnderTheOwnersNamespace` over the workflow, which also holds the order: verify green, the image pushed by digest, tagged and released only after, then the release verified | built for the image `topos`; `topos-host` and the archives are not built |
 | `toposd check` prints one line per requirement and exits 1 when any fails | `TestCheckReportsEveryRequirement` | not built |
 | The release job refuses to publish when the bar or the conformance suite fails | `TestReleaseStopsOnFailedSuite` over the workflow | not built |
 | No released artifact names a Latere host or an installation | `TestNoLatereCoordinatesInReleasedArchives` over the built archives and image layers | not built |
-| Every image and archive has provenance and an SBOM | `TestArtifactsAreAttested` | not built; the image `topos` is signed and carries both attestations, and no archive is published yet |
+| Every image and archive has provenance and an SBOM | `TestArtifactsAreAttested` | not built; the image `topos` is signed and carries both attestations, and the release attaches its binaries under signed checksums, but no archive yet |
 
 ## Outcome
 

@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The release image of spec 028: the runtime stage of the developer image,
-# with the binaries the release pipeline built, attested and archived from
-# the tag copied in rather than compiled here. buildx sets TARGETARCH per
-# platform, so each image of the index carries its own architecture's
-# toposd; every image carries the helper builds of both architectures a
-# sandbox may run on.
+# with the binaries the release pipeline built from the tag into dist/, and
+# attaches to the release, copied in rather than compiled here. buildx sets
+# TARGETARCH per platform, so each image of the index carries its own
+# architecture's toposd; every image carries the helper builds of every
+# platform a machine may run on.
 
 # >>> shared runtime base <<<
 # toposd forks no binary of its own on the server roles, so the runtime
@@ -21,5 +21,5 @@ USER nonroot:nonroot
 # <<< shared runtime base >>>
 ARG TARGETARCH
 COPY dist/toposd_linux_${TARGETARCH} /usr/local/bin/toposd
-COPY dist/helpers/ /usr/local/lib/topos/
+COPY dist/topos-machine-* /usr/local/lib/topos/
 ENTRYPOINT ["/usr/local/bin/toposd"]

@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **Releases are built, signed and published by the shared release stages in latere-ai/ci.** The image signature names latere-ai/ci's `image-build.yml` run for latere-ai/topos; releases before this one name this repository's own `release.yml`. The release now attaches the binaries the image `topos` carries, `toposd` for linux/amd64 and linux/arm64 and the `topos-machine` helper for linux and darwin on amd64 and arm64, with the image's bill of materials and a `checksums.txt` over all of them, signed by latere-ai/ci's `image-publish.yml` run for latere-ai/topos. The release workflow checks every release it publishes from a runner with no checkout of the repository.
+
 ## v0.62.0 - 2026-10-31
 
 ### Added
