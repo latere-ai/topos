@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.66.0 - 2026-11-01
+
 ### Added
 
 - `TOPOS_DECISIONS_MODE`: `shadow`, `learned` or `decide`. In `learned`,
