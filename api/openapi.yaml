@@ -2575,6 +2575,10 @@ components:
           $ref: "#/components/schemas/Suggestion"
         attended:
           type: boolean
+        decided_by:
+          type: string
+        decided_by_rule:
+          type: string
     AgentVersion:
       type: object
       required:

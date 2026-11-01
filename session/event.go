@@ -245,6 +245,16 @@ type AgentToolUse struct {
 	// a trigger's message began, which nobody watches (spec 087); nil on
 	// an event written before it.
 	Attended *bool `json:"attended,omitempty"`
+	// DecidedBy is the layer that decided the call, one of [Decided]
+	// (spec 012); empty on an event written before it.
+	DecidedBy string `json:"decided_by,omitempty"`
+	// DecidedByRule names the rule within that layer where one applies:
+	// the always-confirm, always-allow or remembered pattern that matched,
+	// "memory" for the always-confirm feature of memory, the tool that held
+	// the call, the score's band (below_flag_at, flag_at, ask_at,
+	// block_at), or the decision service's model. It holds no text of the
+	// call's input beyond what a pattern itself says.
+	DecidedByRule string `json:"decided_by_rule,omitempty"`
 }
 
 // Spill names where the rest of a capped tool output went.
