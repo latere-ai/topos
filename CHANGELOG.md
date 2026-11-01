@@ -10,6 +10,17 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- `agent.tool_use` records which layer decided the call, `decided_by`:
+  `network`, `always_confirm`, `tool`, `plan`, `read_only`,
+  `always_allow`, `remembered`, `sandbox`, `score`, `confirm`, `memory`,
+  `question`, `learned` or `fallback`; and the rule within it,
+  `decided_by_rule`: the pattern that matched, the tool that held the
+  call, the score's band, or the decision service's model (spec 012). A
+  client can tell a rule from a learned decision without reading the
+  reason.
+
 ### Changed
 
 - **A rollout's run ends when its machine is unavailable.** In a session

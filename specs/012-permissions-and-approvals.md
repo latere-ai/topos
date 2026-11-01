@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-29
+updated: 2026-11-01
 author: changkun
 ---
 
@@ -195,6 +195,38 @@ answer, which is the approve and deny record a learned threshold needs;
 nothing in the core sends that record anywhere, and its use outside
 the session is the person's choice.
 
+### Which layer decided
+
+Amended 2026-11-01. A client that shows a person why a call ran, waited
+or was stopped needs to tell a rule from a learned decision, and the
+free-text reason does not say which. Each `agent.tool_use` records the
+layer that decided the call as `decided_by`, one of a closed set, and
+the rule within it as `decided_by_rule` where one applies:
+
+| `decided_by` | The layer | `decided_by_rule` |
+|---|---|---|
+| `network` | the session's network decided a `web_fetch` ([[052-a-sessions-network]]) | none |
+| `always_confirm` | a pattern of `always_confirm` matched | the pattern, or `memory` for the memory feature |
+| `tool` | the call's tool holds it for a person | the tool's name |
+| `plan` | `plan` blocked a call that changes something | none |
+| `read_only` | the call reads and changes nothing | none |
+| `always_allow` | a pattern of `always_allow` matched | the pattern |
+| `remembered` | a pattern the person allowed earlier in the session matched | the pattern |
+| `sandbox` | in `confirm`, a write that stays inside a Cella sandbox | none |
+| `score` | in `progressive`, the risk score and its thresholds | `below_flag_at`, `flag_at`, `ask_at` or `block_at` |
+| `confirm` | in `confirm`, a call no other rule settles asks | none |
+| `memory` | a call that reaches memory folders alone ([[093-memory-folders-the-file-tools-reach]]) | none |
+| `question` | a question tool's call is itself put to a person | none |
+| `learned` | a decision service's suggestion decided ([[037-decision-services]]) | the service's model, its prediction's `source` |
+| `fallback` | the decision service did not answer, so the call asks | none |
+
+A rule is named by what the rule says, never by the call's input: a
+pattern is the organization's or the person's own text. `learned`
+appears only when the suggestion decided, in `progressive` outside
+shadow; in `confirm` and in shadow the rules' layer is recorded. An
+event written before this amendment has neither field, and a client
+shows its reason alone, as for a value it does not know.
+
 ### Confirmation across a restart
 
 An ask is durable: its `agent.tool_use` is in the log before the
@@ -347,6 +379,7 @@ authorizer's one-shot grant.
 | The authorizer's and the agent's lists merge so neither loosens the other: confirm is the union, allow the intersection, thresholds the lower, and the merged policy is in the Session | `harness.TestPolicyMergeNeverLoosens`, `internal/server.TestLimitListsReachThePolicy`, `harness.TestTheSessionsPolicyDecides` | built |
 | A sandbox command refused `confirmation_required` yields one `approval.requested` scored 0.9; an allow grants a one-shot scope the retried request uses once, a deny leaves it refused, and a restart between the two keeps the approval pending | `TestEgressStepUp` over the stub Cella and a stub authorizer | not built |
 | `bash` in a sandbox holding a swapped-in credential scores 0.4 | `harness.TestScoreFollowsTheRuleFeatures` | not built |
+| Every decision names its layer and, where one applies, its rule: one case per value the rules give, the question tool's overrule, and the decision service's `learned` and `fallback`, which shadow and `confirm` never record | `harness.TestEveryDecisionNamesItsLayer`, `harness.TestAQuestionWaitsForItsAnswer`, `internal/decisions.TestDecidedByTheService` | built |
 | On a person's own computer `progressive` decides as `confirm`: a write and a `bash` it would run ask, a read, `always_allow` and a remembered pattern run, `plan` still blocks a write, a change to `progressive` decides the same, a decision service's allow is a suggestion, and `agent.tool_use` records `confirm` | `harness.TestADeviceDecidesProgressiveAsConfirm`, `internal/decisions.TestADeviceIsDecidedAsConfirm` | built |
 
 ## Outcome
