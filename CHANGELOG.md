@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.67.0 - 2026-11-01
+
 ### Added
 
 - `TOPOS_CELLA_INSECURE`, the explicit consent for `TOPOS_CELLA_URL` to
