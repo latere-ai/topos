@@ -54,11 +54,26 @@ const ConfirmTimeout = 300 * time.Millisecond
 // message began.
 const AttributeAttended = "attended"
 
-// The decision sources the harness sends, by mode.
+// The decision sources the harness sends, by mode. A decision's source is
+// its mode's and the layer that decided it, as [Source] joins them.
 const (
 	SourceConfirm     = "topos/confirm"
 	SourceProgressive = "topos/progressive"
 )
+
+// Source is the source a decision is sent with: the mode's source and the
+// layer that decided the call, its agent.tool_use's decided_by, as
+// topos/<mode>/<decided_by> (topos/progressive/learned,
+// topos/confirm/always_allow), so the service can tell a call its own
+// suggestion decided from one a rule or the risk score decided. A decision
+// that names no layer is sent with the mode's source alone. A service that
+// replays a session's log names each decision the same way.
+func Source(mode, decidedBy string) string {
+	if decidedBy == "" {
+		return mode
+	}
+	return mode + "/" + decidedBy
+}
 
 // Options configure a [Decider].
 type Options struct {
@@ -397,14 +412,14 @@ const (
 // watch records the rules' decision with the service's suggestion beside
 // it, the prediction bounded by the confirm timeout and the decision sent
 // in the background: the service is asked and learns, and decides nothing.
-func (d *Decider) watch(ctx context.Context, a action, rules harness.Decision, source string) harness.Decision {
+func (d *Decider) watch(ctx context.Context, a action, rules harness.Decision, mode string) harness.Decision {
 	p, perr := d.predictWithin(ctx, a, d.confirm)
 	if perr != nil {
 		d.report(perr)
 	} else {
 		rules.Suggestion = suggestion(p)
 	}
-	d.recordLater(ctx, a, rules, source, perr == nil)
+	d.recordLater(ctx, a, rules, mode, perr == nil)
 	return rules
 }
 
@@ -434,11 +449,12 @@ func suggestion(p prediction) *session.Suggestion {
 	}
 }
 
-// record sends a decision; predicted says the service holds a prediction for
-// the key, and otherwise the decision carries the action. A failure is not
-// the session's: the call is decided either way.
-func (d *Decider) record(ctx context.Context, a action, out harness.Decision, source string, predicted bool) {
-	body := decision{key: a.key, Verdict: string(out.Verdict), ReviewProbability: out.ReviewProbability, Source: source}
+// record sends a decision under the mode's source and the layer that
+// decided it; predicted says the service holds a prediction for the key,
+// and otherwise the decision carries the action. A failure is not the
+// session's: the call is decided either way.
+func (d *Decider) record(ctx context.Context, a action, out harness.Decision, mode string, predicted bool) {
+	body := decision{key: a.key, Verdict: string(out.Verdict), ReviewProbability: out.ReviewProbability, Source: Source(mode, out.DecidedBy)}
 	if !predicted {
 		body.Action = &a
 	}
@@ -450,7 +466,7 @@ func (d *Decider) record(ctx context.Context, a action, out harness.Decision, so
 // recordLater sends a decision in the background, under the context's
 // values but not its cancellation, so the call it records is not held
 // while it is sent. An answer to the same call waits for it.
-func (d *Decider) recordLater(ctx context.Context, a action, out harness.Decision, source string, predicted bool) {
+func (d *Decider) recordLater(ctx context.Context, a action, out harness.Decision, mode string, predicted bool) {
 	done := make(chan struct{})
 	d.mu.Lock()
 	d.pending[a.key] = done
@@ -464,7 +480,7 @@ func (d *Decider) recordLater(ctx context.Context, a action, out harness.Decisio
 			d.mu.Unlock()
 			close(done)
 		}()
-		d.record(context.WithoutCancel(ctx), a, out, source, predicted)
+		d.record(context.WithoutCancel(ctx), a, out, mode, predicted)
 	}()
 }
 

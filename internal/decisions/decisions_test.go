@@ -24,18 +24,20 @@ import (
 )
 
 // service is a fake decision service: it answers predictions with next,
-// records every request, and fails or stalls on demand.
+// records every request, and fails or stalls on demand: status fails
+// every request, and unpredicted fails only the predictions.
 type service struct {
-	mu        sync.Mutex
-	next      prediction
-	status    int
-	code      string
-	stall     time.Duration
-	token     string
-	reported  int
-	predicted []action
-	decided   []decision
-	answered  []answer
+	mu          sync.Mutex
+	next        prediction
+	status      int
+	unpredicted bool
+	code        string
+	stall       time.Duration
+	token       string
+	reported    int
+	predicted   []action
+	decided     []decision
+	answered    []answer
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +59,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var a action
 		_ = json.NewDecoder(r.Body).Decode(&a)
 		s.predicted = append(s.predicted, a)
+		if s.unpredicted {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(s.next)
 	case "/v1/decisions":
 		var d decision
@@ -159,7 +165,7 @@ func TestProgressiveTakesTheSuggestion(t *testing.T) {
 			a.Environment.Kind != "sandbox" || len(a.Signals) != 1 || a.Signals[0].Source != harness.RiskSource {
 			t.Errorf("%s: action %+v", c.name, a)
 		}
-		if dec.Verdict != string(c.want) || dec.ReviewProbability != c.reviewP || dec.Source != SourceProgressive || dec.Action != nil {
+		if dec.Verdict != string(c.want) || dec.ReviewProbability != c.reviewP || dec.Source != "topos/progressive/learned" || dec.Action != nil {
 			t.Errorf("%s: decision %+v", c.name, dec)
 		}
 		if s.token != "Bearer tok" {
@@ -277,7 +283,7 @@ func TestConfirmModeTeaches(t *testing.T) {
 		t.Errorf("confirm %+v", out)
 	}
 	settle(d)
-	if len(s.predicted) != 1 || len(s.decided) != 1 || s.decided[0].Source != SourceConfirm || s.decided[0].Action != nil {
+	if len(s.predicted) != 1 || len(s.decided) != 1 || s.decided[0].Source != "topos/confirm/confirm" || s.decided[0].Action != nil {
 		t.Errorf("confirm sent %d predictions, decisions %+v", len(s.predicted), s.decided)
 	}
 	// A failing prediction still sends the decision, with the action.
@@ -304,7 +310,7 @@ func TestADeviceIsDecidedAsConfirm(t *testing.T) {
 		t.Errorf("a device under progressive %+v", out)
 	}
 	settle(d)
-	if len(s.decided) != 1 || s.decided[0].Source != SourceConfirm {
+	if len(s.decided) != 1 || s.decided[0].Source != "topos/confirm/confirm" {
 		t.Errorf("a device under progressive recorded %+v", s.decided)
 	}
 }
@@ -540,7 +546,7 @@ func TestShadowLeavesProgressiveToTheRules(t *testing.T) {
 			t.Errorf("suggested %s: the suggestion is not recorded: %+v", suggested, out.Suggestion)
 		}
 		settle(d)
-		if len(s.predicted) != 1 || len(s.decided) != 1 || s.decided[0].Source != SourceProgressive || s.decided[0].Verdict != string(want.Verdict) {
+		if len(s.predicted) != 1 || len(s.decided) != 1 || s.decided[0].Source != "topos/progressive/score" || s.decided[0].Verdict != string(want.Verdict) {
 			t.Errorf("suggested %s: sent %d predictions, decisions %+v", suggested, len(s.predicted), s.decided)
 		}
 	}
@@ -620,7 +626,7 @@ func TestLearnedDecidesWhereItHasEvidence(t *testing.T) {
 		if string(out.Verdict) != c.verdict || out.DecidedBy != session.DecidedLearned || out.Suggestion == nil {
 			t.Errorf("%s %s: %+v", c.verdict, c.kind, out)
 		}
-		if len(s.decided) != 1 || s.decided[0].Source != SourceProgressive {
+		if len(s.decided) != 1 || s.decided[0].Source != "topos/progressive/learned" {
 			t.Errorf("%s %s: decisions %+v", c.verdict, c.kind, s.decided)
 		}
 	}
@@ -633,7 +639,7 @@ func TestLearnedDecidesWhereItHasEvidence(t *testing.T) {
 		if out.Suggestion == nil || out.Suggestion.Verdict != "ask" || out.Draw == nil {
 			t.Errorf("ask %q: the suggestion and the draw are recorded: %+v", kind, out)
 		}
-		if len(s.decided) != 1 || s.decided[0].Verdict != string(rules.Verdict) {
+		if len(s.decided) != 1 || s.decided[0].Verdict != string(rules.Verdict) || s.decided[0].Source != SourceProgressive+"/"+rules.DecidedBy {
 			t.Errorf("ask %q: decisions %+v", kind, s.decided)
 		}
 	}
@@ -845,5 +851,72 @@ func TestTheSuggestionKeepsItsEvidence(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "ask_kind") || strings.Contains(string(raw), "evidence_ratio") {
 		t.Errorf("an older prediction's suggestion %s names a field it does not have", raw)
+	}
+}
+
+// Each decision is sent with its mode's source and the layer that decided
+// the call, topos/<mode>/<decided_by>, the source a replay of the session's
+// log names it with: the service tells a call its suggestion decided from
+// one a rule, the risk score or a failure decided. The layer is the one the
+// call's agent.tool_use records.
+func TestTheSourceNamesTheLayer(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name        string
+		mode        Mode
+		call        harness.Call
+		unpredicted bool
+		want        string
+	}{
+		{"learned in decide", ModeDecide, bash(harness.ModeProgressive, "make"), false, "topos/progressive/learned"},
+		{"a failure in decide", ModeDecide, bash(harness.ModeProgressive, "make"), true, "topos/progressive/fallback"},
+		{"a failure in learned", ModeLearned, bash(harness.ModeProgressive, "make"), true, "topos/progressive/score"},
+		{"a rule that settles", ModeDecide, func() harness.Call {
+			c := bash(harness.ModeProgressive, "make")
+			c.Policy.AlwaysAllow = []string{"bash(make)"}
+			return c
+		}(), false, "topos/progressive/always_allow"},
+		{"the score in shadow", ModeShadow, bash(harness.ModeProgressive, "make"), false, "topos/progressive/score"},
+		{"confirm", ModeDecide, func() harness.Call {
+			c := bash(harness.ModeConfirm, "make")
+			c.MachineKind = machine.KindHost
+			return c
+		}(), false, "topos/confirm/confirm"},
+		{"a sandbox write in confirm", ModeDecide, bash(harness.ModeConfirm, "make"), false, "topos/confirm/sandbox"},
+	}
+	for _, c := range cases {
+		s := &service{next: allowSuggestion(), unpredicted: c.unpredicted}
+		srv := httptest.NewServer(s)
+		t.Cleanup(srv.Close)
+		d, err := New(Options{URL: srv.URL, Token: "tok", Mode: c.mode, Rand: func() float64 { return 0.5 }, Timeout: 200 * time.Millisecond})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, out, err := d.Decide(ctx, c.call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settle(d)
+		if len(s.decided) != 1 || s.decided[0].Source != c.want {
+			t.Errorf("%s: decisions %+v, want the source %s", c.name, s.decided, c.want)
+			continue
+		}
+		if !strings.HasSuffix(s.decided[0].Source, "/"+out.DecidedBy) {
+			t.Errorf("%s: sent %s, and the call records decided_by %q", c.name, s.decided[0].Source, out.DecidedBy)
+		}
+	}
+}
+
+// A decision that names no layer is sent with its mode's source alone.
+func TestSource(t *testing.T) {
+	for _, c := range []struct{ mode, by, want string }{
+		{SourceProgressive, session.DecidedLearned, "topos/progressive/learned"},
+		{SourceConfirm, session.DecidedAlwaysAllow, "topos/confirm/always_allow"},
+		{SourceProgressive, "", "topos/progressive"},
+		{SourceConfirm, "", "topos/confirm"},
+	} {
+		if got := Source(c.mode, c.by); got != c.want {
+			t.Errorf("Source(%q, %q) = %q, want %q", c.mode, c.by, got, c.want)
+		}
 	}
 }
