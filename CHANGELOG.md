@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.64.0 - 2026-11-01
+
 ### Added
 
 - `TOPOS_DECISIONS_SHADOW`: toposd asks the decision service and records
