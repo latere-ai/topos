@@ -96,6 +96,10 @@ opens without it. An agent that names `history` reads back what its
 context cleared or summarized, from the session's log as it was written.
 A decision service's suggestion on a call keeps the service's
 `ask_kind` and `evidence_ratio`, so a client can show why a call asks.
+A hosted session records the organization that owns its agent as `org`.
+With `TOPOS_DECISIONS_ORG=agent`, the decision service keys the calls of
+an organization's agent by that organization. Each call records the
+organization of its key as `decision_org`.
 
 Not built yet: write-only credentials, memory stores, MCP servers an
 agent's definition names, external runners and handoff, the event sink,
@@ -173,7 +177,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   nobody watches is decided, and the `attended` the log records.
 - [docs/how-a-call-was-decided.md](docs/how-a-call-was-decided.md): the
   layer and the rule that decided each call, `decided_by`, so a client
-  tells a rule from what a decision service learned.
+  tells a rule from what a decision service learned, and the
+  organization a call was decided under, `decision_org`.
 - [docs/context-report.md](docs/context-report.md): how full a
   conversation's context is, and what fills it.
 - [docs/cost-and-progress.md](docs/cost-and-progress.md): what a session
