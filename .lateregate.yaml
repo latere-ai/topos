@@ -194,3 +194,14 @@ postgres:
   role: pooled
   direct_env: TOPOS_DB_URL
   pool_env: TOPOS_DB_POOL_URL
+
+# The developer image: the distroless runtime stage, which holds no shell.
+# toposd opens a lock file in its data directory or Postgres, and needs a
+# model gateway URL and an identity key, so a read-only start has none of
+# what it needs.
+image:
+  images:
+    - name: toposd
+      version_args: [-version]
+      version_expect: "toposd "
+      skip_start: serving needs a writable data directory or Postgres, a model gateway URL and an identity key, none of which a read-only container start brings up
