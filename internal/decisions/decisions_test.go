@@ -672,3 +672,72 @@ func TestParseMode(t *testing.T) {
 		t.Error("an unknown mode is refused")
 	}
 }
+
+// The suggestion recorded on a call keeps the prediction's evidence ratio
+// and ask kind in every mode that asks the service, so a client can show
+// why an ask asks; a prediction from a service that predates them records
+// neither, and the event's JSON leaves them out.
+func TestTheSuggestionKeepsItsEvidence(t *testing.T) {
+	ctx := context.Background()
+	split := allowSuggestion()
+	split.Verdict, split.AskKind, split.EvidenceRatio = "ask", AskSplit, new(0.8)
+	unsure := allowSuggestion()
+	unsure.Verdict, unsure.AskKind, unsure.EvidenceRatio = "ask", AskUnsure, new(0.1)
+	for _, c := range []struct {
+		name  string
+		mode  Mode
+		call  harness.Mode
+		next  prediction
+		kind  string
+		ratio float64
+	}{
+		{"decide", ModeDecide, harness.ModeProgressive, split, AskSplit, 0.8},
+		{"learned with evidence", ModeLearned, harness.ModeProgressive, split, AskSplit, 0.8},
+		{"learned without evidence", ModeLearned, harness.ModeProgressive, unsure, AskUnsure, 0.1},
+		{"shadow", ModeShadow, harness.ModeProgressive, unsure, AskUnsure, 0.1},
+		{"confirm", ModeDecide, harness.ModeConfirm, split, AskSplit, 0.8},
+	} {
+		s := &service{next: c.next}
+		srv := httptest.NewServer(s)
+		t.Cleanup(srv.Close)
+		d, err := New(Options{URL: srv.URL, Token: "tok", Mode: c.mode, Rand: func() float64 { return 0.5 }, Timeout: 200 * time.Millisecond})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, out, err := d.Decide(ctx, bash(c.call, "make"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		settle(d)
+		sg := out.Suggestion
+		if sg == nil || sg.AskKind != c.kind || sg.EvidenceRatio == nil || *sg.EvidenceRatio != c.ratio {
+			t.Errorf("%s: suggestion %+v, want ask kind %q and evidence ratio %v", c.name, sg, c.kind, c.ratio)
+			continue
+		}
+		raw, err := json.Marshal(session.AgentToolUse{ToolUseID: "toolu_1", Name: "bash", Verdict: string(out.Verdict), Suggestion: sg})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf(`"evidence_ratio":%v,"ask_kind":"%s"`, c.ratio, c.kind); !strings.Contains(string(raw), want) {
+			t.Errorf("%s: the event %s does not carry %s", c.name, raw, want)
+		}
+	}
+
+	// A service that predates the fields: the suggestion has neither, and
+	// the event's JSON names neither.
+	d := newDecider(t, &service{next: allowSuggestion()}, 0.5)
+	_, out, err := d.Decide(ctx, bash(harness.ModeProgressive, "make"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Suggestion == nil || out.Suggestion.AskKind != "" || out.Suggestion.EvidenceRatio != nil {
+		t.Fatalf("an older prediction: suggestion %+v", out.Suggestion)
+	}
+	raw, err := json.Marshal(out.Suggestion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "ask_kind") || strings.Contains(string(raw), "evidence_ratio") {
+		t.Errorf("an older prediction's suggestion %s names a field it does not have", raw)
+	}
+}

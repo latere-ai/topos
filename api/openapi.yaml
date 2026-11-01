@@ -5424,6 +5424,10 @@ components:
           type: number
         reason:
           type: string
+        evidence_ratio:
+          type: number
+        ask_kind:
+          type: string
     SuggestionThresholds:
       type: object
       required:

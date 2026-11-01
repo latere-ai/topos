@@ -386,7 +386,7 @@ func suggestion(p prediction) *session.Suggestion {
 	return &session.Suggestion{
 		Source: p.Source, Verdict: p.Verdict, Approve: p.Approve, Uncertainty: p.Uncertainty,
 		Thresholds: session.SuggestionThresholds{AllowAbove: p.Thresholds.AllowAbove, BlockBelow: p.Thresholds.BlockBelow},
-		AuditRate:  p.AuditRate, Reason: p.Reason,
+		AuditRate:  p.AuditRate, Reason: p.Reason, EvidenceRatio: p.EvidenceRatio, AskKind: p.AskKind,
 	}
 }
 

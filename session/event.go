@@ -205,7 +205,7 @@ type Risk struct {
 // Suggestion is a decision service's suggestion for a call (spec 037):
 // its verdict, the probability that the person approves and its
 // uncertainty, the thresholds and the audit rate of the costs it applied,
-// its source and its reason.
+// its source and its reason, and how much the person's answers settle it.
 type Suggestion struct {
 	Source      string               `json:"source"`
 	Verdict     string               `json:"verdict"`
@@ -214,6 +214,12 @@ type Suggestion struct {
 	Thresholds  SuggestionThresholds `json:"thresholds"`
 	AuditRate   float64              `json:"audit_rate"`
 	Reason      string               `json:"reason,omitempty"`
+	// EvidenceRatio and AskKind say how much the person's answers settle
+	// the suggestion; an ask's AskKind is unsure (too few answers) or
+	// split (answers that disagree). A service that predates them sends
+	// neither, and an event written before Topos kept them has neither.
+	EvidenceRatio *float64 `json:"evidence_ratio,omitempty"`
+	AskKind       string   `json:"ask_kind,omitempty"`
 }
 
 // SuggestionThresholds place an approval probability on the verdict scale:
