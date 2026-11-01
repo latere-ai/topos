@@ -101,3 +101,32 @@ approval continues as it would without a service.
   }
 }
 ```
+
+## The organization of a call
+
+A decision service keeps its records by an organization, a subject, and
+an action. The subject is always the person who started the session.
+The organization is one of these two:
+
+- The subject of the person, which is the context of the person.
+  toposd uses it for each call when `TOPOS_DECISIONS_ORG` is `initiator`,
+  which is the default.
+- The ID of the organization that owns the agent of the session. toposd
+  uses it when `TOPOS_DECISIONS_ORG` is `agent` and an organization owns
+  the agent ([configuration.md](configuration.md)).
+
+A session of an agent that an organization owns shows the ID of the
+organization as `org`. A session of the agent of a person has no `org`.
+
+`agent.tool_use` records `decision_org`: the organization of the key
+that toposd sent the decision of the call under. If your client reads
+the records of a call at the decision service, use `decision_org` as
+the organization. An example is a client that shows why a call asked.
+An event without `decision_org` was keyed by the subject of the person
+who started the session. An event in `plan` mode, or of an
+installation without a decision service, has no `decision_org`. The
+decision service did not receive such a call.
+
+The answers of a person in the context of an organization and in the
+context of the person are separate. An answer in one context does not
+change a suggestion in the other context.

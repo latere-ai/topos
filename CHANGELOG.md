@@ -20,6 +20,22 @@ committed: the commit log already holds that.
   asks without asking the service. A service that sends neither, and an
   event written before this release, leave both out. See
   `docs/how-a-call-was-decided.md`.
+- **A session names the organization that owns its agent.** A hosted
+  session of an organization's agent records the organization's ID as
+  `org`, fixed at its create and its fork. A session of a person's
+  agent has none.
+- **`TOPOS_DECISIONS_ORG`: `initiator` or `agent`.** `initiator`, the
+  default, keeps the keys of v0.67.0. With `agent`, the decision
+  service keys a call of an organization's agent by the organization.
+  The organization's cost profile then applies, and a person's answers
+  there stay apart from their own context. Every other call keeps the
+  initiator's subject. Set it after the clients and the authorizer of
+  the decision service read organizations.
+- **A call records the organization it was decided under.**
+  `agent.tool_use` records `decision_org`, the organization of the key
+  that its decision was sent to the decision service under. A client
+  that reads the service's records of a call reads the organization
+  from it, and the initiator's subject from an event without it.
 
 ### Fixed
 
