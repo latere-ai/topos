@@ -698,8 +698,12 @@ func TestDecisions(t *testing.T) {
 		t.Fatalf("a server's own token: %+v %v", c, err)
 	}
 	c, err = Load(RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_TOKEN", "tok")))
-	if err != nil || c.DecisionsToken != "tok" {
+	if err != nil || c.DecisionsToken != "tok" || c.DecisionsShadow {
 		t.Fatalf("a fixed bearer: %+v %v", c, err)
+	}
+	c, err = Load(RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_SHADOW", " true ")))
+	if err != nil || !c.DecisionsShadow {
+		t.Fatalf("shadow: %+v %v", c, err)
 	}
 	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
 		"TOPOS_DECISIONS_URL": "https://decisions.example", "TOPOS_DECISIONS_TOKEN": "tok"}))
@@ -718,6 +722,7 @@ func TestDecisions(t *testing.T) {
 		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_URL", "ftp://decisions.example", "TOPOS_DECISIONS_TOKEN", "tok")), "TOPOS_DECISIONS_URL is"},
 		{RoleServe, serve(with(nil, "TOPOS_DECISIONS_TOKEN", "tok")), "TOPOS_DECISIONS_TOKEN needs TOPOS_DECISIONS_URL"},
 		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_AUDIENCE", "d")), "TOPOS_DECISIONS_AUDIENCE needs TOPOS_DECISIONS_URL"},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_SHADOW", "watch")), `TOPOS_DECISIONS_SHADOW is "watch", either true or false`},
 		{RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
 			"TOPOS_DECISIONS_URL": "https://decisions.example"}), "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_TOKEN"},
 	} {

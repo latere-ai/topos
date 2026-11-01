@@ -194,6 +194,10 @@ type Config struct {
 	DecisionsURL      string
 	DecisionsAudience string
 	DecisionsToken    string
+	// DecisionsShadow is TOPOS_DECISIONS_SHADOW: the decision service is
+	// asked and learns in every mode and decides in none, so a progressive
+	// session decides by the rules and the risk score as without it.
+	DecisionsShadow bool
 }
 
 // Defaults of the runner variables.
@@ -598,6 +602,13 @@ func (c *Config) readDecisions(getenv Getenv, server bool) []string {
 	c.DecisionsToken = strings.TrimSpace(getenv("TOPOS_DECISIONS_TOKEN"))
 	if server {
 		c.DecisionsAudience = strings.TrimSpace(getenv("TOPOS_DECISIONS_AUDIENCE"))
+	}
+	if v := strings.TrimSpace(getenv("TOPOS_DECISIONS_SHADOW")); v != "" {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			problems = append(problems, "TOPOS_DECISIONS_SHADOW is "+strconv.Quote(v)+", either true or false")
+		}
+		c.DecisionsShadow = on
 	}
 	if c.DecisionsURL == "" {
 		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience} {

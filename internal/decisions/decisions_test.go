@@ -504,3 +504,39 @@ func TestAnswerWaitsForItsDecision(t *testing.T) {
 	}
 	settle(d)
 }
+
+// In shadow, a progressive call is decided by the rules and the risk score
+// as without a service, whatever the service suggests; the suggestion is
+// recorded beside the decision and the service still learns.
+func TestShadowLeavesProgressiveToTheRules(t *testing.T) {
+	call := bash(harness.ModeProgressive, "make")
+	_, want, err := harness.Rules{}.Decide(context.Background(), call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, suggested := range []string{"allow", "ask", "block"} {
+		p := allowSuggestion()
+		p.Verdict = suggested
+		s := &service{next: p}
+		srv := httptest.NewServer(s)
+		t.Cleanup(srv.Close)
+		d, err := New(Options{URL: srv.URL, Token: "tok", Shadow: true, Rand: func() float64 { return 0.01 }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, out, err := d.Decide(context.Background(), call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Verdict != want.Verdict || out.ReviewProbability != want.ReviewProbability || out.Draw != nil {
+			t.Errorf("suggested %s: decided %+v, want the rules' %+v", suggested, out, want)
+		}
+		if out.Suggestion == nil || out.Suggestion.Verdict != suggested {
+			t.Errorf("suggested %s: the suggestion is not recorded: %+v", suggested, out.Suggestion)
+		}
+		settle(d)
+		if len(s.predicted) != 1 || len(s.decided) != 1 || s.decided[0].Source != SourceProgressive || s.decided[0].Verdict != string(want.Verdict) {
+			t.Errorf("suggested %s: sent %d predictions, decisions %+v", suggested, len(s.predicted), s.decided)
+		}
+	}
+}

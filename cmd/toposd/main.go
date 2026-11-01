@@ -564,7 +564,7 @@ func decider(cfg config.Config, identities *idp.Client, log *slog.Logger) (harne
 	if cfg.DecisionsURL == "" {
 		return nil, nil
 	}
-	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Report: func(err error) {
+	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Shadow: cfg.DecisionsShadow, Report: func(err error) {
 		log.Warn("decision service", "err", err)
 	}}
 	if identities != nil && cfg.DecisionsAudience != "" {

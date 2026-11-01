@@ -10,6 +10,13 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- `TOPOS_DECISIONS_SHADOW`: toposd asks the decision service and records
+  its suggestion in every mode, and lets it decide in none. A
+  `progressive` session then decides by the rules and the risk score, as
+  without a service, while the service learns from every answer.
+
 ## v0.63.1 - 2026-11-01
 
 ### Fixed

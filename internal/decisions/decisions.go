@@ -84,6 +84,12 @@ type Options struct {
 	// that failed, so the call was asked, or a decision or answer that could
 	// not be sent. Nil drops them.
 	Report func(error)
+	// Shadow asks and records the service in every mode and lets it decide
+	// in none: a progressive call is decided by the rules and the risk
+	// score, as without a service, with the service's suggestion recorded
+	// beside it, as a confirm-mode call is. The service learns from every
+	// answer and changes no verdict.
+	Shadow bool
 }
 
 // Decider decides calls with a decision service.
@@ -97,6 +103,8 @@ type Decider struct {
 	confirm time.Duration
 	rand    func() float64
 	report  func(error)
+	// shadow records the service's suggestion and never applies it.
+	shadow bool
 	// pending holds the confirm-mode decisions still being sent, by key,
 	// each closed when its send ends, so an answer is never sent before the
 	// decision it answers.
@@ -127,7 +135,7 @@ func New(o Options) (*Decider, error) {
 	d := &Decider{
 		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: o.Org,
 		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), confirm: cmp.Or(o.ConfirmTimeout, ConfirmTimeout),
-		rand: o.Rand, report: o.Report, pending: map[key]chan struct{}{},
+		rand: o.Rand, report: o.Report, shadow: o.Shadow, pending: map[key]chan struct{}{},
 	}
 	if d.client == nil {
 		d.client = otel.HTTPClient()
@@ -250,6 +258,9 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 	case harness.ModePlan:
 		return risk, rules, nil
 	case harness.ModeProgressive:
+		if d.shadow {
+			return risk, d.watch(ctx, a, rules, SourceProgressive), nil
+		}
 		if settled, ok := c.Policy.Settle(c, risk); ok {
 			d.record(ctx, a, settled, SourceProgressive, false)
 			return risk, settled, nil
@@ -268,15 +279,22 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 		d.record(ctx, a, out, SourceProgressive, true)
 		return risk, out, nil
 	default:
-		p, perr := d.predictWithin(ctx, a, d.confirm)
-		if perr != nil {
-			d.report(perr)
-		} else {
-			rules.Suggestion = suggestion(p)
-		}
-		d.recordLater(ctx, a, rules, SourceConfirm, perr == nil)
-		return risk, rules, nil
+		return risk, d.watch(ctx, a, rules, SourceConfirm), nil
 	}
+}
+
+// watch records the rules' decision with the service's suggestion beside
+// it, the prediction bounded by the confirm timeout and the decision sent
+// in the background: the service is asked and learns, and decides nothing.
+func (d *Decider) watch(ctx context.Context, a action, rules harness.Decision, source string) harness.Decision {
+	p, perr := d.predictWithin(ctx, a, d.confirm)
+	if perr != nil {
+		d.report(perr)
+	} else {
+		rules.Suggestion = suggestion(p)
+	}
+	d.recordLater(ctx, a, rules, source, perr == nil)
+	return rules
 }
 
 // reason is the sentence the person reads for a verdict the service
