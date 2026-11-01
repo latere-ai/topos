@@ -458,7 +458,7 @@ func TestAQuestionWaitsForItsAnswer(t *testing.T) {
 			t.Fatalf("outcome %+v", out)
 		}
 		var use session.AgentToolUse
-		if err := e.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil || use.Verdict != string(VerdictAllow) {
+		if err := e.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil || use.Verdict != string(VerdictAllow) || use.DecidedBy != session.DecidedQuestion {
 			t.Fatalf("agent.tool_use %+v, %v", use, err)
 		}
 	})

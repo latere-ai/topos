@@ -1869,14 +1869,14 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		// decider answered: no list, pattern, score or service runs it
 		// without them. Plan mode blocks it, as it blocks every call that
 		// changes anything, whatever effect its tool declares.
-		d = held(d, confirm)
+		d = held(d, confirm, name)
 		if confirm != "" && mode == ModePlan {
-			d = Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+			d = Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode), DecidedBy: session.DecidedPlan}
 		}
 		if question && d.Verdict == VerdictAsk {
 			// A decider that asks all the same is overruled: the call is
 			// itself put to a person, and is never held for a confirmation.
-			d = Decision{Verdict: VerdictAllow, Reason: "a question is itself put to a person"}
+			d = Decision{Verdict: VerdictAllow, Reason: "a question is itself put to a person", DecidedBy: session.DecidedQuestion}
 		}
 		if d.Verdict.Shown() && !(d.ReviewProbability > 0) {
 			d.ReviewProbability = 1
@@ -1886,6 +1886,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			ToolUseID: id, Name: wrote, Input: written, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
 			Mode: string(mode), Client: props.Client, Repeatable: props.Repeatable,
 			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion, Attended: &attended,
+			DecidedBy: d.DecidedBy, DecidedByRule: d.Rule,
 		}
 		e, err := t.event(session.TypeAgentToolUse, use)
 		if err != nil {

@@ -84,6 +84,15 @@ type Thresholds struct {
 // DefaultThresholds are spec 012's.
 var DefaultThresholds = Thresholds{FlagAt: 0.3, AskAt: 0.5, BlockAt: 0.9}
 
+// The bands of the score a progressive decision records as its rule: the
+// threshold the score reached, or below the flag threshold.
+const (
+	RuleBelowFlag = "below_flag_at"
+	RuleFlagAt    = "flag_at"
+	RuleAskAt     = "ask_at"
+	RuleBlockAt   = "block_at"
+)
+
 // Policy is a session's permission policy: the mode, the organization's
 // lists and the thresholds, from the authorizer's decision at session
 // start or the agent's manifest.
@@ -230,19 +239,23 @@ func memoryRisk() session.Risk {
 func (p Policy) decideMemory(name string, props tools.Properties, input json.RawMessage, machineKind string) Decision {
 	mode := ModeOn(p.Mode, machineKind)
 	readOnly := props.Effect == tools.EffectNone || props.Effect == tools.EffectRead
-	if slices.Contains(p.AlwaysConfirm, FeatureMemory) || matchAny(p.AlwaysConfirm, name, patternSubject(name, input)) {
+	rule, listed := matchPattern(p.AlwaysConfirm, name, patternSubject(name, input))
+	if slices.Contains(p.AlwaysConfirm, FeatureMemory) {
+		rule, listed = FeatureMemory, true
+	}
+	if listed {
 		if mode == ModePlan {
-			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode), DecidedBy: session.DecidedPlan}
 		}
-		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list"}
+		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list", DecidedBy: session.DecidedAlwaysConfirm, Rule: rule}
 	}
 	switch {
 	case mode == ModePlan && readOnly:
-		return Decision{Verdict: VerdictAllow, Reason: "read-only"}
+		return Decision{Verdict: VerdictAllow, Reason: "read-only", DecidedBy: session.DecidedReadOnly}
 	case mode == ModePlan:
-		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode), DecidedBy: session.DecidedPlan}
 	}
-	return Decision{Verdict: VerdictAllow, Reason: ReasonMemory}
+	return Decision{Verdict: VerdictAllow, Reason: ReasonMemory, DecidedBy: session.DecidedMemory}
 }
 
 // fetchHost is the host a web_fetch's URL names, lowercased, without its
@@ -279,6 +292,11 @@ type Decision struct {
 	Draw *float64
 	// Suggestion is a decision service's suggestion, when one was asked.
 	Suggestion *session.Suggestion
+	// DecidedBy is the layer that decided, one of session.Decided, and
+	// Rule the rule within it where one applies (spec 012); the harness
+	// records both on the call's agent.tool_use.
+	DecidedBy string
+	Rule      string
 }
 
 // Decide applies the lists, the session's network and the mode to one
@@ -302,18 +320,18 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 	if networked && mode != ModePlan && network.Verdict != VerdictAllow {
 		return network
 	}
-	if matchAny(p.AlwaysConfirm, name, subject) {
+	if rule, ok := matchPattern(p.AlwaysConfirm, name, subject); ok {
 		if mode == ModePlan {
-			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode), DecidedBy: session.DecidedPlan}
 		}
-		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list"}
+		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list", DecidedBy: session.DecidedAlwaysConfirm, Rule: rule}
 	}
 	switch mode {
 	case ModePlan:
 		if readOnly {
-			return Decision{Verdict: VerdictAllow, Reason: "read-only"}
+			return Decision{Verdict: VerdictAllow, Reason: "read-only", DecidedBy: session.DecidedReadOnly}
 		}
-		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode), DecidedBy: session.DecidedPlan}
 	case ModeProgressive:
 		t := p.Thresholds
 		if t == (Thresholds{}) {
@@ -321,27 +339,30 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 		}
 		switch {
 		case risk.Score < t.FlagAt:
-			return Decision{Verdict: VerdictAllow, Reason: "below the flag threshold"}
+			return Decision{Verdict: VerdictAllow, Reason: "below the flag threshold", DecidedBy: session.DecidedScore, Rule: RuleBelowFlag}
 		case risk.Score < t.AskAt:
-			return Decision{Verdict: VerdictFlag, Reason: "between the flag and ask thresholds"}
+			return Decision{Verdict: VerdictFlag, Reason: "between the flag and ask thresholds", DecidedBy: session.DecidedScore, Rule: RuleFlagAt}
 		case risk.Score < t.BlockAt:
-			return Decision{Verdict: VerdictAsk, Reason: "between the ask and block thresholds"}
+			return Decision{Verdict: VerdictAsk, Reason: "between the ask and block thresholds", DecidedBy: session.DecidedScore, Rule: RuleAskAt}
 		}
-		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallAboveBlock)}
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallAboveBlock), DecidedBy: session.DecidedScore, Rule: RuleBlockAt}
 	}
-	switch {
-	case readOnly:
-		return Decision{Verdict: VerdictAllow, Reason: "read-only"}
-	case networked:
+	if readOnly {
+		return Decision{Verdict: VerdictAllow, Reason: "read-only", DecidedBy: session.DecidedReadOnly}
+	}
+	if networked {
 		return network
-	case matchAny(p.AlwaysAllow, name, subject):
-		return Decision{Verdict: VerdictAllow, Reason: "on the always-allow list"}
-	case matchAny(remembered, name, subject):
-		return Decision{Verdict: VerdictAllow, Reason: "allowed earlier in this session"}
-	case machineKind == machine.KindCella && props.Effect == tools.EffectWrite:
-		return Decision{Verdict: VerdictAllow, Reason: "stays inside the sandbox"}
 	}
-	return Decision{Verdict: VerdictAsk, Reason: "needs a confirmation"}
+	if rule, ok := matchPattern(p.AlwaysAllow, name, subject); ok {
+		return Decision{Verdict: VerdictAllow, Reason: "on the always-allow list", DecidedBy: session.DecidedAlwaysAllow, Rule: rule}
+	}
+	if rule, ok := matchPattern(remembered, name, subject); ok {
+		return Decision{Verdict: VerdictAllow, Reason: "allowed earlier in this session", DecidedBy: session.DecidedRemembered, Rule: rule}
+	}
+	if machineKind == machine.KindCella && props.Effect == tools.EffectWrite {
+		return Decision{Verdict: VerdictAllow, Reason: "stays inside the sandbox", DecidedBy: session.DecidedSandbox}
+	}
+	return Decision{Verdict: VerdictAsk, Reason: "needs a confirmation", DecidedBy: session.DecidedConfirm}
 }
 
 // patternSubject is what a pattern's glob matches for a call: the
@@ -365,10 +386,11 @@ func patternSubject(name string, input json.RawMessage) string {
 	return in.Path
 }
 
-// matchAny reports whether a call matches one of the patterns:
-// "<tool>" or "<tool>(<glob>)". A pattern that names a thread tool by
-// the name it had before matches the tool's calls (spec 013).
-func matchAny(patterns []string, name, subject string) bool {
+// matchPattern reports whether a call matches one of the patterns,
+// "<tool>" or "<tool>(<glob>)", and names the first that matched, which a
+// decision records as its rule. A pattern that names a thread tool by the
+// name it had before matches the tool's calls (spec 013).
+func matchPattern(patterns []string, name, subject string) (string, bool) {
 	pathLike := name != "bash" && name != "web_fetch"
 	for _, p := range patterns {
 		tool, glob, hasGlob := strings.Cut(p, "(")
@@ -376,13 +398,13 @@ func matchAny(patterns []string, name, subject string) bool {
 			continue
 		}
 		if !hasGlob {
-			return true
+			return p, true
 		}
 		if globRegexp(strings.TrimSuffix(glob, ")"), pathLike).MatchString(subject) {
-			return true
+			return p, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // globRegexp compiles a pattern glob. For a path "*" stays within one

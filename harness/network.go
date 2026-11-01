@@ -121,11 +121,11 @@ func (p Policy) fetchDecision(name string, input json.RawMessage) (Decision, boo
 	case host == "":
 		return Decision{}, false
 	case n.Inside(host):
-		return Decision{Verdict: VerdictAllow, Reason: session.ReasonInsideNetwork}, true
+		return Decision{Verdict: VerdictAllow, Reason: session.ReasonInsideNetwork, DecidedBy: session.DecidedNetwork}, true
 	case n.asks(host):
-		return Decision{Verdict: VerdictAsk, Reason: session.ReasonOutsideNetwork}, true
+		return Decision{Verdict: VerdictAsk, Reason: session.ReasonOutsideNetwork, DecidedBy: session.DecidedNetwork}, true
 	}
-	return Decision{Verdict: VerdictBlock, Reason: prompts.Render(prompts.CallOutsideNetwork, prompts.Data{"Host": host})}, true
+	return Decision{Verdict: VerdictBlock, Reason: prompts.Render(prompts.CallOutsideNetwork, prompts.Data{"Host": host}), DecidedBy: session.DecidedNetwork}, true
 }
 
 // network is the session's network as the turn decides by it now, nil on

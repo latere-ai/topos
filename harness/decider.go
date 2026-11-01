@@ -65,12 +65,12 @@ func (Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
 		named = n.Inside
 	}
 	if c.Memory {
-		d := held(c.Policy.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm)
+		d := held(c.Policy.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm, c.Name)
 		_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
 		return memoryRisk(), d, nil
 	}
 	risk := score(c.Name, c.Props, c.Input, c.MachineKind, named)
-	d := held(c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered), c.Confirm)
+	d := held(c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered), c.Confirm, c.Name)
 	_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
 	return risk, d, nil
 }
@@ -78,11 +78,11 @@ func (Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
 // held is d for a call its tool holds for a person, why: a verdict that
 // would run the call without one becomes an ask with that reason, and an
 // ask or a block stays as it is. An empty why holds nothing.
-func held(d Decision, why string) Decision {
+func held(d Decision, why, tool string) Decision {
 	if why == "" || Stricter(d.Verdict, VerdictAsk) == d.Verdict {
 		return d
 	}
-	return Decision{Verdict: VerdictAsk, Reason: why, ReviewProbability: 1, Suggestion: d.Suggestion}
+	return Decision{Verdict: VerdictAsk, Reason: why, ReviewProbability: 1, Suggestion: d.Suggestion, DecidedBy: session.DecidedTool, Rule: tool}
 }
 
 // decider is the configured decider, or the rules.
@@ -105,7 +105,7 @@ func (h *Harness) decider() Decider {
 // 093): the person reviews every memory through the installation.
 func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
 	if c.Memory {
-		d := held(p.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm)
+		d := held(p.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm, c.Name)
 		if d.Verdict == VerdictAsk {
 			d.ReviewProbability = 1
 		}
@@ -124,19 +124,22 @@ func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
 	if t == (Thresholds{}) {
 		t = DefaultThresholds
 	}
+	if rule, ok := matchPattern(p.AlwaysConfirm, c.Name, subject); ok {
+		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list", ReviewProbability: 1, DecidedBy: session.DecidedAlwaysConfirm, Rule: rule}, true
+	}
 	switch {
-	case matchAny(p.AlwaysConfirm, c.Name, subject):
-		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list", ReviewProbability: 1}, true
 	case c.Confirm != "":
-		return Decision{Verdict: VerdictAsk, Reason: c.Confirm, ReviewProbability: 1}, true
+		return Decision{Verdict: VerdictAsk, Reason: c.Confirm, ReviewProbability: 1, DecidedBy: session.DecidedTool, Rule: c.Name}, true
 	case risk.Score >= t.BlockAt:
-		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallAboveBlock)}, true
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallAboveBlock), DecidedBy: session.DecidedScore, Rule: RuleBlockAt}, true
 	case c.Props.Effect == tools.EffectNone || c.Props.Effect == tools.EffectRead:
-		return Decision{Verdict: VerdictAllow, Reason: "read-only"}, true
-	case matchAny(p.AlwaysAllow, c.Name, subject):
-		return Decision{Verdict: VerdictAllow, Reason: "on the always-allow list"}, true
-	case matchAny(c.Remembered, c.Name, subject):
-		return Decision{Verdict: VerdictAllow, Reason: "allowed earlier in this session"}, true
+		return Decision{Verdict: VerdictAllow, Reason: "read-only", DecidedBy: session.DecidedReadOnly}, true
+	}
+	if rule, ok := matchPattern(p.AlwaysAllow, c.Name, subject); ok {
+		return Decision{Verdict: VerdictAllow, Reason: "on the always-allow list", DecidedBy: session.DecidedAlwaysAllow, Rule: rule}, true
+	}
+	if rule, ok := matchPattern(c.Remembered, c.Name, subject); ok {
+		return Decision{Verdict: VerdictAllow, Reason: "allowed earlier in this session", DecidedBy: session.DecidedRemembered, Rule: rule}, true
 	}
 	return Decision{}, false
 }
