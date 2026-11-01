@@ -137,6 +137,8 @@ func testCreateGet(t *testing.T, st session.Store) {
 	s.Title = "fix the build"
 	s.Metadata = map[string]string{"k": "v"}
 	s.Attended = true
+	// The organization that owns the session's agent (spec 100).
+	s.Org = "org_acme"
 	if err := st.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)
 	}

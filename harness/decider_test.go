@@ -133,6 +133,35 @@ func TestToolUseRecordsReviewProbability(t *testing.T) {
 	}
 }
 
+// TestToolUseRecordsTheDecisionsOrganization (spec 100): agent.tool_use
+// records the organization a decider sent the call's decision under, and
+// none when the rules decide with no decision service.
+func TestToolUseRecordsTheDecisionsOrganization(t *testing.T) {
+	ctx := t.Context()
+	for _, c := range []struct {
+		name    string
+		decider Decider
+		want    string
+	}{
+		{"a decision service", decideFunc(func(context.Context, Call) (session.Risk, Decision, error) {
+			return session.Risk{Source: "test/1"}, Decision{Verdict: VerdictAllow, Reason: "runs", Org: "org_acme"}, nil
+		}), "org_acme"},
+		{"the rules alone", nil, ""},
+	} {
+		e := setup(t, func(cfg *Config) {
+			cfg.Machine = fakeMachine{kind: machine.KindHost}
+			cfg.Decider = c.decider
+		})
+		e.stub.Script(model, reply(ir.StopToolUse, call("toolu_o", "bash", `{"command":"make"}`)), reply(ir.StopEndTurn, text("ok")))
+		e.send(ctx, "Build.")
+		e.turn(ctx)
+		var use session.AgentToolUse
+		if err := e.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil || use.DecisionOrg != c.want {
+			t.Errorf("%s: agent.tool_use names %q, want %q (%v)", c.name, use.DecisionOrg, c.want, err)
+		}
+	}
+}
+
 // learner records what the harness asks and tells it.
 type learner struct {
 	decided  []string

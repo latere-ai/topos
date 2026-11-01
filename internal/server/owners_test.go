@@ -312,3 +312,38 @@ func TestASessionListReadsEveryPageOfTheContextsAgents(t *testing.T) {
 		t.Fatalf("the sessions of the last page's agent %v", got)
 	}
 }
+
+// TestASessionRecordsTheOrganizationOfItsAgent (spec 100): a session of
+// acme's agent records acme's id as its org, at the create and at a fork,
+// and the API answers it; a session of a person's own agent records none.
+func TestASessionRecordsTheOrganizationOfItsAgent(t *testing.T) {
+	f := newOrgFixture(t)
+	f.apply("carol@acme", "reviewer", "Review.")
+	f.apply("carol", "solo", "Alone.")
+	ours := f.create("dave@acme", "reviewer")
+	if ours.Org != "acme" {
+		t.Fatalf("acme's session records org %q", ours.Org)
+	}
+	var read session.Session
+	a := f.do(http.MethodGet, "/v1/sessions/"+ours.ID, "dave@acme", "")
+	if a.status != http.StatusOK {
+		t.Fatalf("read: %d %s", a.status, a.body)
+	}
+	a.decode(t, &read)
+	if read.Org != "acme" {
+		t.Fatalf("the API answers org %q", read.Org)
+	}
+	f.turn(ours.ID, 1, "Done.", 1)
+	fork := f.do(http.MethodPost, "/v1/sessions/"+ours.ID+"/fork", "dave@acme", "")
+	if fork.status != http.StatusCreated {
+		t.Fatalf("fork: %d %s", fork.status, fork.body)
+	}
+	var forked session.Session
+	fork.decode(t, &forked)
+	if forked.Org != "acme" {
+		t.Fatalf("the fork records org %q", forked.Org)
+	}
+	if solo := f.create("carol", "solo"); solo.Org != "" {
+		t.Fatalf("a person's agent's session records org %q", solo.Org)
+	}
+}

@@ -18,6 +18,7 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/identity"
+	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/idpstub"
@@ -245,5 +246,41 @@ func TestAnAllowNamingAnotherOwnerRefuses(t *testing.T) {
 	}
 	if _, err := f.objects.AgentByName(t.Context(), alice, "reviewer"); err == nil {
 		t.Fatal("the agent was stored")
+	}
+}
+
+// TestAnOlderAgentsSessionNamesTheOrganization (spec 100): an agent a
+// person applied in an organization's context before an organization
+// could own one is the person's in the store while its identity is the
+// organization's; its sessions name the organization as agent_owner, and
+// record it as their org.
+func TestAnOlderAgentsSessionNamesTheOrganization(t *testing.T) {
+	f := newIdentityFixture(t)
+	ctx := t.Context()
+	applied := f.apply("carol@acme", "triager", "Triage.")
+	a, err := f.objects.Agent(ctx, applied.Status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := f.objects.Version(ctx, a.ID, a.Latest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	older := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "older", Owner: issuer + "|carol", OwnerType: store.OwnerUser, CreatedAt: a.CreatedAt}
+	v.AgentID, v.Version = older.ID, 1
+	if err := f.objects.PutVersion(ctx, older, v); err != nil {
+		t.Fatal(err)
+	}
+	// acme's authorizer decides the session, which names acme; the agent
+	// is named by its id, which names it in any context.
+	s := f.create("carol@acme", older.ID)
+	f.mu.Lock()
+	owner := f.creates[len(f.creates)-1].Fields["agent_owner"]
+	f.mu.Unlock()
+	if want := map[string]any{"type": "organization", "id": "acme"}; !equalJSON(owner, want) {
+		t.Fatalf("session.create names agent_owner %v, want %v", owner, want)
+	}
+	if s.Org != "acme" {
+		t.Fatalf("the session records org %q, want acme", s.Org)
 	}
 }

@@ -69,9 +69,9 @@ type Options struct {
 	URL    string
 	Token  string
 	Tokens func(ctx context.Context) (string, error)
-	// Org is the organization the session acts in; empty sends the
-	// initiator's subject, a person's own context.
-	Org string
+	// Org is which organization a call is keyed by (spec 100); zero is
+	// [OrgInitiator].
+	Org OrgSource
 	// Client sends the requests; nil is pkg/otel's instrumented client.
 	Client *http.Client
 	// Timeout bounds each request; zero is [Timeout]. ConfirmTimeout bounds
@@ -120,11 +120,34 @@ func ParseMode(s string) (Mode, error) {
 	return "", fmt.Errorf("decisions: the mode %q is not shadow, learned or decide", s)
 }
 
+// OrgSource is which organization a call's key names (spec 100). The
+// subject is always the session's initiator.
+type OrgSource string
+
+const (
+	// OrgInitiator keys every call by the initiator's subject, a person's
+	// own context, whoever owns the session's agent.
+	OrgInitiator OrgSource = "initiator"
+	// OrgAgent keys a call of a session whose agent an organization owns
+	// by that organization's id, the session's Org, and every other call
+	// as OrgInitiator does.
+	OrgAgent OrgSource = "agent"
+)
+
+// ParseOrgSource reads an organization source by its name.
+func ParseOrgSource(s string) (OrgSource, error) {
+	switch o := OrgSource(s); o {
+	case OrgInitiator, OrgAgent:
+		return o, nil
+	}
+	return "", fmt.Errorf("decisions: the organization source %q is not initiator or agent", s)
+}
+
 // Decider decides calls with a decision service.
 type Decider struct {
 	base   string
 	tokens func(ctx context.Context) (string, error)
-	org    string
+	org    OrgSource
 	client *http.Client
 	limit  time.Duration
 	// confirm bounds a confirm-mode prediction.
@@ -160,8 +183,13 @@ func New(o Options) (*Decider, error) {
 	case tokens == nil:
 		return nil, errors.New("decisions: the service URL is set and its token is not")
 	}
+	if o.Org != "" {
+		if _, err := ParseOrgSource(string(o.Org)); err != nil {
+			return nil, err
+		}
+	}
 	d := &Decider{
-		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: o.Org,
+		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: cmp.Or(o.Org, OrgInitiator),
 		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), confirm: cmp.Or(o.ConfirmTimeout, ConfirmTimeout),
 		rand: o.Rand, report: o.Report, mode: cmp.Or(o.Mode, ModeDecide), pending: map[key]chan struct{}{},
 	}
@@ -178,7 +206,10 @@ func New(o Options) (*Decider, error) {
 }
 
 // key is the wire key of a call: the organization, the subject whose
-// approvals are learned, and the session-scoped action id.
+// approvals are learned, and the session-scoped action id. The
+// organization is the initiator's subject, a person's own context, or,
+// with OrgAgent, the organization that owns the session's agent (spec
+// 100).
 type key struct {
 	Org      string `json:"org"`
 	Subject  string `json:"subject"`
@@ -186,7 +217,11 @@ type key struct {
 }
 
 func (d *Decider) key(s session.Session, toolUseID string) key {
-	return key{Org: cmp.Or(d.org, s.Initiator.Subject), Subject: s.Initiator.Subject, ActionID: s.ID + "/" + toolUseID}
+	org := s.Initiator.Subject
+	if d.org == OrgAgent && s.Org != "" {
+		org = s.Org
+	}
+	return key{Org: org, Subject: s.Initiator.Subject, ActionID: s.ID + "/" + toolUseID}
 }
 
 type actor struct {
@@ -285,40 +320,49 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 	if err != nil {
 		return risk, rules, err
 	}
-	a := d.action(c, risk)
-	switch harness.ModeOn(c.Policy.Mode, c.MachineKind) {
-	case harness.ModePlan:
+	// Plan mode does not ask the service, and sends it nothing.
+	if harness.ModeOn(c.Policy.Mode, c.MachineKind) == harness.ModePlan {
 		return risk, rules, nil
-	case harness.ModeProgressive:
-		if d.mode == ModeShadow {
-			return risk, d.watch(ctx, a, rules, SourceProgressive), nil
-		}
-		if settled, ok := c.Policy.Settle(c, risk); ok {
-			d.record(ctx, a, settled, SourceProgressive, false)
-			return risk, settled, nil
-		}
-		p, perr := d.predict(ctx, a)
-		if d.mode == ModeLearned && (perr != nil || !p.hasEvidence()) {
-			if perr != nil {
-				d.report(perr)
-			}
-			return risk, d.byRules(ctx, a, rules, p, perr == nil), nil
-		}
+	}
+	a := d.action(c, risk)
+	out := d.decide(ctx, c, risk, a, rules)
+	// Every other mode sends the decision under the call's key, whose
+	// organization the call records (spec 100).
+	out.Org = a.Org
+	return risk, out, nil
+}
+
+// decide decides a call outside plan mode and sends the decision.
+func (d *Decider) decide(ctx context.Context, c harness.Call, risk session.Risk, a action, rules harness.Decision) harness.Decision {
+	if harness.ModeOn(c.Policy.Mode, c.MachineKind) != harness.ModeProgressive {
+		return d.watch(ctx, a, rules, SourceConfirm)
+	}
+	if d.mode == ModeShadow {
+		return d.watch(ctx, a, rules, SourceProgressive)
+	}
+	if settled, ok := c.Policy.Settle(c, risk); ok {
+		d.record(ctx, a, settled, SourceProgressive, false)
+		return settled
+	}
+	p, perr := d.predict(ctx, a)
+	if d.mode == ModeLearned && (perr != nil || !p.hasEvidence()) {
 		if perr != nil {
 			d.report(perr)
-			v := verdict.OnFailure(verdict.Allow)
-			out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1, DecidedBy: session.DecidedFallback}
-			d.record(ctx, a, out, SourceProgressive, false)
-			return risk, out, nil
 		}
-		u := d.rand()
-		v, prob := verdict.Decide(verdict.Verdict(p.Verdict), verdict.Allow, p.AuditRate, u)
-		out := harness.Decision{Verdict: v, Reason: reason(p, v), ReviewProbability: prob, Draw: &u, Suggestion: suggestion(p), DecidedBy: session.DecidedLearned, Rule: p.Source}
-		d.record(ctx, a, out, SourceProgressive, true)
-		return risk, out, nil
-	default:
-		return risk, d.watch(ctx, a, rules, SourceConfirm), nil
+		return d.byRules(ctx, a, rules, p, perr == nil)
 	}
+	if perr != nil {
+		d.report(perr)
+		v := verdict.OnFailure(verdict.Allow)
+		out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1, DecidedBy: session.DecidedFallback}
+		d.record(ctx, a, out, SourceProgressive, false)
+		return out
+	}
+	u := d.rand()
+	v, prob := verdict.Decide(verdict.Verdict(p.Verdict), verdict.Allow, p.AuditRate, u)
+	out := harness.Decision{Verdict: v, Reason: reason(p, v), ReviewProbability: prob, Draw: &u, Suggestion: suggestion(p), DecidedBy: session.DecidedLearned, Rule: p.Source}
+	d.record(ctx, a, out, SourceProgressive, true)
+	return out
 }
 
 // byRules applies the rules' decision of a progressive call in learned

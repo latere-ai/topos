@@ -297,6 +297,10 @@ type Decision struct {
 	// records both on the call's agent.tool_use.
 	DecidedBy string
 	Rule      string
+	// Org is the organization of the key a decider sent the decision to a
+	// decision service under (spec 100), empty when it sent none; the
+	// harness records it as the call's decision_org.
+	Org string
 }
 
 // Decide applies the lists, the session's network and the mode to one

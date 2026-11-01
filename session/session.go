@@ -265,9 +265,16 @@ type Tree struct {
 // Session is the header of a session. Its status mirrors the last
 // session.status event of its log.
 type Session struct {
-	Schema     int               `json:"schema"`
-	ID         string            `json:"id"`
-	Agent      AgentRef          `json:"agent"`
+	Schema int      `json:"schema"`
+	ID     string   `json:"id"`
+	Agent  AgentRef `json:"agent"`
+	// Org is the id of the organization that owns the session's agent,
+	// as session.create and session.fork name it in agent_owner (spec
+	// 100); empty when a person owns the agent. It is the id the token's
+	// org_id claim names, never a rendered subject, so a decision service
+	// that keys a person's own context by their rendered subject tells
+	// the two apart. It is set at the create and no event changes it.
+	Org        string            `json:"org,omitempty"`
 	Title      string            `json:"title,omitempty"`
 	Initiator  Sender            `json:"initiator"`
 	Runner     string            `json:"runner"`

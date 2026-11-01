@@ -436,6 +436,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// name for its model at a create, which the allow may answer with the
 	// model to run in its place (spec 038).
 	id := session.NewID(session.PrefixSession)
+	// org is the organization the session acts in, the agent_owner the
+	// question names when it is an organization (spec 100).
+	org, _ := ownerOf(a).organization()
 	fields := map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": ownerOf(a).field(),
 		"runner": session.RunnerHosted, "machine": m.Kind, "initiator": q.caller.Subject,
@@ -521,6 +524,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		// name as they always did.
 		if st.Owner != nil && st.Owner.Type == identity.OwnerOrganization {
 			fields["agent_owner"] = map[string]any{"type": st.Owner.Type, "id": st.Owner.ID}
+			org = st.Owner.ID
 		}
 	}
 	limits, err := q.limits(ctx, action, authz.NewResource(authorizer.KindSession, resourceID, fields))
@@ -587,6 +591,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	now := s.o.Now()
 	sess := session.New(ref, personSender(q.caller), session.RunnerHosted, m, now)
 	sess.ID = id
+	sess.Org = org
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
 	sess.TriggerFiresOn = in.firesOn
 	sess.Attended = in.attended

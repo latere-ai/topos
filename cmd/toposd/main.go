@@ -554,12 +554,13 @@ func titlePass(ctx context.Context, r *runner.Runner, t *titling, log *slog.Logg
 }
 
 // decider is the installation's decision service, TOPOS_DECISIONS_URL
-// (specs 037 and 099), or nil, which decides by the rules alone. A server
-// with an identity provider asks it with its own token for
+// (specs 037 and 099), or nil, which decides by the rules alone. It keys
+// each call by the organization TOPOS_DECISIONS_ORG names (spec 100). A
+// server with an identity provider asks it with its own token for
 // TOPOS_DECISIONS_AUDIENCE, renewed before it expires; any other process
 // sends the fixed bearer TOPOS_DECISIONS_TOKEN. A failure the decider
-// recovered from, a call that waited for a person or a record not sent, is
-// logged.
+// recovered from, a call that waited for a person or a record not sent,
+// is logged.
 func decider(cfg config.Config, identities *idp.Client, log *slog.Logger) (harness.Decider, error) {
 	if cfg.DecisionsURL == "" {
 		return nil, nil
@@ -568,7 +569,11 @@ func decider(cfg config.Config, identities *idp.Client, log *slog.Logger) (harne
 	if err != nil {
 		return nil, fmt.Errorf("TOPOS_DECISIONS_MODE: %w", err)
 	}
-	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Mode: mode, Report: func(err error) {
+	org, err := decisions.ParseOrgSource(cmp.Or(cfg.DecisionsOrg, string(decisions.OrgInitiator)))
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_DECISIONS_ORG: %w", err)
+	}
+	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Mode: mode, Org: org, Report: func(err error) {
 		log.Warn("decision service", "err", err)
 	}}
 	if identities != nil && cfg.DecisionsAudience != "" {

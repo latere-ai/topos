@@ -696,6 +696,7 @@ func TestTheFilesAudience(t *testing.T) {
 // server with an identity provider names the audience of its own token
 // for the service and no fixed bearer; a server without one, and a
 // runner role, which holds no identity provider, name the fixed bearer.
+// Both roles read TOPOS_DECISIONS_ORG (spec 100).
 func TestDecisions(t *testing.T) {
 	minting := map[string]string{"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a",
 		"TOPOS_IDENTITY_URL": "https://auth.example", "TOPOS_IDENTITY_CLIENT_ID": "topos-host", "TOPOS_IDENTITY_SECRET_FILE": "/run/secret"}
@@ -734,8 +735,19 @@ func TestDecisions(t *testing.T) {
 	}
 	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
 		"TOPOS_DECISIONS_URL": "https://decisions.example", "TOPOS_DECISIONS_TOKEN": "tok"}))
-	if err != nil || r.DecisionsURL != "https://decisions.example" || r.DecisionsToken != "tok" {
+	if err != nil || r.DecisionsURL != "https://decisions.example" || r.DecisionsToken != "tok" || r.DecisionsOrg != "" {
 		t.Fatalf("a runner role: %+v %v", r, err)
+	}
+	// TOPOS_DECISIONS_ORG (spec 100) is read by both roles, unset by
+	// default, which keys every call by the initiator.
+	c, err = Load(RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_ORG", " agent ")))
+	if err != nil || c.DecisionsOrg != "agent" {
+		t.Fatalf("agent: %+v %v", c, err)
+	}
+	r, err = Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+		"TOPOS_DECISIONS_URL": "https://decisions.example", "TOPOS_DECISIONS_TOKEN": "tok", "TOPOS_DECISIONS_ORG": "initiator"}))
+	if err != nil || r.DecisionsOrg != "initiator" {
+		t.Fatalf("a runner role's organization: %+v %v", r, err)
 	}
 	for _, c := range []struct {
 		role string
@@ -754,6 +766,10 @@ func TestDecisions(t *testing.T) {
 		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_MODE", "learned", "TOPOS_DECISIONS_SHADOW", "true")), "TOPOS_DECISIONS_SHADOW is set beside TOPOS_DECISIONS_MODE"},
 		{RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
 			"TOPOS_DECISIONS_URL": "https://decisions.example"}), "TOPOS_DECISIONS_URL needs TOPOS_DECISIONS_TOKEN"},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_URL", "https://decisions.example", "TOPOS_DECISIONS_AUDIENCE", "d", "TOPOS_DECISIONS_ORG", "owner")), `TOPOS_DECISIONS_ORG is "owner", either initiator or agent`},
+		{RoleServe, serve(with(minting, "TOPOS_DECISIONS_ORG", "agent")), "TOPOS_DECISIONS_ORG needs TOPOS_DECISIONS_URL"},
+		{RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+			"TOPOS_DECISIONS_ORG": "agent"}), "TOPOS_DECISIONS_ORG needs TOPOS_DECISIONS_URL"},
 	} {
 		if _, err := Load(c.role, c.env); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", c.role, err, c.want)

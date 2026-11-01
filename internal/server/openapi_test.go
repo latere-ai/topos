@@ -212,3 +212,35 @@ func TestOpenAPIStatesTheOwner(t *testing.T) {
 		t.Fatalf("the document does not state %q", OwnerRule)
 	}
 }
+
+// TestOpenAPIStatesTheOrganization (spec 100): the document states a
+// session's org and an agent.tool_use's decision_org on the routes that
+// answer them, a session's read and its events.
+func TestOpenAPIStatesTheOrganization(t *testing.T) {
+	raw, err := os.ReadFile(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			OperationID string `yaml:"operationId"`
+			Description string `yaml:"description"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	stated := map[string]bool{}
+	for _, ops := range doc.Paths {
+		for _, op := range ops {
+			if strings.Contains(op.Description, OrgRule) {
+				stated[op.OperationID] = true
+			}
+		}
+	}
+	for _, id := range []string{"getSession", "listEvents"} {
+		if !stated[id] {
+			t.Errorf("%s does not state the session's organization", id)
+		}
+	}
+}

@@ -206,6 +206,11 @@ type Config struct {
 	// every call the rules leave open). Empty is decide.
 	// TOPOS_DECISIONS_SHADOW=true is accepted as shadow for one release.
 	DecisionsMode string
+	// DecisionsOrg is TOPOS_DECISIONS_ORG, the organization a call is
+	// keyed by at the decision service (spec 100): initiator (every call
+	// by the initiator's own context) or agent (a call of an
+	// organization's agent by that organization). Empty is initiator.
+	DecisionsOrg string
 }
 
 // Defaults of the runner variables.
@@ -638,8 +643,14 @@ func (c *Config) readDecisions(getenv Getenv, server bool) []string {
 			c.DecisionsMode = "shadow"
 		}
 	}
+	c.DecisionsOrg = strings.TrimSpace(getenv("TOPOS_DECISIONS_ORG"))
+	switch c.DecisionsOrg {
+	case "", "initiator", "agent":
+	default:
+		problems = append(problems, "TOPOS_DECISIONS_ORG is "+strconv.Quote(c.DecisionsOrg)+", either initiator or agent")
+	}
 	if c.DecisionsURL == "" {
-		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience} {
+		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience, "TOPOS_DECISIONS_ORG": c.DecisionsOrg} {
 			if v != "" {
 				problems = append(problems, name+" needs TOPOS_DECISIONS_URL, the decision service it is for")
 			}

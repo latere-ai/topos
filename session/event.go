@@ -261,6 +261,12 @@ type AgentToolUse struct {
 	// block_at), or the decision service's model. It holds no text of the
 	// call's input beyond what a pattern itself says.
 	DecidedByRule string `json:"decided_by_rule,omitempty"`
+	// DecisionOrg is the organization of the key the call's decision was
+	// sent to a decision service under (spec 100): an organization's id,
+	// or the initiator's subject for a person's own context. Empty when no
+	// decision service was sent the decision, and on an event written
+	// before it, whose key had the initiator's subject.
+	DecisionOrg string `json:"decision_org,omitempty"`
 }
 
 // Spill names where the rest of a capped tool output went.

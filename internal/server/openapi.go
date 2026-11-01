@@ -222,6 +222,12 @@ var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 // organization's agents.
 const OwnerRule = "An agent belongs to the organization the caller's token names, or to the caller as a person when it names none."
 
+// OrgRule is the sentence the document states a session's organization
+// by (spec 100): the one a client reads to know which organization a
+// decision service holds a call's records under.
+const OrgRule = "A session of an agent an organization owns answers org, the organization's id as session.create names it in agent_owner, fixed at the create; a session of a person's agent has none. " +
+	"Each agent.tool_use whose decision was sent to the installation's decision service records decision_org, the organization of the key it was sent under: the session's org when the installation keys calls by the agent's organization (TOPOS_DECISIONS_ORG=agent), and the initiator's subject otherwise; an event without it was keyed by the initiator's subject."
+
 // paramDescriptions say how the API reads a path parameter where a
 // client needs to know it: a name is unique within its owner, so an
 // agent's name reads among the agents of the caller's context and a
@@ -449,13 +455,13 @@ var opDescriptions = map[string]string{
 		"a session the caller may not read is left out, so a page may hold fewer sessions than limit while next_cursor remains. "+
 		"A fork holds its parent's events, so a session and the session it was forked from can both match. A q that is empty, holds no word, or is longer than %d characters is invalid_request.",
 		session.MaxSearchText, session.MaxSearchMatches, session.SearchExcerpt, session.MaxSearchQuery),
-	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there. " + ContextRule + " " + CostRule,
+	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there. " + OrgRule + " " + ContextRule + " " + CostRule,
 	"resumeSession": "Resume a session idle on its budget once the cap is raised, or one idle on machine_waiting once its computer is back or its owner allowed the session: that resume adds no message, keeps the session's budget, and takes no max_cost_usd_micro, which is invalid_request.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
 		"interrupt it and delete it once it is idle. An idle session whose runner still holds it, as one does while it names the session after a turn, is waited for, at most " + spoken(DefaultLeaseWait) + ", and deleted once the runner lets go; " +
 		"one held past that, or that a runner claims for a turn while the authorizer decides, is conflict, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
-	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule + " " + ContextRule + " " + WatchedRule + " " + CostRule,
+	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule + " " + ContextRule + " " + WatchedRule + " " + CostRule + " " + OrgRule,
 	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. "+
 		"A blob whose leading bytes are PNG, JPEG, GIF or WebP is answered as that image type with Content-Disposition inline. "+
 		"Any other blob, an SVG and an HTML page included, is answered with Content-Disposition attachment and the Content-Type of the file it is: "+

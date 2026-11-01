@@ -362,11 +362,14 @@ func TestNewRefuses(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	d, err := New(Options{URL: "https://decisions.example", Token: "t", Org: "org_7"})
+	if _, err := New(Options{URL: "https://decisions.example", Token: "t", Org: "org_7"}); err == nil {
+		t.Error("an organization source that is neither initiator nor agent was accepted")
+	}
+	d, err := New(Options{URL: "https://decisions.example", Token: "t"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if k := d.key(sess, "toolu_9"); k.Org != "org_7" || k.ActionID != "ses_1/toolu_9" {
+	if k := d.key(sess, "toolu_9"); k.Org != sess.Initiator.Subject || k.ActionID != "ses_1/toolu_9" {
 		t.Errorf("key %+v", k)
 	}
 	a := d.action(harness.Call{Session: sess, ToolUseID: "x", Name: "mcp__x", MachineKind: machine.KindHost}, session.Risk{})
@@ -659,6 +662,109 @@ func TestLearnedAuditsTheRules(t *testing.T) {
 	want, prob := verdict.Decide(rules.Verdict, verdict.Allow, 0.5, 0.1)
 	if out.Verdict != want || out.ReviewProbability != prob {
 		t.Errorf("audited %+v, want %s at %v", out, want, prob)
+	}
+}
+
+// TestTheOrganizationOfACallsKey (spec 100): with OrgInitiator, the
+// default, every call is keyed by the initiator's own context; with
+// OrgAgent, a call of a session whose agent an organization owns is keyed
+// by the organization, every other call by the initiator; the subject is
+// the initiator either way, and an answer has the key of its decision.
+func TestTheOrganizationOfACallsKey(t *testing.T) {
+	ctx := context.Background()
+	orgs := sess
+	orgs.Org = "org_acme"
+	for _, c := range []struct {
+		name   string
+		source OrgSource
+		s      session.Session
+		want   string
+	}{
+		{"default, a person's agent", "", sess, sess.Initiator.Subject},
+		{"default, an organization's agent", "", orgs, sess.Initiator.Subject},
+		{"initiator, an organization's agent", OrgInitiator, orgs, sess.Initiator.Subject},
+		{"agent, a person's agent", OrgAgent, sess, sess.Initiator.Subject},
+		{"agent, an organization's agent", OrgAgent, orgs, "org_acme"},
+	} {
+		s := &service{next: allowSuggestion()}
+		srv := httptest.NewServer(s)
+		d, err := New(Options{URL: srv.URL, Token: "tok", Org: c.source, Rand: func() float64 { return 0.5 }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		call := bash(harness.ModeProgressive, "go test ./...")
+		call.Session = c.s
+		if _, _, err := d.Decide(ctx, call); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.Answered(ctx, c.s, "toolu_1", true, ""); err != nil {
+			t.Fatal(err)
+		}
+		srv.Close()
+		if len(s.predicted) != 1 || len(s.decided) != 1 || len(s.answered) != 1 {
+			t.Fatalf("%s: %d predictions, %d decisions, %d answers", c.name, len(s.predicted), len(s.decided), len(s.answered))
+		}
+		for what, k := range map[string]key{"prediction": s.predicted[0].key, "decision": s.decided[0].key, "answer": s.answered[0].key} {
+			if k.Org != c.want || k.Subject != sess.Initiator.Subject || k.ActionID != "ses_1/toolu_1" {
+				t.Errorf("%s: the %s is keyed %+v, want the organization %q", c.name, what, k, c.want)
+			}
+		}
+	}
+}
+
+// TestTheDecisionNamesItsOrganization (spec 100): every decision the
+// decider sends carries the organization of its key back to the harness,
+// in confirm and in progressive, decided by the service, by the rules, or
+// with the service down; plan sends nothing and names none.
+func TestTheDecisionNamesItsOrganization(t *testing.T) {
+	ctx := context.Background()
+	orgs := sess
+	orgs.Org = "org_acme"
+	for _, c := range []struct {
+		name string
+		mode harness.Mode
+		dm   Mode
+		down bool
+		want string
+	}{
+		{"confirm", harness.ModeConfirm, ModeDecide, false, "org_acme"},
+		{"progressive, decided by the service", harness.ModeProgressive, ModeDecide, false, "org_acme"},
+		{"progressive, shadow", harness.ModeProgressive, ModeShadow, false, "org_acme"},
+		{"progressive, learned with too few answers", harness.ModeProgressive, ModeLearned, false, "org_acme"},
+		{"progressive, the service down", harness.ModeProgressive, ModeDecide, true, "org_acme"},
+		{"plan", harness.ModePlan, ModeDecide, false, ""},
+	} {
+		s := &service{next: prediction{Verdict: "ask", Approve: 0.5, Thresholds: thresholds{AllowAbove: 0.9, BlockBelow: 0.25}, AuditRate: 0.05, Source: "learned/1", AskKind: AskUnsure}}
+		if c.down {
+			s.status = http.StatusServiceUnavailable
+		}
+		srv := httptest.NewServer(s)
+		d, err := New(Options{URL: srv.URL, Token: "tok", Org: OrgAgent, Mode: c.dm, Rand: func() float64 { return 0.5 }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		call := bash(c.mode, "make deploy")
+		call.Session = orgs
+		_, out, err := d.Decide(ctx, call)
+		settle(d)
+		srv.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Org != c.want {
+			t.Errorf("%s: the decision names %q, want %q", c.name, out.Org, c.want)
+		}
+	}
+}
+
+func TestParseOrgSource(t *testing.T) {
+	for _, o := range []OrgSource{OrgInitiator, OrgAgent} {
+		if got, err := ParseOrgSource(string(o)); err != nil || got != o {
+			t.Errorf("%s: %v %v", o, got, err)
+		}
+	}
+	if _, err := ParseOrgSource("owner"); err == nil {
+		t.Error("an unknown organization source is refused")
 	}
 }
 

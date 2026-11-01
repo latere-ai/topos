@@ -17,7 +17,11 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
+	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
@@ -205,5 +209,37 @@ func TestDeciderFromTheConfiguration(t *testing.T) {
 	}
 	if d, err := decider(config.Config{DecisionsURL: "https://decisions.example", DecisionsToken: "t", DecisionsMode: "learned"}, nil, log); d == nil || err != nil {
 		t.Errorf("learned: %v %v", d, err)
+	}
+	if _, err := decider(config.Config{DecisionsURL: "https://decisions.example", DecisionsToken: "t", DecisionsOrg: "owner"}, nil, log); err == nil || !strings.Contains(err.Error(), "TOPOS_DECISIONS_ORG") {
+		t.Errorf("an unknown organization source: %v", err)
+	}
+}
+
+// TestTheDeciderKeysByTheConfiguredOrganization (spec 100): the decider
+// toposd builds keys a call of a session whose agent an organization owns
+// by the organization with TOPOS_DECISIONS_ORG=agent, and by the
+// initiator with it unset; the subject is the initiator either way.
+func TestTheDeciderKeysByTheConfiguredOrganization(t *testing.T) {
+	for _, c := range []struct{ org, want string }{{"", "https://issuer.example|usr_1"}, {"initiator", "https://issuer.example|usr_1"}, {"agent", "acme"}} {
+		svc := newDecisionService(t)
+		d, err := decider(config.Config{DecisionsURL: svc.srv.URL, DecisionsToken: "t", DecisionsOrg: c.org}, nil, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := session.Session{ID: "ses_1", Org: "acme", Agent: session.AgentRef{ID: "agent_1"}, Initiator: session.Sender{Subject: "https://issuer.example|usr_1", Kind: session.SenderPerson}}
+		_, out, err := d.Decide(t.Context(), harness.Call{Policy: harness.Policy{Mode: harness.ModeProgressive}, Session: s, ToolUseID: "toolu_1", Name: "bash",
+			Props: tools.Properties{Effect: tools.EffectWrite}, Input: json.RawMessage(`{"command":"make"}`), MachineKind: machine.KindCella})
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqs := svc.await(t, 2)
+		if len(reqs) != 2 || out.Org != c.want {
+			t.Fatalf("TOPOS_DECISIONS_ORG=%q: %d requests, the decision names %q", c.org, len(reqs), out.Org)
+		}
+		for _, r := range reqs {
+			if r.Org != c.want || r.Subject != "https://issuer.example|usr_1" || r.Action != "ses_1/toolu_1" {
+				t.Errorf("TOPOS_DECISIONS_ORG=%q: %s keyed %+v, want the organization %q", c.org, r.Path, r, c.want)
+			}
+		}
 	}
 }

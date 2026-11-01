@@ -1865,6 +1865,9 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		if err != nil {
 			return stepPlan{}, nil, nil, err
 		}
+		// The organization a decision service holds the call's decision
+		// under stays the decider's whatever the harness narrows below.
+		org := d.Org
 		// A call its tool holds for a person waits for one whatever the
 		// decider answered: no list, pattern, score or service runs it
 		// without them. Plan mode blocks it, as it blocks every call that
@@ -1886,7 +1889,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			ToolUseID: id, Name: wrote, Input: written, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
 			Mode: string(mode), Client: props.Client, Repeatable: props.Repeatable,
 			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion, Attended: &attended,
-			DecidedBy: d.DecidedBy, DecidedByRule: d.Rule,
+			DecidedBy: d.DecidedBy, DecidedByRule: d.Rule, DecisionOrg: org,
 		}
 		e, err := t.event(session.TypeAgentToolUse, use)
 		if err != nil {
