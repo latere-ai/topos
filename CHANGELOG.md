@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- The release publishes its image. The v0.64.0 release built and signed
+  the image but stopped at its attestation, which could not find the
+  registry login, so v0.64.0 has no published image; use this release.
+
 ## v0.64.0 - 2026-11-01
 
 ### Added
