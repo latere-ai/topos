@@ -120,7 +120,12 @@ type Options struct {
 	// PDF of a session's folder to (spec 082); empty sends none, and read
 	// answers a PDF as a binary file.
 	ParsingURL string
-	Clock      func() time.Time
+	// Decider is the installation's decision service, TOPOS_DECISIONS_URL,
+	// which decides every hosted session's calls (spec 099); nil decides by
+	// the rules alone. One decider serves every session of the process: it
+	// keys each call by its session and the session's initiator.
+	Decider harness.Decider
+	Clock   func() time.Time
 	// Log is each session's harness.Config.Log: what a turn did about a
 	// response that wrote a tool call as text (spec 062). Nil discards it.
 	Log *slog.Logger
@@ -197,6 +202,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		Meter:  Meter,
 	}
 	cfg.Policy.Mode = cmp.Or(cfg.Policy.Mode, harness.ModeConfirm)
+	cfg.Decider = b.o.Decider
 	if cfg.Files, err = b.files(ctx, s); err != nil {
 		return harness.Config{}, err
 	}

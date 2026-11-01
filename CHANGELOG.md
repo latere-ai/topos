@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **Hosted sessions are decided by a decision service.** With `TOPOS_DECISIONS_URL`, every session `toposd` runs, in `serve` and in `runner`, decides its calls as `topos run` does with a decision service (spec 099). In `progressive` mode the service's suggestion decides each call the rules leave open, and a random part of these automatic verdicts is held for review. In `confirm` mode the rules decide, and the service learns. Each decision and each confirmation is sent to the service, and a call waits for a person when the service does not answer. A server with an identity provider asks the service with its own token for `TOPOS_DECISIONS_AUDIENCE`; a server without one, and `toposd runner`, send `TOPOS_DECISIONS_TOKEN`. Unset, sessions decide by the rules, as before.
+
 ### Changed
 
 - **Releases are built, signed and published by the shared release stages in latere-ai/ci.** The image signature names latere-ai/ci's `image-build.yml` run for latere-ai/topos; releases before this one name this repository's own `release.yml`. The release now attaches the binaries the image `topos` carries, `toposd` for linux/amd64 and linux/arm64 and the `topos-machine` helper for linux and darwin on amd64 and arm64, with the image's bill of materials and a `checksums.txt` over all of them, signed by latere-ai/ci's `image-publish.yml` run for latere-ai/topos. The release workflow checks every release it publishes from a runner with no checkout of the repository.

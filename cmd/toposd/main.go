@@ -38,6 +38,7 @@ import (
 	"latere.ai/x/topos/internal/blob"
 	"latere.ai/x/topos/internal/config"
 	"latere.ai/x/topos/internal/credentials"
+	"latere.ai/x/topos/internal/decisions"
 	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/internal/hosted"
 	idp "latere.ai/x/topos/internal/identity"
@@ -191,7 +192,12 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if minter != nil {
 		local = minter.Local
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, api.Failover, api.SessionTriggers, api.SessionConversations, &titling{ask: api.Title, latest: api.LatestTitle, agents: api.TitleAgents}, log)
+	dec, err := decider(cfg, identities, log)
+	if err != nil {
+		stopRunners()
+		return fail(stderr, err)
+	}
+	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, api.Failover, api.SessionTriggers, api.SessionConversations, &titling{ask: api.Title, latest: api.LatestTitle, agents: api.TitleAgents}, dec, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -547,6 +553,35 @@ func titlePass(ctx context.Context, r *runner.Runner, t *titling, log *slog.Logg
 	log.InfoContext(ctx, "title pass", "agents", len(agents), "named", c.Named, "kept", c.Kept, "skipped", c.Skipped, "failed", c.Failed)
 }
 
+// decider is the installation's decision service, TOPOS_DECISIONS_URL
+// (specs 037 and 099), or nil, which decides by the rules alone. A server
+// with an identity provider asks it with its own token for
+// TOPOS_DECISIONS_AUDIENCE, renewed before it expires; any other process
+// sends the fixed bearer TOPOS_DECISIONS_TOKEN. A failure the decider
+// recovered from, a call that waited for a person or a record not sent, is
+// logged.
+func decider(cfg config.Config, identities *idp.Client, log *slog.Logger) (harness.Decider, error) {
+	if cfg.DecisionsURL == "" {
+		return nil, nil
+	}
+	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Report: func(err error) {
+		log.Warn("decision service", "err", err)
+	}}
+	if identities != nil && cfg.DecisionsAudience != "" {
+		o.Tokens = func(ctx context.Context) (string, error) {
+			t, err := identities.ServiceToken(ctx, cfg.DecisionsAudience)
+			return t.Value, err
+		}
+	} else {
+		o.Token = cfg.DecisionsToken
+	}
+	d, err := decisions.New(o)
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_DECISIONS_URL: %w", err)
+	}
+	return d, nil
+}
+
 // startRunners starts the runners that drive hosted sessions,
 // TOPOS_RUNNER_CAPACITY of them at once, claiming from queue and running
 // over st, and returns a channel closed once they have stopped with ctx.
@@ -562,7 +597,7 @@ func titlePass(ctx context.Context, r *runner.Runner, t *titling, log *slog.Logg
 // how serve's runners name sessions, nil in a runner process,
 // and where it is set the runners also name, once, the sessions an agent
 // ran before (spec 083).
-func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), triggers func(string) runner.Triggers, conversations func(string) memory.Conversations, titles *titling, log *slog.Logger) (<-chan struct{}, error) {
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), triggers func(string) runner.Triggers, conversations func(string) memory.Conversations, titles *titling, decider harness.Decider, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
@@ -600,7 +635,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// The app host a session publishes to (spec 043), reached by the
 	// runner with the session's own token.
 	apps := publish.Options{URL: cfg.AppsURL, Audience: cfg.AppsAudience, GitURL: cfg.OrigoURL}
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, ParsingURL: cfg.ParsingURL, Log: log})
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, ParsingURL: cfg.ParsingURL, Decider: decider, Log: log})
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +731,11 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, nil, nil, nil, nil, log)
+	dec, err := decider(cfg, nil, log)
+	if err != nil {
+		return fail(stderr, errors.Join(err, ln.Close()))
+	}
+	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, nil, nil, nil, nil, dec, log)
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}
