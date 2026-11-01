@@ -113,6 +113,11 @@ type Config struct {
 	CellaURL       string
 	CellaTokenFile string
 	MachineHelpers string
+	// CellaInsecure is TOPOS_CELLA_INSECURE: the explicit consent for
+	// CellaURL to be http:// on a host other than loopback, which sends
+	// the bearer of CellaTokenFile in the clear. false refuses such a
+	// URL at start.
+	CellaInsecure bool
 	// CellaLabels are TOPOS_CELLA_LABELS: labels every sandbox and every
 	// sandbox Secret toposd creates in Cella carries beside the session's
 	// and the agent's, such as the tenant a Cella's authorizer requires of
@@ -420,6 +425,14 @@ func (c *Config) readRunner(getenv Getenv) []string {
 	}
 	c.CellaURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_CELLA_URL")), "/")
 	c.CellaTokenFile = strings.TrimSpace(getenv("TOPOS_CELLA_TOKEN_FILE"))
+	if v := strings.TrimSpace(getenv("TOPOS_CELLA_INSECURE")); v != "" {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			problems = append(problems, "TOPOS_CELLA_INSECURE is "+strconv.Quote(v)+", either true or false")
+		} else {
+			c.CellaInsecure = on
+		}
+	}
 	var bad []string
 	c.CellaLabels, bad = cellaLabels(getenv("TOPOS_CELLA_LABELS"))
 	problems = append(problems, bad...)
@@ -438,6 +451,8 @@ func (c *Config) readRunner(getenv Getenv) []string {
 	if c.CellaURL != "" {
 		if err := checkURL(c.CellaURL); err != nil {
 			problems = append(problems, "TOPOS_CELLA_URL "+err.Error())
+		} else if u, _ := url.Parse(c.CellaURL); u.Scheme == "http" && !loopback(u.Hostname()) && !c.CellaInsecure {
+			problems = append(problems, "TOPOS_CELLA_URL is "+c.CellaURL+", http on a host other than loopback, which sends its bearer in the clear; TOPOS_CELLA_INSECURE=true is the explicit consent")
 		}
 	}
 	c.OrigoURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_ORIGO_URL")), "/")

@@ -438,7 +438,7 @@ func newMinter(cfg config.Config, st stores) (*credentials.Minter, *idp.Client, 
 // with TOPOS_CELLA_TOKEN_FILE's bearer otherwise; a host session's
 // directory when TOPOS_HOST_SESSIONS is on.
 func workspaces(cfg config.Config, minter *credentials.Minter) func(context.Context, session.Session) (machine.FileReader, error) {
-	o := hosted.WorkspaceOptions{CellaURL: cfg.CellaURL}
+	o := hosted.WorkspaceOptions{CellaURL: cfg.CellaURL, CellaInsecure: cfg.CellaInsecure}
 	if cfg.CellaTokenFile != "" {
 		o.CellaToken = client.TokenFile(cfg.CellaTokenFile)
 	}
@@ -618,7 +618,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		if err != nil {
 			return nil, fmt.Errorf("TOPOS_MACHINE_HELPERS: %w", err)
 		}
-		co := hosted.CellaOptions{URL: cfg.CellaURL, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cmp.Or(doors.Root(), cfg.ModelsURL), OrigoURL: cfg.OrigoURL, Labels: cfg.CellaLabels, Log: log,
+		co := hosted.CellaOptions{URL: cfg.CellaURL, Insecure: cfg.CellaInsecure, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cmp.Or(doors.Root(), cfg.ModelsURL), OrigoURL: cfg.OrigoURL, Labels: cfg.CellaLabels, Log: log,
 			ConnectionsURL: cfg.ConnectionsURL, ConnectionsAudience: cfg.ConnectionsAudience}
 		if cfg.CellaTokenFile != "" {
 			co.Token = client.TokenFile(cfg.CellaTokenFile)

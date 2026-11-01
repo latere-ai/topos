@@ -28,6 +28,9 @@ import (
 type WorkspaceOptions struct {
 	// CellaURL is TOPOS_CELLA_URL; empty reads no sandbox.
 	CellaURL string
+	// CellaInsecure is TOPOS_CELLA_INSECURE: the explicit consent for
+	// CellaURL to be http:// on a host other than loopback.
+	CellaInsecure bool
 	// CellaToken is the installation's bearer, TOPOS_CELLA_TOKEN_FILE's,
 	// presented when the server mints no Cella token for the session;
 	// nil presents none.
@@ -100,7 +103,7 @@ func (o WorkspaceOptions) cella(ctx context.Context, id string) (machine.FileRea
 	if err != nil {
 		return nil, err
 	}
-	return cella.Peek(ctx, cella.Options{URL: o.CellaURL, Token: token, Session: id, HTTPClient: otel.HTTPClient()})
+	return cella.Peek(ctx, cella.Options{URL: o.CellaURL, Insecure: o.CellaInsecure, Token: token, Session: id, HTTPClient: otel.HTTPClient()})
 }
 
 // host reads a host session's working directory. A session that never

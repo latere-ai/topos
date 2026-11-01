@@ -94,6 +94,9 @@ type Options struct {
 	// URL is Cella's API, TOPOS_CELLA_URL. Empty refuses the machine with
 	// machine_unavailable.
 	URL string
+	// Insecure is TOPOS_CELLA_INSECURE: the explicit consent for URL to
+	// be http:// on a host other than loopback.
+	Insecure bool
 	// Token is the session's own credential, asked once per request
 	// (spec 018).
 	Token client.TokenSource
@@ -267,7 +270,7 @@ func Open(ctx context.Context, o Options) (*Machine, error) {
 	if hc == nil {
 		hc = httpClient()
 	}
-	c, err := client.New(client.Config{URL: o.URL, Token: o.Token, HTTPClient: hc, UserAgent: "topos"})
+	c, err := client.New(client.Config{URL: o.URL, Insecure: o.Insecure, Token: o.Token, HTTPClient: hc, UserAgent: "topos"})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}

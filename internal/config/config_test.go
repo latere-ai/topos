@@ -249,21 +249,40 @@ func TestTheRunnerVariables(t *testing.T) {
 		c.CellaTokenFile != "/run/cella/token" || c.MachineHelpers != DefaultMachineHelpers {
 		t.Fatalf("config %+v", c)
 	}
-	if c, err := Load(RoleServe, serve(nil)); err != nil || c.RunnerCapacity != DefaultRunnerCapacity || c.CellaURL != "" {
+	if c, err := Load(RoleServe, serve(nil)); err != nil || c.RunnerCapacity != DefaultRunnerCapacity || c.CellaURL != "" || c.CellaInsecure {
 		t.Fatalf("the defaults: %+v, %v", c, err)
 	}
 	for name, vars := range map[string]map[string]string{
-		"no models url":        {"TOPOS_MODELS_URL": " "},
-		"a scripted model":     {"TOPOS_MODELS_URL": "scripted:/tmp/s.yaml"},
-		"models url not a url": {"TOPOS_MODELS_URL": "lux"},
-		"capacity":             {"TOPOS_RUNNER_CAPACITY": "-1"},
-		"cella url":            {"TOPOS_CELLA_URL": "cella", "TOPOS_CELLA_TOKEN_FILE": "/t"},
-		"cella without token":  {"TOPOS_CELLA_URL": "https://cella.example"},
-		"relative machine dir": {"TOPOS_MACHINE_DIR": "tmp/topos"},
+		"no models url":          {"TOPOS_MODELS_URL": " "},
+		"a scripted model":       {"TOPOS_MODELS_URL": "scripted:/tmp/s.yaml"},
+		"models url not a url":   {"TOPOS_MODELS_URL": "lux"},
+		"capacity":               {"TOPOS_RUNNER_CAPACITY": "-1"},
+		"cella url":              {"TOPOS_CELLA_URL": "cella", "TOPOS_CELLA_TOKEN_FILE": "/t"},
+		"cella without token":    {"TOPOS_CELLA_URL": "https://cella.example"},
+		"relative machine dir":   {"TOPOS_MACHINE_DIR": "tmp/topos"},
+		"cella insecure garbled": {"TOPOS_CELLA_URL": "https://cella.example", "TOPOS_CELLA_TOKEN_FILE": "/t", "TOPOS_CELLA_INSECURE": "sure"},
+		"cella http not loopback and not insecure": {
+			"TOPOS_CELLA_URL": "http://cella.internal:8080", "TOPOS_CELLA_TOKEN_FILE": "/t",
+		},
 	} {
 		if _, err := Load(RoleServe, serve(vars)); err == nil {
 			t.Errorf("%s: loaded", name)
 		}
+	}
+	if _, err := Load(RoleServe, serve(map[string]string{
+		"TOPOS_CELLA_URL": "http://cella.internal:8080", "TOPOS_CELLA_TOKEN_FILE": "/t",
+	})); err == nil || !strings.Contains(err.Error(), "TOPOS_CELLA_INSECURE") {
+		t.Fatalf("a non-loopback http Cella URL without the consent: %v", err)
+	}
+	if c, err := Load(RoleServe, serve(map[string]string{
+		"TOPOS_CELLA_URL": "http://cella.internal:8080", "TOPOS_CELLA_TOKEN_FILE": "/t", "TOPOS_CELLA_INSECURE": " TRUE ",
+	})); err != nil || !c.CellaInsecure {
+		t.Fatalf("a non-loopback http Cella URL with the consent: %+v, %v", c, err)
+	}
+	if c, err := Load(RoleServe, serve(map[string]string{
+		"TOPOS_CELLA_URL": "http://127.0.0.1:1", "TOPOS_CELLA_TOKEN_FILE": "/t",
+	})); err != nil || c.CellaInsecure {
+		t.Fatalf("a loopback http Cella URL needs no consent: %+v, %v", c, err)
 	}
 	runnerVars := map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081/", "TOPOS_RUNNER_TOKEN": "new, old", "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 	r, err := Load(RoleRunner, env(runnerVars))

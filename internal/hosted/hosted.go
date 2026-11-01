@@ -592,6 +592,9 @@ func Runnable(o Options) (func(ctx context.Context, m v1.AgentModel, overlay mod
 type CellaOptions struct {
 	// URL is TOPOS_CELLA_URL.
 	URL string
+	// Insecure is TOPOS_CELLA_INSECURE: the explicit consent for URL to
+	// be http:// on a host other than loopback.
+	Insecure bool
 	// Token is the installation's bearer, TOPOS_CELLA_TOKEN_FILE's,
 	// presented when the server mints no Cella token for the session;
 	// nil presents none.
@@ -657,7 +660,7 @@ func (o CellaOptions) device(ctx context.Context, s session.Session, m v1.Machin
 		annotations = map[string]string{cella.AnnotationAgentName: name}
 	}
 	d, err := cella.OpenDevice(ctx, cella.Options{
-		URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
+		URL: o.URL, Insecure: o.Insecure, Token: token, Session: s.ID, Agent: s.Agent.Name,
 		Environment: s.Machine.Environment, Workdir: s.Machine.Workdir,
 		EgressMode: m.EgressMode, Egress: m.Egress, Labels: labels, Annotations: annotations,
 		TTL: max(time.Until(s.ExpiresAt), 0), Helpers: o.Helpers, ApprovalWait: o.ApprovalWait,
@@ -708,7 +711,7 @@ func Cella(o CellaOptions) Machines {
 		if s.Machine.Kind == session.MachineDevice {
 			return o.device(ctx, s, m, token)
 		}
-		c, err := client.New(client.Config{URL: o.URL, Token: token, HTTPClient: otel.HTTPClient()})
+		c, err := client.New(client.Config{URL: o.URL, Insecure: o.Insecure, Token: token, HTTPClient: otel.HTTPClient()})
 		if err != nil {
 			return nil, setup(CodeMachineUnavailable, err)
 		}
@@ -726,7 +729,7 @@ func Cella(o CellaOptions) Machines {
 		}
 		ttl := time.Until(s.ExpiresAt)
 		co := cella.Options{
-			URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
+			URL: o.URL, Insecure: o.Insecure, Token: token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
 			Resources:  cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
 			EgressMode: m.EgressMode, Egress: session.JoinHosts(m.Egress, harness.RepositoryHosts(s)),

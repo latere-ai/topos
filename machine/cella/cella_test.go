@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -331,6 +333,36 @@ func TestOpenRefusals(t *testing.T) {
 				t.Errorf("%v: machine_unavailable %v, want %v", err, got, c.unavailable)
 			}
 		})
+	}
+}
+
+// TestOpenHonorsInsecure: a URL that is http:// on a host other than
+// loopback is refused unless Insecure is set, after which Open reaches
+// the stub through it as it would through any other address.
+func TestOpenHonorsInsecure(t *testing.T) {
+	stub := cellastub.New(t)
+	real, err := url.Parse(stub.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := options(t, stub)
+	o.URL = "http://cella.insecure-test.invalid:" + real.Port()
+	o.HTTPClient = &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, real.Host)
+		},
+	}}
+	if _, err := Open(t.Context(), o); err == nil || !strings.Contains(err.Error(), "CELLA_INSECURE_CONTROL_PLANE") {
+		t.Fatalf("a non-loopback http URL without Insecure: %v", err)
+	}
+	o.Insecure = true
+	m, err := Open(t.Context(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Release(context.Background(), true); err != nil {
+		t.Error(err)
 	}
 }
 

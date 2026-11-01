@@ -34,7 +34,7 @@ func Peek(ctx context.Context, o Options) (machine.FileReader, error) {
 	if hc == nil {
 		hc = httpClient()
 	}
-	c, err := client.New(client.Config{URL: o.URL, Token: o.Token, HTTPClient: hc, UserAgent: "topos"})
+	c, err := client.New(client.Config{URL: o.URL, Insecure: o.Insecure, Token: o.Token, HTTPClient: hc, UserAgent: "topos"})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}

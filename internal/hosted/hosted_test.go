@@ -378,6 +378,24 @@ func TestCellaMachinesNeedAURL(t *testing.T) {
 	}
 }
 
+// TestCellaMachinesHonorInsecure: a Cella URL that is http:// on a host
+// other than loopback is refused the consent error unless Insecure is
+// set, after which the open goes on to actually dial it (spec: the
+// setting reaches the client).
+func TestCellaMachinesHonorInsecure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	s := session.Session{ID: session.NewID(session.PrefixSession), Agent: session.AgentRef{Name: "reviewer"}, ExpiresAt: time.Now().Add(time.Hour)}
+	_, err := Cella(CellaOptions{URL: "http://cella.insecure-test.invalid:1", Token: client.StaticToken("b")})(ctx, s, v1.Machine{Image: "base"})
+	if err == nil || !strings.Contains(err.Error(), "CELLA_INSECURE_CONTROL_PLANE") {
+		t.Fatalf("a non-loopback http URL without Insecure: %v", err)
+	}
+	_, err = Cella(CellaOptions{URL: "http://cella.insecure-test.invalid:1", Insecure: true, Token: client.StaticToken("b")})(ctx, s, v1.Machine{Image: "base"})
+	if err == nil || strings.Contains(err.Error(), "CELLA_INSECURE_CONTROL_PLANE") {
+		t.Fatalf("a non-loopback http URL with Insecure: %v", err)
+	}
+}
+
 func TestReadHelpers(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := ReadHelpers(dir); err == nil {

@@ -4,9 +4,13 @@
 package cella
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -143,5 +147,31 @@ func TestPeekRefusals(t *testing.T) {
 	stub.RequireToken("other")
 	if _, err := Peek(t.Context(), o); !errors.Is(err, ErrUnavailable) {
 		t.Errorf("a refused find: %v", err)
+	}
+}
+
+// TestPeekHonorsInsecure: a URL that is http:// on a host other than
+// loopback is refused unless Insecure is set, after which Peek reaches
+// the stub through it.
+func TestPeekHonorsInsecure(t *testing.T) {
+	f := open(t)
+	real, err := url.Parse(f.o.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := peekOptions(f.o)
+	o.URL = "http://cella.insecure-test.invalid:" + real.Port()
+	o.HTTPClient = &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, real.Host)
+		},
+	}}
+	if _, err := Peek(t.Context(), o); err == nil || !strings.Contains(err.Error(), "CELLA_INSECURE_CONTROL_PLANE") {
+		t.Fatalf("a non-loopback http URL without Insecure: %v", err)
+	}
+	o.Insecure = true
+	if _, err := Peek(t.Context(), o); err != nil {
+		t.Fatal(err)
 	}
 }
