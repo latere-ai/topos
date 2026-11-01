@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-29
+updated: 2026-11-01
 author: changkun
 ---
 
@@ -296,7 +296,7 @@ columns and migrations ([[014-store]]); credential resolution
 | An open call is closed `unknown_effect`, a repeatable built-in runs again, a confirmed call no runner started runs once and one a runner may have started is closed `unknown_effect`, and a waiting ask or client call is left waiting | `harness.TestResumeClosesACallWithNoResult`, `harness.TestResumeRunsARepeatableCallAgain`, `harness.TestConfirmationsAndDenials`, `harness.TestAConfirmedCallAnEarlierRunnerMayHaveStarted`, `harness.TestAnUnansweredAskKeepsWaiting`, `harness.TestClientToolsWaitForTheirResult` | built |
 | A second `Drive` on a session another holder has gets `ErrLocked`; an ended or missing session is refused; a second process on a locked directory session is locked out | `runner.TestDriveRefusesWhatItCannotDrive`, `session/dir.TestDirStoreSingleWriterLock` | built |
 | An append with a stale generation gets `lease_lost` and writes nothing; the new holder's and a person's unleased append go through; a runner whose lease fence refuses stops writing | `internal/store/postgres.TestAFencedAppendAfterATakeoverIsRefused` (postgres tier), `runner.TestTheRunnerAppendsThroughItsLeasesFence` | built |
-| A runner that stops renewing loses the session within 60 seconds, and another runner resumes it within 75 seconds of the last renew | `TestLostLeaseResumes` with a fake clock | not built |
+| A runner that stops renewing loses the session within 60 seconds, and another runner resumes it within 75 seconds of the last renew | `internal/runnerrole.TestLostLeaseResumes` with a fake clock | built |
 | Two runners claiming twenty sessions each hold distinct sessions and never more than their capacity | `TestClaimsAreExclusiveAndBounded` on Postgres | not built |
 | A `user.message` appended during a turn starts the next turn without a release | `runner.TestDriveContinuesWhileInputIsPending` | built |
 | Driving a session appends `session.status` `running` before anything else, attaches the machine once with its `session.machine`, and a moved machine is recorded with reason `handoff` | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAMovedMachineIsAHandoff` | built |
@@ -332,10 +332,9 @@ first acts on them. v0.9.2 (2026-09-29) leaves a running session to the
 next claim when a server or runner stops. v0.9.7 (2026-10-01) publishes
 a drive's deltas to streams on any replica.
 
-Open: the kill test at each commit point, the lease's timing under a
-fake clock, exclusive and bounded claims on Postgres, the test that
-toposd opens no connection to a runner, and a lost sandbox replaced with
-`machine_lost`.
+Open: the kill test at each commit point, exclusive and bounded claims
+on Postgres, the test that toposd opens no connection to a runner, and
+a lost sandbox replaced with `machine_lost`.
 
 The status is `in-progress`, from these criteria alone: the rows
 marked built are proven by their tests, and the rest are open.
