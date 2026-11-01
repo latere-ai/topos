@@ -99,7 +99,9 @@ A decision service's suggestion on a call keeps the service's
 A hosted session records the organization that owns its agent as `org`.
 With `TOPOS_DECISIONS_ORG=agent`, the decision service keys the calls of
 an organization's agent by that organization. Each call records the
-organization of its key as `decision_org`.
+organization of its key as `decision_org`. Each decision reaches the
+decision service with the layer that decided it, as
+`topos/<mode>/<decided_by>`.
 
 Not built yet: write-only credentials, memory stores, MCP servers an
 agent's definition names, external runners and handoff, the event sink,

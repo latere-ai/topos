@@ -37,6 +37,19 @@ committed: the commit log already holds that.
   that reads the service's records of a call reads the organization
   from it, and the initiator's subject from an event without it.
 
+### Changed
+
+- **A decision names the layer that decided it.** Topos sends each
+  decision to the decision service with the source
+  `topos/<mode>/<decided_by>`, such as `topos/progressive/learned`,
+  `topos/progressive/score` or `topos/confirm/always_allow`, in place of
+  `topos/confirm` or `topos/progressive`. The service can tell a call its
+  suggestion decided from one a rule or the risk score decided, and the
+  source matches the one a replay of the session's log names. A decision
+  without a layer keeps `topos/<mode>`. A consumer that matches the
+  whole source string, or reports reliability by one source, must accept
+  the longer form. Reliability over the verdicts applied is the same.
+
 ### Fixed
 
 - **The documents say what each `TOPOS_DECISIONS_MODE` does when the

@@ -70,6 +70,18 @@ the service sends this:
 An older service sends neither field, and an event that an older Topos
 wrote has neither. Show such a suggestion without them.
 
+Topos sends each decision to the service with a `source` that names the
+mode and the layer: `topos/<mode>/<decided_by>`. The mode is `confirm`
+or `progressive`, and the layer is the `decided_by` of the call. Some
+examples are `topos/progressive/learned`, `topos/progressive/score` and
+`topos/confirm/always_allow`. With the layer, the service can tell a call
+that its suggestion decided from a call that a rule or the risk score
+decided.
+
+A call on a person's own computer is sent as `confirm`. A decision
+without a layer is sent as `topos/<mode>`. Topos before this release
+sent `topos/confirm` or `topos/progressive` for each decision.
+
 The service learns from the person's answers. Topos sends it these
 answers:
 
