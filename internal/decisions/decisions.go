@@ -53,10 +53,13 @@ const (
 
 // Options configure a [Decider].
 type Options struct {
-	// URL is the service's base URL; Token the bearer sent to it. Both are
-	// required.
-	URL   string
-	Token string
+	// URL is the service's base URL, required. Token is a fixed bearer sent
+	// to it, and Tokens a source asked for the bearer at each request, as a
+	// server that holds a token for the service's audience is: exactly one
+	// of the two is set.
+	URL    string
+	Token  string
+	Tokens func(ctx context.Context) (string, error)
 	// Org is the organization the session acts in; empty sends the
 	// initiator's subject, a person's own context.
 	Org string
@@ -75,7 +78,7 @@ type Options struct {
 // Decider decides calls with a decision service.
 type Decider struct {
 	base   string
-	token  string
+	tokens func(ctx context.Context) (string, error)
 	org    string
 	client *http.Client
 	limit  time.Duration
@@ -94,11 +97,17 @@ func New(o Options) (*Decider, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, fmt.Errorf("decisions: the service URL %q is not an http or https URL", o.URL)
 	}
-	if strings.TrimSpace(o.Token) == "" {
+	tokens := o.Tokens
+	switch token := strings.TrimSpace(o.Token); {
+	case token != "" && tokens != nil:
+		return nil, errors.New("decisions: both a fixed token and a token source are set")
+	case token != "":
+		tokens = func(context.Context) (string, error) { return token, nil }
+	case tokens == nil:
 		return nil, errors.New("decisions: the service URL is set and its token is not")
 	}
 	d := &Decider{
-		base: strings.TrimRight(u.String(), "/"), token: o.Token, org: o.Org,
+		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: o.Org,
 		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), rand: o.Rand, report: o.Report,
 	}
 	if d.client == nil {
@@ -327,8 +336,12 @@ func (d *Decider) post(ctx context.Context, path string, body, out any) error {
 	if err != nil {
 		return err
 	}
+	token, err := d.tokens(ctx)
+	if err != nil {
+		return fmt.Errorf("decisions: POST %s: the token for the service: %w", path, err)
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+d.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("decisions: POST %s: %w", path, err)

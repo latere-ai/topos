@@ -6,6 +6,8 @@ package decisions
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -330,6 +332,8 @@ func TestNewRefuses(t *testing.T) {
 		"no host":    {URL: "https://", Token: "t"},
 		"no token":   {URL: "https://decisions.example"},
 		"bad syntax": {URL: "https://a b", Token: "t"},
+		"both tokens": {URL: "https://decisions.example", Token: "t",
+			Tokens: func(context.Context) (string, error) { return "u", nil }},
 	} {
 		if _, err := New(o); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -392,5 +396,33 @@ func TestTheServiceIsToldWhetherAnyoneWatches(t *testing.T) {
 			t.Errorf("attended %v: decisions %+v", attended, s.decided)
 		}
 		s.mu.Unlock()
+	}
+}
+
+// A token source is asked at each request, so a server sends the token it
+// holds for the service's audience as that token is renewed; a source that
+// fails makes the call wait for a person, as any failure to reach the
+// service does.
+func TestTokenSource(t *testing.T) {
+	s := &service{next: allowSuggestion()}
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+	n := 0
+	var fail error
+	d, err := New(Options{URL: srv.URL, Rand: func() float64 { return 0.5 }, Timeout: 200 * time.Millisecond,
+		Tokens: func(context.Context) (string, error) { n++; return fmt.Sprintf("svc-%d", n), fail },
+		Report: func(error) { s.mu.Lock(); s.reported++; s.mu.Unlock() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := d.Decide(context.Background(), bash(harness.ModeProgressive, "go test ./...")); out.Verdict != harness.VerdictAllow {
+		t.Fatalf("allowed suggestion: %+v", out)
+	}
+	if s.token != "Bearer svc-2" || len(s.predicted) != 1 || len(s.decided) != 1 {
+		t.Errorf("bearer %q after %d predictions and %d decisions", s.token, len(s.predicted), len(s.decided))
+	}
+	fail = errors.New("the identity provider is down")
+	if _, out, _ := d.Decide(context.Background(), bash(harness.ModeProgressive, "go test ./...")); out.Verdict != harness.VerdictAsk || s.reported == 0 {
+		t.Errorf("a failing token source: %+v, %d reported", out, s.reported)
 	}
 }
