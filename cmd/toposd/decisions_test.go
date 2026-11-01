@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -77,6 +76,17 @@ func (d *decisionService) requests() []decisionRequest {
 	return append([]decisionRequest(nil), d.reqs...)
 }
 
+// await is the requests once n have arrived: a confirm-mode decision is
+// sent in the background, so it may arrive after the turn ends.
+func (d *decisionService) await(t *testing.T, n int) []decisionRequest {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if reqs := d.requests(); len(reqs) >= n || time.Now().After(deadline) {
+			return reqs
+		}
+	}
+}
+
 // TestServeAsksTheDecisionServiceWithItsOwnToken: a server with an
 // identity provider decides a hosted session's calls with the decision
 // service, presenting its own token for TOPOS_DECISIONS_AUDIENCE, and
@@ -87,7 +97,7 @@ func TestServeAsksTheDecisionServiceWithItsOwnToken(t *testing.T) {
 	maps.Copy(vars, map[string]string{"TOPOS_RUNNER_CAPACITY": "1", "TOPOS_DECISIONS_URL": svc.srv.URL, "TOPOS_DECISIONS_AUDIENCE": "decisions"})
 	publicURL, _, stop := startServe(t, vars)
 	runSession(t, publicURL, vars, "cella")
-	reqs := svc.requests()
+	reqs := svc.await(t, 2)
 	paths := map[string]int{}
 	for _, r := range reqs {
 		paths[r.Path]++
@@ -116,7 +126,7 @@ func TestServeAsksTheDecisionServiceWithItsBearer(t *testing.T) {
 		"TOPOS_RUNNER_CAPACITY": "1", "TOPOS_DECISIONS_URL": svc.srv.URL, "TOPOS_DECISIONS_TOKEN": "decisions-bearer"})
 	publicURL, _, stop := startServe(t, vars)
 	hostedSession(t, publicURL, vars)
-	reqs := svc.requests()
+	reqs := svc.await(t, 2)
 	if len(reqs) != 2 {
 		t.Errorf("%d requests, want a prediction and a decision: %+v", len(reqs), reqs)
 	}
@@ -183,7 +193,7 @@ func TestHostedCallWaitsWhenTheDecisionServiceFails(t *testing.T) {
 // TestDeciderFromTheConfiguration: no URL decides by the rules, and a
 // URL the decision client refuses stops the start.
 func TestDeciderFromTheConfiguration(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.DiscardHandler)
 	if d, err := decider(config.Config{}, nil, log); d != nil || err != nil {
 		t.Errorf("no decision service: %v %v", d, err)
 	}

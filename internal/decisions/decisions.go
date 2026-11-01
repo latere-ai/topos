@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"latere.ai/x/pkg/otel"
@@ -37,8 +38,16 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// Timeout bounds every request to the service.
+// Timeout bounds every request to the service but a confirm-mode
+// prediction.
 const Timeout = 2 * time.Second
+
+// ConfirmTimeout bounds the prediction of a call in confirm mode, where
+// the rules decide and the suggestion is only recorded: a slow or absent
+// service delays such a call by at most this. In progressive mode the
+// prediction decides, and it has Timeout. A confirm-mode decision is sent
+// in the background, so it delays the call by nothing.
+const ConfirmTimeout = 300 * time.Millisecond
 
 // AttributeAttended is the attribute of an action that says whether a
 // person began the call's turn (spec 087): false on a turn a trigger's
@@ -65,8 +74,10 @@ type Options struct {
 	Org string
 	// Client sends the requests; nil is pkg/otel's instrumented client.
 	Client *http.Client
-	// Timeout bounds each request; zero is [Timeout].
-	Timeout time.Duration
+	// Timeout bounds each request; zero is [Timeout]. ConfirmTimeout bounds
+	// a confirm-mode prediction; zero is [ConfirmTimeout].
+	Timeout        time.Duration
+	ConfirmTimeout time.Duration
 	// Rand draws the review's uniform number; nil is math/rand/v2.
 	Rand func() float64
 	// Report receives a failure the decider recovered from: a prediction
@@ -82,8 +93,15 @@ type Decider struct {
 	org    string
 	client *http.Client
 	limit  time.Duration
-	rand   func() float64
-	report func(error)
+	// confirm bounds a confirm-mode prediction.
+	confirm time.Duration
+	rand    func() float64
+	report  func(error)
+	// pending holds the confirm-mode decisions still being sent, by key,
+	// each closed when its send ends, so an answer is never sent before the
+	// decision it answers.
+	mu      sync.Mutex
+	pending map[key]chan struct{}
 }
 
 var (
@@ -108,7 +126,8 @@ func New(o Options) (*Decider, error) {
 	}
 	d := &Decider{
 		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: o.Org,
-		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), rand: o.Rand, report: o.Report,
+		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), confirm: cmp.Or(o.ConfirmTimeout, ConfirmTimeout),
+		rand: o.Rand, report: o.Report, pending: map[key]chan struct{}{},
 	}
 	if d.client == nil {
 		d.client = otel.HTTPClient()
@@ -249,13 +268,13 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 		d.record(ctx, a, out, SourceProgressive, true)
 		return risk, out, nil
 	default:
-		p, perr := d.predict(ctx, a)
+		p, perr := d.predictWithin(ctx, a, d.confirm)
 		if perr != nil {
 			d.report(perr)
 		} else {
 			rules.Suggestion = suggestion(p)
 		}
-		d.record(ctx, a, rules, SourceConfirm, perr == nil)
+		d.recordLater(ctx, a, rules, SourceConfirm, perr == nil)
 		return risk, rules, nil
 	}
 }
@@ -299,14 +318,61 @@ func (d *Decider) record(ctx context.Context, a action, out harness.Decision, so
 	}
 }
 
-// Answered implements [harness.Learner].
+// recordLater sends a decision in the background, under the context's
+// values but not its cancellation, so the call it records is not held
+// while it is sent. An answer to the same call waits for it.
+func (d *Decider) recordLater(ctx context.Context, a action, out harness.Decision, source string, predicted bool) {
+	done := make(chan struct{})
+	d.mu.Lock()
+	d.pending[a.key] = done
+	d.mu.Unlock()
+	go func() {
+		defer func() {
+			d.mu.Lock()
+			if d.pending[a.key] == done {
+				delete(d.pending, a.key)
+			}
+			d.mu.Unlock()
+			close(done)
+		}()
+		d.record(context.WithoutCancel(ctx), a, out, source, predicted)
+	}()
+}
+
+// sent waits until no decision for k is being sent, or ctx ends.
+func (d *Decider) sent(ctx context.Context, k key) error {
+	d.mu.Lock()
+	done := d.pending[k]
+	d.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Answered implements [harness.Learner]. It waits for the call's decision
+// to be sent, so the service never receives an answer before it.
 func (d *Decider) Answered(ctx context.Context, s session.Session, toolUseID string, approve bool, by string) error {
-	return d.post(ctx, "/v1/answers", answer{key: d.key(s, toolUseID), Approve: approve, By: by}, nil)
+	k := d.key(s, toolUseID)
+	if err := d.sent(ctx, k); err != nil {
+		return err
+	}
+	return d.post(ctx, "/v1/answers", answer{key: k, Approve: approve, By: by}, nil)
 }
 
 func (d *Decider) predict(ctx context.Context, a action) (prediction, error) {
+	return d.predictWithin(ctx, a, d.limit)
+}
+
+// predictWithin asks the service for a prediction under limit.
+func (d *Decider) predictWithin(ctx context.Context, a action, limit time.Duration) (prediction, error) {
 	var p prediction
-	if err := d.post(ctx, "/v1/predictions", a, &p); err != nil {
+	if err := d.postWithin(ctx, limit, "/v1/predictions", a, &p); err != nil {
 		return prediction{}, err
 	}
 	if v, ok := verdict.Parse(p.Verdict); !ok || v == verdict.Flag {
@@ -326,7 +392,12 @@ type errorBody struct {
 // out. A refusal of a decision already recorded counts as recorded: the
 // first decision for a key is the one the service keeps.
 func (d *Decider) post(ctx context.Context, path string, body, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, d.limit)
+	return d.postWithin(ctx, d.limit, path, body, out)
+}
+
+// postWithin is post under limit.
+func (d *Decider) postWithin(ctx context.Context, limit time.Duration, path string, body, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	b, err := json.Marshal(body)
 	if err != nil {

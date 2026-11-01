@@ -71,6 +71,23 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// settle waits until every decision d sends in the background is sent.
+func settle(d *Decider) {
+	for {
+		d.mu.Lock()
+		var done chan struct{}
+		for _, c := range d.pending {
+			done = c
+			break
+		}
+		d.mu.Unlock()
+		if done == nil {
+			return
+		}
+		<-done
+	}
+}
+
 func newDecider(t *testing.T, s *service, draw float64) *Decider {
 	t.Helper()
 	srv := httptest.NewServer(s)
@@ -249,13 +266,15 @@ func TestConfirmModeTeaches(t *testing.T) {
 	s := &service{next: allowSuggestion()}
 	call := bash(harness.ModeConfirm, "make")
 	call.MachineKind = machine.KindHost
-	_, out, err := newDecider(t, s, 0.01).Decide(context.Background(), call)
+	d := newDecider(t, s, 0.01)
+	_, out, err := d.Decide(context.Background(), call)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out.Verdict != harness.VerdictAsk || out.ReviewProbability != 1 || out.Suggestion == nil || out.Suggestion.Verdict != "allow" || out.Draw != nil {
 		t.Errorf("confirm %+v", out)
 	}
+	settle(d)
 	if len(s.predicted) != 1 || len(s.decided) != 1 || s.decided[0].Source != SourceConfirm || s.decided[0].Action != nil {
 		t.Errorf("confirm sent %d predictions, decisions %+v", len(s.predicted), s.decided)
 	}
@@ -274,13 +293,15 @@ func TestADeviceIsDecidedAsConfirm(t *testing.T) {
 	s := &service{next: allowSuggestion()}
 	call := bash(harness.ModeProgressive, "make")
 	call.MachineKind = machine.KindDevice
-	_, out, err := newDecider(t, s, 0.5).Decide(context.Background(), call)
+	d := newDecider(t, s, 0.5)
+	_, out, err := d.Decide(context.Background(), call)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out.Verdict != harness.VerdictAsk || out.ReviewProbability != 1 || out.Suggestion == nil || out.Suggestion.Verdict != "allow" || out.Draw != nil {
 		t.Errorf("a device under progressive %+v", out)
 	}
+	settle(d)
 	if len(s.decided) != 1 || s.decided[0].Source != SourceConfirm {
 		t.Errorf("a device under progressive recorded %+v", s.decided)
 	}
@@ -425,4 +446,61 @@ func TestTokenSource(t *testing.T) {
 	if _, out, _ := d.Decide(context.Background(), bash(harness.ModeProgressive, "go test ./...")); out.Verdict != harness.VerdictAsk || s.reported == 0 {
 		t.Errorf("a failing token source: %+v, %d reported", out, s.reported)
 	}
+}
+
+// In confirm mode a service that hangs delays a call by no more than
+// ConfirmTimeout: the prediction gives up at that bound, and the decision
+// is sent in the background, whose Timeout still applies to it. An answer
+// to the call waits for its decision, so it is never sent first.
+func TestConfirmModeBoundsTheDelay(t *testing.T) {
+	s := &service{next: allowSuggestion(), stall: 400 * time.Millisecond}
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+	d, err := New(Options{URL: srv.URL, Token: "tok", Timeout: 2 * time.Second, ConfirmTimeout: 50 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := bash(harness.ModeConfirm, "make")
+	start := time.Now()
+	_, out, err := d.Decide(context.Background(), call)
+	if took := time.Since(start); err != nil || took > 300*time.Millisecond {
+		t.Fatalf("a hanging service held a confirm-mode call %v: %v", took, err)
+	}
+	// The rules' verdict stands, with no suggestion recorded.
+	if out.Verdict != harness.VerdictAllow || out.Suggestion != nil {
+		t.Errorf("confirm with a hanging service %+v", out)
+	}
+	if err := d.Answered(context.Background(), call.Session, call.ToolUseID, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.decided) != 1 || s.decided[0].Action == nil || len(s.answered) != 1 {
+		t.Errorf("after the answer: %d decisions %+v, %d answers", len(s.decided), s.decided, len(s.answered))
+	}
+	if ConfirmTimeout >= Timeout {
+		t.Errorf("ConfirmTimeout %v is not below Timeout %v", ConfirmTimeout, Timeout)
+	}
+}
+
+// An answer whose context ends while its decision is still being sent is
+// not sent.
+func TestAnswerWaitsForItsDecision(t *testing.T) {
+	s := &service{stall: 300 * time.Millisecond}
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+	d, err := New(Options{URL: srv.URL, Token: "tok", ConfirmTimeout: 10 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := bash(harness.ModeConfirm, "make")
+	if _, _, err := d.Decide(context.Background(), call); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := d.Answered(ctx, call.Session, call.ToolUseID, true, ""); err == nil {
+		t.Error("an answer was sent before its decision")
+	}
+	settle(d)
 }

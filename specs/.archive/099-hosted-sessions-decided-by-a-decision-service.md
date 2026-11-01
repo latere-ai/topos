@@ -57,6 +57,15 @@ bearer.
   `TOPOS_DECISIONS_TOKEN`. The audience or the token without the URL is
   refused. The audience has no default: the installation names its
   decision service.
+- **Confirm mode stays fast.** In `confirm` mode the rules decide and
+  the suggestion is only recorded, so a slow or absent service must not
+  hold the call. The prediction gives up after
+  `decisions.ConfirmTimeout`, 300 milliseconds, and the decision is
+  sent in the background under the usual two seconds. An answer to the
+  call waits for that send, so the service never receives an answer
+  before its decision. In `progressive` mode the prediction decides and
+  keeps two seconds. A hosted decision service runs as one process and
+  is briefly away at each rollout, which this bound makes cheap.
 - **Failures are logged.** A failure the decider recovers from, a
   prediction that failed or a record not sent, is logged at warning
   level as `decision service`.
@@ -81,6 +90,7 @@ modes.
 | A server without an identity provider sends the fixed bearer | `cmd/toposd.TestServeAsksTheDecisionServiceWithItsBearer` | built |
 | In `progressive` mode, a hosted call the rules leave open waits for the person when the service fails, and the failure is logged | `cmd/toposd.TestHostedCallWaitsWhenTheDecisionServiceFails` | built |
 | No URL decides by the rules, and a URL the client refuses stops the start | `cmd/toposd.TestDeciderFromTheConfiguration` | built |
+| In `confirm` mode a hanging service delays a call by no more than `ConfirmTimeout`, the decision is still sent, and an answer is never sent before its decision | `internal/decisions.TestConfirmModeBoundsTheDelay`, `internal/decisions.TestAnswerWaitsForItsDecision` | built |
 
 ## Outcome
 

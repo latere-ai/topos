@@ -13,6 +13,7 @@ committed: the commit log already holds that.
 ### Added
 
 - **Hosted sessions are decided by a decision service.** With `TOPOS_DECISIONS_URL`, every session `toposd` runs, in `serve` and in `runner`, decides its calls as `topos run` does with a decision service (spec 099). In `progressive` mode the service's suggestion decides each call the rules leave open, and a random part of these automatic verdicts is held for review. In `confirm` mode the rules decide, and the service learns. Each decision and each confirmation is sent to the service, and a call waits for a person when the service does not answer. A server with an identity provider asks the service with its own token for `TOPOS_DECISIONS_AUDIENCE`; a server without one, and `toposd runner`, send `TOPOS_DECISIONS_TOKEN`. Unset, sessions decide by the rules, as before.
+- **A slow decision service delays a `confirm`-mode call by at most 300 ms.** In `confirm` mode the rules decide and the service's suggestion is only recorded, so its prediction now gives up after `decisions.ConfirmTimeout`, 300 ms, and the decision is sent in the background with the usual two seconds; an answer to the call waits for its decision to be sent. This applies to `topos run` and to hosted sessions. In `progressive` mode, where the prediction decides, the bound stays two seconds.
 
 ### Changed
 
