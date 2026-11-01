@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.65.0 - 2026-11-01
+
 ### Added
 
 - `agent.tool_use` records which layer decided the call, `decided_by`:
