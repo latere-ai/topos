@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.68.0 - 2026-11-02
+
 ### Added
 
 - **A suggestion records why it asks.** The `suggestion` of an
