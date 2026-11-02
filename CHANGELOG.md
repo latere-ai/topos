@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.68.1 - 2026-11-03
+
 ### Changed
 
 - **The API document describes `decided_by`, `decided_by_rule` and a
