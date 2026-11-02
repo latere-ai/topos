@@ -148,6 +148,15 @@ type Limits struct {
 	// the session's file tools reach at /memory/<name>/, with the
 	// session's own token. The core reads nothing into their parts.
 	Memory []session.MemoryFolder
+	// Boundary is the organization's boundary, read on an allow of
+	// session.create, session.fork and session.send (spec 101): the hosts
+	// the organization owns, lowercased and sorted. Nil keeps the
+	// session's at a send and names none at a create.
+	Boundary *session.Boundary
+	// Denials are limits of the session's refusals, read on an allow of
+	// session.create, session.fork and session.send (spec 101), which
+	// apply where lower than the installation's; nil names none.
+	Denials *session.DenialLimits
 }
 
 // WireFolder is a folder an allow names (spec 068): the root of an
@@ -192,6 +201,17 @@ type WireLimits struct {
 	Connections    []session.Connection   `json:"connections,omitempty"`
 	Folder         *WireFolder            `json:"folder,omitempty"`
 	Memory         []session.MemoryFolder `json:"memory,omitempty"`
+	Boundary       *session.Boundary      `json:"boundary,omitempty"`
+	Denials        *WireDenials           `json:"denials,omitempty"`
+}
+
+// WireDenials are an allow's limits of a session's refusals (spec 101):
+// refusals in a row and in a session, each 1 or more where named. A limit
+// left out keeps the installation's; an authorizer makes a limit stricter
+// and never turns one off.
+type WireDenials struct {
+	Consecutive *int `json:"consecutive,omitempty"`
+	Total       *int `json:"total,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -329,6 +349,30 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		return Limits{}, fmt.Errorf("limits.%w", err)
 	}
 	l.Memory = w.Memory
+	if b := w.Boundary; b != nil {
+		hosts, err := checkHosts("limits.boundary.hosts", b.Hosts, session.MaxBoundaryHosts)
+		if err != nil {
+			return Limits{}, err
+		}
+		l.Boundary = &session.Boundary{Hosts: append([]string{}, hosts...)}
+	}
+	if d := w.Denials; d != nil {
+		var out session.DenialLimits
+		for _, f := range []struct {
+			name string
+			v    *int
+			dst  *int
+		}{{"consecutive", d.Consecutive, &out.Consecutive}, {"total", d.Total, &out.Total}} {
+			if f.v == nil {
+				continue
+			}
+			if *f.v < 1 {
+				return Limits{}, fmt.Errorf("limits.denials.%s is %d, not 1 or more: an authorizer lowers a limit and never turns one off", f.name, *f.v)
+			}
+			*f.dst = *f.v
+		}
+		l.Denials = &out
+	}
 	return l, nil
 }
 
@@ -440,16 +484,27 @@ func checkNetwork(n Network) (Network, error) {
 	if n.Mode != session.NetworkAllowlist && (len(n.Hosts) > 0 || n.Ask) {
 		return Network{}, fmt.Errorf("limits.network names hosts or ask with mode %s; only an allowlist takes them", n.Mode)
 	}
-	if len(n.Hosts) > MaxNetworkHosts {
-		return Network{}, fmt.Errorf("limits.network.hosts names %d hosts, more than %d", len(n.Hosts), MaxNetworkHosts)
+	hosts, err := checkHosts("limits.network.hosts", n.Hosts, MaxNetworkHosts)
+	if err != nil {
+		return Network{}, err
 	}
-	for i, h := range n.Hosts {
+	n.Hosts = hosts
+	return n, nil
+}
+
+// checkHosts holds a list of host patterns to Cella's host rule, at most
+// limit of them, each an exact name or one leading "*.", and answers them
+// lowercased and sorted, the list named name in an error.
+func checkHosts(name string, hosts []string, limit int) ([]string, error) {
+	if len(hosts) > limit {
+		return nil, fmt.Errorf("%s names %d hosts, more than %d", name, len(hosts), limit)
+	}
+	for i, h := range hosts {
 		if !hostmatch.ValidPattern(h) || isAddr(strings.TrimPrefix(h, "*.")) {
-			return Network{}, fmt.Errorf("limits.network.hosts[%d] is %q, not a host name or a \"*.\" pattern", i, h)
+			return nil, fmt.Errorf("%s[%d] is %q, not a host name or a \"*.\" pattern", name, i, h)
 		}
 	}
-	n.Hosts = session.JoinHosts(n.Hosts)
-	return n, nil
+	return session.JoinHosts(hosts), nil
 }
 
 // isAddr reports whether a host is an IP address, which a network names

@@ -233,6 +233,44 @@ func TestDecodeNetwork(t *testing.T) {
 	}
 }
 
+// TestDecodeBoundaryAndDenials (spec 101): an allow's boundary is read
+// with its hosts lowercased and sorted, under the network's host rule and
+// at most MaxBoundaryHosts of them; its denials are read where each limit
+// is 1 or more, and refused below, since an authorizer lowers a limit and
+// never turns one off.
+func TestDecodeBoundaryAndDenials(t *testing.T) {
+	l, err := DecodeLimits(decision(t, map[string]any{"boundary": map[string]any{"hosts": []string{"Example.COM", "*.example.org"}}, "denials": map[string]any{"consecutive": 2}}))
+	if err != nil || l.Boundary == nil || !slices.Equal(l.Boundary.Hosts, []string{"*.example.org", "example.com"}) {
+		t.Fatalf("boundary %+v, %v", l.Boundary, err)
+	}
+	if l.Denials == nil || *l.Denials != (session.DenialLimits{Consecutive: 2}) {
+		t.Fatalf("denials %+v", l.Denials)
+	}
+	if l, err := DecodeLimits(decision(t, map[string]any{"boundary": map[string]any{"hosts": []string{}}})); err != nil || l.Boundary == nil || l.Boundary.Hosts == nil || len(l.Boundary.Hosts) != 0 {
+		t.Fatalf("an empty boundary %+v, %v", l.Boundary, err)
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{})); err != nil || l.Boundary != nil || l.Denials != nil {
+		t.Fatalf("an allow with neither %+v %+v, %v", l.Boundary, l.Denials, err)
+	}
+	many := make([]string, session.MaxBoundaryHosts+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("h%d.example.com", i)
+	}
+	for name, limits := range map[string]map[string]any{
+		"an address":    {"boundary": map[string]any{"hosts": []string{"192.0.2.1"}}},
+		"a URL":         {"boundary": map[string]any{"hosts": []string{"https://example.com"}}},
+		"257 hosts":     {"boundary": map[string]any{"hosts": many}},
+		"not a list":    {"boundary": map[string]any{"hosts": "example.com"}},
+		"zero in a row": {"denials": map[string]any{"consecutive": 0}},
+		"a negative":    {"denials": map[string]any{"total": -1}},
+		"not a number":  {"denials": map[string]any{"total": "20"}},
+	} {
+		if _, err := DecodeLimits(decision(t, limits)); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+}
+
 // TestDecodeInstructions: an allow's instructions are read as they are,
 // up to MaxInitiatorInstructions bytes of valid UTF-8, and refused past it
 // or when they are not UTF-8 (spec 053).

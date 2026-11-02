@@ -229,6 +229,28 @@
 // endpoint may only answer what the installation's sandbox admission
 // admits: a sandbox admission narrowed runs narrowed.
 //
+// Two members say where the organization's trust ends and how many
+// refusals hand a session back to its person (spec 101), read on an
+// allow of session.create, session.fork and session.send:
+//
+//	"boundary": {"hosts": ["example.com", "*.example.org"]},
+//	"denials": {"consecutive": 2, "total": 10}
+//
+// boundary names the hosts the organization owns, at most
+// session.MaxBoundaryHosts, under the host rule of network. toposd sends
+// a decision service, for each web_fetch, whether its host is outside
+// them, and never the host itself; without a boundary it sends nothing of
+// the organization. The session keeps the latest allow's, as it keeps its
+// network: a send's answer that names one replaces the session's, and one
+// that names none keeps it. denials are refusals in a row and in a
+// session, each 1 or more, that start the fallback in which every call
+// that changes something asks the person; each applies where it is lower
+// than the installation's TOPOS_DENIALS_CONSECUTIVE and
+// TOPOS_DENIALS_TOTAL, so an answer makes a limit stricter and never
+// looser or off. They are read on a create and a fork; a send's answer
+// that carries them is not read. Either member toposd cannot read is
+// refused as authorizer_unavailable.
+//
 // A fourth member, instructions, is the initiator's standing instructions
 // (spec 053): text of at most MaxInitiatorInstructions bytes of valid
 // UTF-8, read on an allow of session.create alone, including the create
