@@ -154,6 +154,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [098](.archive/098-messages-sent-while-a-turn-runs.md) | Messages sent while a turn runs: a person's message read at the next step where it was read and marked as sent during the work, a trigger's or a wake's held for the turn's end, send now moving running commands to the background and cutting the rest after a grace, `messages.read` and `user.withdraw` | large | complete | 004, 005, 009, 012, 015, 016, 045, 086 |
 | [099](.archive/099-hosted-sessions-decided-by-a-decision-service.md) | Hosted sessions decided by a decision service: toposd and the runner role ask the installation's decision service, a server with an identity provider with its own token for the service's audience, and any other process with a fixed bearer | small | complete | 002, 016, 018, 037 |
 | [100](.archive/100-the-organization-a-session-acts-in.md) | The organization a session acts in: a hosted session records the organization that owns its agent, `TOPOS_DECISIONS_ORG=agent` keys the session's calls at the decision service by that organization, and each `agent.tool_use` records the organization its decision was sent under | small | complete | 036, 099 |
+| [101](101-what-a-person-consented-to.md) | What a person consented to: each call sent with its reach, a confirmation that says how the person answered, a session that asks for every step after repeated refusals, and both ends of a subagent's handoff | large | drafted | 004, 008, 012, 013, 015, 019, 034, 037, 043, 052, 087, 099 |
 
 ## Dependency graph
 
@@ -260,6 +261,7 @@ flowchart BT
   S098[098 messages sent while a turn runs]
   S099[099 hosted sessions decided by a decision service]
   S100[100 the organization a session acts in]
+  S101[101 what a person consented to]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -467,6 +469,12 @@ flowchart BT
   S099 --> S037
   S100 --> S036
   S100 --> S099
+  S101 --> S013
+  S101 --> S034
+  S101 --> S043
+  S101 --> S052
+  S101 --> S087
+  S101 --> S099
 ```
 
 ## Build order

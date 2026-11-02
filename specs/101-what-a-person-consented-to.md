@@ -1,0 +1,405 @@
+---
+title: "What a person consented to: each call sent with its reach, a confirmation that says how the person answered, a session that asks for every step after repeated refusals, and both ends of a subagent's handoff"
+status: drafted
+track: core
+depends_on: [004-session-log.md, 008-tools.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 019-git.md, 034-checkpoints-and-rewind.md, 037-decision-services.md, 043-publishing-a-folder.md, 052-a-sessions-network.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 099-hosted-sessions-decided-by-a-decision-service.md]
+affects: [session/, harness/, internal/decisions/, internal/server/, internal/config/, internal/hosted/, internal/toposcli/, authorizer/, prompts/, api/openapi.yaml, docs/]
+effort: large
+created: 2026-11-02
+updated: 2026-11-02
+author: changkun
+---
+
+# What a person consented to
+
+## Overview
+
+A decision service learns which calls a person approves
+([[037-decision-services]]). Its core inference is "this kind of call
+was allowed before, so it will be allowed now". Two published findings
+show where that inference breaks.
+
+- **An approval does not cover a wider call.** Anthropic's study of its
+  Claude Code auto mode classifier
+  ([Claude Code auto mode](https://www.anthropic.com/research/claude-code-auto-mode),
+  2026-03-25) found that most of its misses on
+  real overeager actions were not a failure to see the danger: "What it
+  gets wrong is whether a real consent signal in the session actually
+  covers this action." A person who said "clean up the PR" did not say
+  "force push", and one approval of a similar action is not a pattern.
+  What a call reaches (can it be undone, does it leave the working
+  directory, the session's network or the organization, does it make
+  something public, does it touch the default branch or production) is
+  what an approval has to cover, and a decision service can only weigh
+  it if the decision point says it.
+- **Most answers are habit.** Claude Code users approve 97% of
+  permission prompts
+  ([Auto mode is now the default in Claude Code](https://claude.com/blog/auto-mode-default-in-claude-code),
+  2026-08-07), and in a controlled study testers stopped about
+  17% of dangerous commands early in a session and about 5% after 50 or
+  more prompts. A service that learns from every click learns the
+  habit. It can only tell a considered answer from a click if the
+  decision point says how the person answered: how long the question
+  was in front of them, whether they opened the call's details, where
+  they answered, and whether the client showed the service's suggestion
+  first. In a study of how agents shape experts' judgment calls
+  ([Anthropic, 2026-10-27](https://www.anthropic.com/research/agents-judgment-calls)),
+  analysts went with the option their agent leaned toward 86% of the
+  time, though a coin flip had set the lean.
+
+The same study of the auto mode classifier also showed two practices
+this spec adopts: after 3 refusals in a row or 20 in a session, the
+agent stops and the person is asked; and the check runs at both ends of
+a handoff to a subagent, when work is delegated and when its result
+comes back.
+
+This spec makes Topos say what it knows:
+
+1. **Each call is sent with its reach**: the class of its target, the
+   boundaries it crosses, whether it can be undone, whether it is a
+   first contact, and the limits the session's machine enforces, all as
+   words from a closed list and never as a path, a host or a branch
+   name.
+2. **A confirmation says how the person answered**: four optional
+   fields a client sets on `user.tool_confirmation`, recorded on the
+   event and passed to the decision service with the time the call
+   waited, which the server measures from the log.
+3. **The service's two new kinds of ask are honored**: an ask because
+   the call reaches wider than anything the person allowed is kept for
+   the person in `learned` mode, and a learned allow loosens the risk
+   score only where the service says the person's approvals cover it.
+4. **Repeated refusals hand the session back to the person**: after 3
+   refusals in a row or 20 in a session, an attended session asks for
+   every call that changes something until the person writes again, and
+   an unattended turn stops.
+5. **Both ends of a subagent's handoff**: the counts and the fallback
+   are the session's, shared by every subagent, each call says how deep
+   it was delegated, and a subagent whose calls were refused returns
+   its result with a fixed warning to its caller.
+
+The decision service's side of this contract (how it reads the reach,
+weighs an answer and caps an allow) is the service's own design. This
+spec fixes only what Topos sends and how it reads the answer.
+
+## Current state
+
+| Piece | Where | Today |
+|---|---|---|
+| The action sent | `decisions.(*Decider).action` in `internal/decisions/decisions.go` | `actor` (`agent`, the agent's id, the session), `kind` `tool`, `name`, `effect` (the tool's, `external` when unset), `input`, `environment` (`host` with `credentialed` true, or `sandbox` on a Cella machine), `attributes.attended` ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]), and `signals` with the `rules/1` score. No `target`, no `reversible`, nothing about the session's network, the organization, a publish's access or the repositories |
+| The answer sent | `Decider.Answered`, through `harness.Learner` from `turn.forwardAnswer` in `harness/resume.go` | `approve` and `by` alone |
+| A confirmation | `session.UserToolConfirmation` | `sender`, `tool_use_id` or `approval_id`, `decision`, `note`, `remember`; decoded strictly by `POST /v1/sessions/{id}/events`, so a field the server does not know is `invalid_request` |
+| Learned mode | `prediction.hasEvidence` | the service's `allow`, `block` and `split` ask decide; any other ask, or a kind the harness does not know, is left to the rules and the risk score |
+| Refusals in a row | nowhere | the harness repeats-call rule ([[015-api]]) ends a turn after 3 identical failing calls, but nothing counts refused calls |
+| A subagent's calls | `turn.plan` in `harness/harness.go` | every call of every thread goes through the same `Decider` with the thread's narrowed policy ([[013-threads-and-subagents]]), and is sent to the service like the session's own |
+| The handoff | `agentTool` in `harness/threads.go` | `agent` and `send_message` have effect `none`, so they are decided `read_only` and sent as allowed reads; the result is the subagent's final text, with nothing about what it was refused |
+
+## Design
+
+### The reach of a call
+
+Topos adds three optional members to the action it sends, filled only
+from what the harness knows without reading the call's input as text.
+Every value is a word of the closed lists below; Topos never puts a
+path, a host, a ref name, a URL or any other string from a call's input
+or from the session's configuration into them.
+
+| Member | Values | Meaning |
+|---|---|---|
+| `scope.undo` | `none`, `reversible`, `recoverable`, `irreversible` | whether the call can be undone: changes nothing; can be undone in the working directory with no loss; can be undone from a copy or by another call; cannot be undone, or others already saw it |
+| `scope.crosses` | an object with any of `machine`, `remote`, `network`, `organization`, `public`, each `true` or `false` | the boundaries the call crosses, as far as Topos knows: the machine outside the working directory, another system, a host outside the session's network, a party the organization does not own, anyone at all. A boundary Topos does not know is left out, not sent as `false` |
+| `scope.contact` | `first`, `repeat` | whether the call is the session's first contact with its target |
+| `target` | `{kind, id, class}`, `class` one of `scratch`, `own`, `shared`, `primary` | what the call changes: `own` is something this session made (its branch, its preview, its checkout), `shared` something other people or the person's own files use, `primary` the default or a protected branch, production, a live release |
+| `environment.holds` | a list of `egress`, `protected_refs`, `checkpoints` | the limits the machine enforces whatever the call does: no host outside the session's network is reached without its own approval; the git host refuses a push to a protected branch; the working directory is kept in checkpoints it can be restored from |
+| `environment.repositories` | `private`, `public`, `mixed` | the visibility, at the git host, of the repositories the session was given, when it has any; a push to them is that visible |
+
+A decision service that knows none of these members ignores them; one
+that does reads the call's input with its own fixed tables (a `git push`
+with `--force` cannot be undone, a refspec that names `main` is
+`primary`) and takes the wider of its reading and what Topos says.
+
+**What Topos sends, by call.**
+
+| Call | `scope` | `target` |
+|---|---|---|
+| a call whose tool reads or changes nothing (`read`, `glob`, `grep`, `history`, `todo`, a question) | `undo: none` | none |
+| `write`, `edit` | `crosses.machine` true when the resolved path is outside the working directory, false otherwise; `crosses.remote` false; `undo: reversible` when the path is inside the working directory and the machine holds `checkpoints` | `kind: path`, no `id`; `class: own` on a Cella machine, whose working directory is the session's own checkout, and `shared` on a host or a person's own computer ([[080-device-machines]]), whose files are the person's |
+| `bash` | nothing: the call's reach is in its command, which only the service's own tables read | none |
+| `web_fetch` | `undo: none`; `crosses.remote` true; `crosses.network` false for a host inside the session's network ([[052-a-sessions-network]]) and true outside it; `crosses.organization` false for a host the boundary names and true for one it does not, left out without a boundary; `crosses.public` false; `contact: first` when no earlier `web_fetch` of the session reached the host, else `repeat` | none |
+| `publish` ([[043-publishing-a-folder]]) | `crosses.remote` true; `crosses.public` true when the call sets `access: link` or releases an app that anyone with its address opens, false when the app is private and stays so; `undo: irreversible` for `access: link`, `recoverable` for a release or a preview; `contact: first` when the call creates the app, else `repeat` | `kind: app`, `id` the app's id when it exists; `class: primary` for a release, `own` for a preview |
+| `agent`, and `send_message` to a subagent | `undo: none` | none; see [Both ends of a handoff](#both-ends-of-a-handoff) |
+| every other call (MCP tools, `request_connection`, `trigger`, `wake`, `notify`, a client's tool) | nothing | none |
+
+`environment.holds` on every call:
+
+| Hold | When Topos sends it |
+|---|---|
+| `egress` | the machine is a Cella sandbox whose session network mode is `allowlist` or `none` ([[052-a-sessions-network]]); never on a host or a person's own computer |
+| `protected_refs` | the session's repositories are reached through the git host with the ref rules of [[019-git]], which refuse a push to a protected branch |
+| `checkpoints` | the machine keeps each turn's working directory in a checkpoint ([[034-checkpoints-and-rewind]]) |
+
+`environment.repositories` is the visibility the git host reported for
+the session's delivered repositories when the session's machine opened:
+`private` when every one is private, `public` when every one is public,
+`mixed` otherwise, and left out for a session with none.
+
+**The organization's boundary.** Whether a host belongs to the
+organization is the installation's to say. The authorizer's allow of
+`session.create`, `session.fork` and `session.send` may carry
+`boundary`, `{"hosts": [...]}`, at most 256 entries, each a host name
+or `*.` and a domain, lowercased: the hosts the organization owns. The
+session keeps the latest allow's boundary, as it keeps its network.
+Without one, Topos leaves `crosses.organization` out, and the service
+reads it as unknown. This is the "environment" of the auto mode
+classifier (where trust ends), in the place this core already gives an
+installation's decisions ([[052-a-sessions-network]]); its "block
+rules" and "allow exceptions" are this core's `always_confirm` and
+`always_allow` ([[012-permissions-and-approvals]]).
+
+**Depth.** Every call carries `attributes.depth`, the subagent depth of
+the thread that made it: 0 for the session's own conversation, 1 for a
+subagent it started, and so on ([[013-threads-and-subagents]]).
+
+### How the person answered
+
+**What a client sets.** `user.tool_confirmation` gains four optional
+fields. A client sets each one it can measure and leaves out each one it
+cannot; it never guesses.
+
+| Field | Type | Set to |
+|---|---|---|
+| `answer_ms` | integer, 0 to 86400000 | the milliseconds from the moment the question became visible to the person on this client (rendered on screen, in a window that has focus) to the person's answer gesture; when the person left and came back, the time the question was visible, summed |
+| `details_opened` | boolean | `true` when the person opened the call's details (the full command or input, the diff, the target) before answering; `false` when the client offered details and the person did not open them; left out when the client offers no details |
+| `suggestion_shown` | boolean | `true` when the client showed any part of the decision service's suggestion (its verdict, the approval probability, its reason, or an explanation) before the person answered; `false` when it showed none |
+| `surface` | `prompt`, `notification`, `queue`, `bulk` | where the person answered: the conversation, with the call waiting in it; a system notification, without opening the session; a list of waiting questions or reviews; one gesture that answered more than one call |
+
+A value of another type, an `answer_ms` outside its range, or a
+`surface` outside its list is `invalid_request` ("This confirmation has
+a field the server cannot read."), as every malformed confirmation is.
+The fields hold no text. The server records them on the event as sent;
+`sender`, `decision`, `note` and `remember` are unchanged.
+
+**Order of releases.** `POST /v1/sessions/{id}/events` decodes a
+confirmation strictly, so a server that predates this spec refuses the
+new fields. A client sends them only to a server whose
+`GET /v1/openapi.yaml` lists `answer_ms` in
+`Event.user.tool_confirmation`; a client that gets `invalid_request` for
+a confirmation that carried them sends it once more without them.
+
+**What the server measures.** `waited_ms` is the milliseconds from the
+event that asked (the call's `agent.tool_use`, or the
+`approval.requested` of a network approval) to the confirmation's own
+event, both in the log's time. It is computed when the answer is
+forwarded and kept in no event, since the log already holds both
+times.
+
+**What the decision service is sent.** `harness.Learner.Answered` takes
+the confirmation and the time the call waited in place of `approve` and
+`by`:
+
+```go
+type Learner interface {
+	Answered(ctx context.Context, s session.Session, toolUseID string, a Answer) error
+}
+
+type Answer struct {
+	Approve         bool
+	By              string
+	AnswerMS        *int64
+	WaitedMS        int64
+	DetailsOpened   *bool
+	SuggestionShown *bool
+	Surface         string
+	Remembered      bool
+}
+```
+
+`POST /v1/answers` carries `answer_ms`, `waited_ms`, `details_opened`,
+`suggestion_shown`, `surface` and `remembered` beside `approve` and
+`by`, each left out when unknown. `remembered` is `true` when the
+confirmation carried `remember`; the pattern itself is never sent,
+since it holds text of the call's input. `note` is never sent. A
+network approval's confirmation is sent the same way, with its own
+times. A person's `user.message` in place of an answer still sends
+nothing ([[037-decision-services]]).
+
+A decision from a remembered pattern, `always_allow` or any other rule
+is sent as a decision and never as an answer, as today.
+
+### The service's new kinds of ask, and when a learned allow decides
+
+A decision service that knows how far a person's approvals reach can
+suggest `ask` where its model alone would allow, and say why in
+`ask_kind`:
+
+| `ask_kind` | Meaning | `learned` mode |
+|---|---|---|
+| `wider` | the call reaches wider than any call of its kind the person allowed | kept for the person: `decided_by: learned`, verdict `ask`, review probability 1, as a `split` ask is |
+| `few` | the person allowed calls of this reach, but not with enough considered answers or in enough sessions | the rules and the risk score decide, as for `unsure` |
+| any other value | | the rules and the risk score decide, as today |
+
+A prediction may also carry `cover`, with `covered` true when the
+person's approvals cover the call. `TOPOS_DECISIONS_LOOSEN` says when a
+learned `allow` may run a call that the rules and the risk score would
+not run without a person:
+
+| Value | A learned `allow` in `progressive` (`learned` and `decide`) |
+|---|---|
+| `covered` (default) | decides when the prediction carries `cover.covered: true`; otherwise the rules and the risk score decide, as for `unsure`, with the suggestion recorded |
+| `never` | the stricter of the allow and the rules' verdict decides; the service can make a call wait or stop it, and never run one the risk score would ask about |
+
+Neither value lifts a call above the rules' ceiling: `always_confirm`, a
+tool's hold, the session's network and `block_at` decide first, as
+today ([[037-decision-services]]). A service that sends no `cover`
+under `covered` never loosens the risk score, which is the safe reading
+of an older service.
+
+### Repeated refusals
+
+**A refusal** is a call that did not run because:
+
+| Cause | `decided_by` of the call, or the event |
+|---|---|
+| the risk score blocked it | `score` with `block_at` |
+| the session's network blocked it | `network` |
+| the decision service's suggestion blocked it | `learned` |
+| the person denied its confirmation | the `user.tool_confirmation` with `deny` |
+| the person denied a network approval it raised | the `approval.decided` with `deny` |
+
+A block in `plan` mode is not a refusal: plan mode blocks every change
+by design, and the agent is told so. A call that changes something and
+runs (an allow, a flag, or an ask the person allowed) ends a run of
+refusals. A read-only call neither counts nor ends a run.
+
+**The counts.** The session counts refusals in the order of their
+events, across its own conversation and every subagent: `consecutive`,
+the refusals since the last call that changed something and ran, and
+`total`, every refusal since the session started or since the fallback
+last ended.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TOPOS_DENIALS_CONSECUTIVE` | 3 | refusals in a row that start the fallback; 0 turns the limit off |
+| `TOPOS_DENIALS_TOTAL` | 20 | refusals in a session that start the fallback; 0 turns the limit off |
+
+The authorizer's allow of `session.create`, `session.fork` and
+`session.send` may carry `denials`, `{"consecutive", "total"}`, which
+apply when lower than the installation's; it can make the limits
+stricter and never looser.
+
+**The fallback.** When a refusal reaches either limit, the runner
+appends `session.denials_reached` after it:
+
+| Field | Meaning |
+|---|---|
+| `consecutive`, `total` | the counts at that refusal |
+| `limit` | `consecutive` or `total`, the one reached first |
+| `effect` | `ask` on an attended turn, `stop` on an unattended one |
+
+On an **attended** turn, from the next call until the person's next
+`user.message`, every call that changes something asks the person,
+whatever `always_allow`, a remembered pattern, the sandbox rule, the
+risk score or a decision service would decide: its `decided_by` is
+`denials`, its review probability 1. A call the rules block stays
+blocked, a read-only call and a call that reaches memory folders alone
+([[093-memory-folders-the-file-tools-reach]]) run as before, and plan
+mode is unchanged. The decision service is asked as in `confirm` mode:
+its suggestion is recorded, the decision is sent, and the person's
+answer teaches it. The person's next `user.message` ends the fallback
+and resets both counts.
+
+On an **unattended** turn ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]),
+no person is there to ask. The turn ends at the refusal that reached the
+limit, every thread of it at its next step, and the session goes idle
+with the stop reason `denials`. The next turn a person begins runs in
+the fallback until that person's next message, as an attended turn
+would.
+
+`session.denials_reached` and the stop reason `denials` are additions to
+schema v1 ([[004-session-log]]); `denials` joins the closed set of
+`decided_by` ([[012-permissions-and-approvals]]). The fold derives the
+counts and the fallback from the log, so every runner applies them the
+same way after a handoff ([[017-external-runners-handoff-fork]]). A
+refusal is never sent to the decision service as an answer: a block by
+the rules is not the person's view, and a stopped turn is not a denial.
+
+### Both ends of a handoff
+
+**Inside.** Each call a subagent makes is already decided like any call
+of the session, through the same decider and the subagent's narrowed
+policy. That stays.
+
+**Going out.** A subagent cannot reset what its caller earned:
+
+- The counts and the fallback are the session's. A refusal in a subagent
+  counts, a subagent started or sent a message while the session is in
+  the fallback runs in it, and a subagent's calls end a run of refusals
+  only as the caller's do.
+- `agent`, and `send_message` to a subagent, still run as reads, since
+  every call the subagent makes is decided on its own. Their action
+  carries what the call hands over, as attributes: `handoff.writes`, true
+  when the subagent holds a tool whose effect is `write`;
+  `handoff.external`, true when it holds one whose effect is `external`;
+  and, for `agent`, `handoff.isolation`, `shared` or `worktree`.
+- The task text is never sent. It is the agent's own words, as the
+  agent's messages are, and no part of this contract carries those.
+
+**Coming back.** When a subagent's run ends and its final text becomes
+the result of the `agent` or `send_message` call, the harness counts the
+refusals among the subagent's calls in that run. When there is at least
+one, the result begins with the text of
+`results/subagent/refused-v1`:
+
+> {n} of this subagent's calls did not run: a rule or the person refused
+> them. Check its work before you rely on it.
+
+and the call's `tool.result` meta records `refused`, the count. The text
+names no rule, no reason and nothing the decision service said; a
+reason a decision service gives is the person's and never reaches an
+agent ([[037-decision-services]]).
+
+### What Topos never sends
+
+The agent's messages and reasoning, a tool's output, a subagent's task,
+a confirmation's `note`, a remembered pattern, a path, a host, a URL or
+a ref name as a scope or target value. The decision service learns from
+what a call is and what the person answered, and from nothing the agent
+wrote about it.
+
+## Not in this spec
+
+- **The branch a `bash` call pushes from.** Knowing it would mean
+  reading `HEAD` on the machine before every `bash` call. A push without
+  a refspec is read by the decision service as an unknown target, and
+  `protected_refs` keeps the default branch out of reach where the git
+  host enforces it.
+- **An input probe.** The auto mode classifier warns the agent when a
+  tool result looks like an injection. That reads tool outputs, which
+  nothing in this contract does; it would be a spec of its own.
+- **Clients.** How a client measures `answer_ms`, offers details and
+  keeps the suggestion out of sight until the person answers is each
+  client's; this spec fixes the fields they send.
+- **Scope for MCP tools and client tools.** Their reach is their own
+  server's to describe; until a manifest field says it, they send none.
+- **A per-agent limit on refusals.** The limits are the installation's
+  and the authorizer's.
+
+## Acceptance criteria
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| Each call of the table is sent with the `scope`, `target` and `environment.holds` the table gives, on a Cella machine, a host and a person's own computer | `internal/decisions.TestScopeByCall` | not built |
+| No scope or target value holds a path, a host, a URL or a ref name, for calls whose input holds markers in each | `internal/decisions.TestScopeHoldsNoInputText` | not built |
+| A `web_fetch`'s `crosses.organization` follows the allow's boundary, and is left out without one | `internal/decisions.TestBoundaryDecidesOrganization` | not built |
+| `contact` is `first` for the session's first fetch of a host and the `publish` that creates an app, and `repeat` after | `internal/decisions.TestFirstContact` | not built |
+| A confirmation with the four fields is recorded as sent, a malformed one is `invalid_request`, and one without them is accepted as before | `internal/server.TestConfirmationAnswerFields` | not built |
+| The answer sent carries the confirmation's fields, `waited_ms` from the log, and `remembered` without the pattern or the note | `internal/decisions.TestAnswerCarriesHowThePersonAnswered`, `harness.TestResumeForwardsAnswers` | not built |
+| `api/openapi.yaml` describes the four fields on `Event.user.tool_confirmation`, `session.denials_reached`, the stop reason `denials` and `decided_by: denials` | `TestOpenAPIMatchesHandlers`, `TestOpenAPIIsGenerated` | not built |
+| In `learned` mode a `wider` ask is kept for the person and a `few` ask is left to the rules | `internal/decisions.TestWiderIsKeptAndFewIsLeft` | not built |
+| Under `covered` a learned allow without `cover.covered` leaves the call to the rules, and under `never` a learned allow never runs a call the risk score asks about | `internal/decisions.TestLoosen` | not built |
+| Three refusals in a row, or twenty in a session, append `session.denials_reached`; a read neither counts nor resets; plan-mode blocks do not count | `harness.TestRefusalsAreCounted` | not built |
+| In the fallback every call that changes something asks with `decided_by: denials`, a blocked call stays blocked, and the person's next message ends it | `harness.TestTheFallbackAsksForEveryChange` | not built |
+| An unattended turn that reaches a limit ends with the stop reason `denials`, and the next attended turn starts in the fallback | `harness.TestAnUnattendedTurnStopsOnRefusals` | not built |
+| The authorizer's `denials` lowers the limits and cannot raise them, and 0 in the variables turns a limit off | `internal/server.TestDenialLimits` | not built |
+| A subagent's refusals count toward the session's, a subagent started in the fallback runs in it, and a fork after a handoff reads the same counts from the log | `harness.TestSubagentsShareTheCounts` | not built |
+| A subagent whose run had a refusal returns its result after the fixed warning with `refused` in the meta, and one without returns as before | `harness.TestARefusedSubagentWarnsItsCaller` | not built |
+| `agent` and `send_message` carry `handoff.*` and every call carries `depth`, and no task text reaches the decision service | `internal/decisions.TestHandoffAttributes` | not built |
