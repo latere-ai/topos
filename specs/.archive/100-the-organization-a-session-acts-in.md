@@ -1,12 +1,12 @@
 ---
 title: "The organization a session acts in: a hosted session records the organization that owns its agent, TOPOS_DECISIONS_ORG=agent keys the session's calls at the decision service by that organization, and each agent.tool_use records the organization its decision was sent under"
-status: testing
+status: complete
 track: core
 depends_on: [036-organization-owners.md, 099-hosted-sessions-decided-by-a-decision-service.md]
 affects: [session/, harness/, internal/decisions/, internal/config/, internal/server/, cmd/toposd/, api/openapi.yaml, docs/]
 effort: small
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-02
 author: changkun
 ---
 
@@ -165,9 +165,10 @@ not sent.
 ## Outcome
 
 Built as designed, behind the default `initiator`, so no key changes
-until an installation sets `agent`. The spec stays at `testing` until
-an installation runs with `agent` and its decision service shows a call
-of an organization's agent under the organization.
+until an installation sets `agent`. Released in v0.68.0 (2026-11-02),
+which runs in production. From 2026-11-02, the hosted installation sets
+`TOPOS_DECISIONS_ORG=agent`, so its decision service keys a call of an
+organization's agent by that organization.
 
 - **The decider stamps the key once.** `Decide` handles `plan` first,
   which sends nothing, and every other path sends the decision under
