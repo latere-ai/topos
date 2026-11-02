@@ -533,6 +533,12 @@ Where the build reads the design one way of several, or goes past it:
   before its refusal reached the limit still run, and the turn ends with
   `denials` once they are answered, before the next request; every
   other thread of the turn ends at its next step.
+- **An answer leaves out what the service would refuse.** The server
+  holds a confirmation's fields to their ranges, and the decider checks
+  them again before it relays an answer: an `answer_ms` outside 0 to
+  86400000 and a `surface` outside the list are left out, and a
+  negative `waited_ms` is sent as 0, so a confirmation another writer
+  appended still teaches the service.
 - **A thread tool's input is not sent.** `agent`, `send_message` and
   the advisor are sent to the decision service without their input, so
   no task, message or question of the agent reaches it.
