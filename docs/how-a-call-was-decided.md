@@ -296,8 +296,8 @@ and the authorizer can set lower limits for a session
   only, and a call that reaches memory folders alone, run as before.
   The decision service records its suggestion, as in `confirm`. The
   person's next `user.message` ends this and sets the counts to zero.
-- `effect: stop`, on a turn that a trigger began: no person is there to
-  ask. The turn stops with the stop reason `denials`, and each subagent
+- `effect: stop`, on a turn that a trigger began, and in a run of a
+  rollout: no person is there to ask. The turn stops with the stop reason `denials`, and each subagent
   stops at its next step. The next turn that a person begins asks for
   each change, as for `effect: ask`, until the next message of that
   person.

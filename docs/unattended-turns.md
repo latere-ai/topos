@@ -19,6 +19,12 @@ held call always does.
 
 A turn the person's answer or confirmation resumes is theirs again.
 
+No person is there to ask when the session's refusals reach a limit: a
+turn a trigger's message began stops with the stop reason `denials`,
+and the next turn a person begins asks them for every call that
+changes something until their next message
+([How a call was decided](how-a-call-was-decided.md#repeated-refusals)).
+
 ## What the log records
 
 `agent.tool_use` and `approval.requested` carry `attended`: `false` on a
@@ -29,8 +35,10 @@ A decision service is told the same in the action it predicts and
 records, as one of its attributes:
 
 ```json
-"attributes": {"attended": false}
+"attributes": {"attended": false, "depth": 0}
 ```
 
-so a service that learns a person's approvals, such as Limen, can weigh
-a call nobody sees, from that person's own answers.
+so a decision service that learns a person's approvals can weigh a call
+nobody sees, from that person's own answers. `depth` is how deep the call
+was delegated: 0 for the session's own conversation, 1 for a subagent it
+started.
