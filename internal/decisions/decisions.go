@@ -114,11 +114,14 @@ const (
 	// recorded beside it, as a confirm-mode call is.
 	ModeShadow Mode = "shadow"
 	// ModeLearned lets the service decide a progressive call where it has
-	// evidence about the person: its allow, its block, and an ask on
-	// answers that disagree (ask_kind split). Where it has too few answers
-	// (ask_kind unsure), where its prediction carries no ask_kind, or where
-	// it does not answer, the rules and the risk score decide, as without a
-	// service, with the suggestion recorded beside them.
+	// evidence about the person: its allow, its block, and an ask of kind
+	// split, whose evidence ratio is 0.5 or more while its approval
+	// probability is still between the thresholds; the person's answers
+	// say much about the call, and they can agree or disagree. Where it has
+	// too few answers (ask_kind unsure), where its prediction carries no
+	// ask_kind, or where it does not answer, the rules and the risk score
+	// decide, as without a service, with the suggestion recorded beside
+	// them.
 	ModeLearned Mode = "learned"
 	// ModeDecide lets the service's suggestion decide every progressive
 	// call the rules leave open, and a call it cannot answer waits for a
@@ -397,16 +400,25 @@ func (d *Decider) byRules(ctx context.Context, a action, rules harness.Decision,
 }
 
 // hasEvidence is whether a prediction rests on the person's answers: an
-// allow, a block, or an ask on answers that disagree. An ask with too few
-// answers, or from a service that does not say which ask it is, does not.
+// allow, a block, or a split ask. An unsure ask, which has too few
+// answers, and an ask from a service that does not say which ask it is,
+// do not.
 func (p prediction) hasEvidence() bool {
 	return p.Verdict != string(verdict.Ask) || p.AskKind == AskSplit
 }
 
-// The kinds of ask a prediction can carry.
+// The kinds of ask a prediction can carry, told apart by the service's
+// evidence ratio.
 const (
+	// AskUnsure is an ask with an evidence ratio below 0.5: the person's
+	// answers say little about the call yet, and more answers can move it.
 	AskUnsure = "unsure"
-	AskSplit  = "split"
+	// AskSplit is an ask with an evidence ratio of 0.5 or more and the
+	// approval probability still between the thresholds: the person's
+	// answers say much about the call, and they can agree or disagree.
+	// Two allows and no deny can give 0.80 under a 0.90 allow threshold,
+	// and more allows can move it past 0.90.
+	AskSplit = "split"
 )
 
 // watch records the rules' decision with the service's suggestion beside

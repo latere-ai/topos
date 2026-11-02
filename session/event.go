@@ -214,10 +214,13 @@ type Suggestion struct {
 	Thresholds  SuggestionThresholds `json:"thresholds"`
 	AuditRate   float64              `json:"audit_rate"`
 	Reason      string               `json:"reason,omitempty"`
-	// EvidenceRatio and AskKind say how much the person's answers settle
-	// the suggestion; an ask's AskKind is unsure (too few answers) or
-	// split (answers that disagree). A service that predates them sends
-	// neither, and an event written before Topos kept them has neither.
+	// EvidenceRatio, from 0 to 1, says how much the person's answers
+	// settle the suggestion. An ask's AskKind is unsure, an evidence ratio
+	// below 0.5 where more answers can move it, or split, an evidence
+	// ratio of 0.5 or more with the approval probability still between
+	// the thresholds; a split ask's answers can agree or disagree. A
+	// service that predates them sends neither, and an event written
+	// before Topos kept them has neither.
 	EvidenceRatio *float64 `json:"evidence_ratio,omitempty"`
 	AskKind       string   `json:"ask_kind,omitempty"`
 }

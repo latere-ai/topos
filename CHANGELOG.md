@@ -18,6 +18,17 @@ committed: the commit log already holds that.
   layer it names, and a create's `rollout` states its id's rule. A
   generated client or reference now shows what each means.
 
+### Fixed
+
+- **A `split` ask does not mean that the answers disagree.** The
+  documents, the code comments and the notes of v0.68.0 said that it
+  does. A `split` ask has an `evidence_ratio` of 0.5 or more, and an
+  approval probability that is still between the profile's thresholds.
+  The person's answers can agree or disagree, and more answers that
+  agree can move the probability past a threshold. The behavior does not
+  change: in `learned`, the service decides a `split` ask as before. See
+  `docs/how-a-call-was-decided.md`, which gives an example.
+
 ## v0.68.0 - 2026-11-02
 
 ### Added

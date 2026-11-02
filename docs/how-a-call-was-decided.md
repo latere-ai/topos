@@ -49,11 +49,11 @@ a person's own computer, the service only suggests. The call records the
 rule that decided it, and its `suggestion` beside it.
 
 In `learned`, the service decides only where it has evidence about the
-person: its `allow`, its `block`, and an `ask` on answers that disagree.
-Where it has too few answers, the call records the rule or the score that
-decided it, with the suggestion beside it. If the service does not
-answer, the call records the rule or the score that decided it, with no
-suggestion.
+person: its `allow`, its `block`, and an `ask` with `ask_kind: split`.
+Where it has too few answers (`ask_kind: unsure`), the call records the
+rule or the score that decided it, with the suggestion beside it. If the
+service does not answer, the call records the rule or the score that
+decided it, with no suggestion.
 
 A call a decision service decided keeps the service's `suggestion`, with
 the approval probability and the thresholds. Show the service's
@@ -62,10 +62,24 @@ the approval probability and the thresholds. Show the service's
 A `suggestion` also records how much the person's answers settle it, if
 the service sends this:
 
-- `ask_kind`: for an `ask`, `unsure` if the person gave too few answers,
-  or `split` if the answers disagree.
 - `evidence_ratio`: how much of the suggestion the person's answers
-  settle.
+  settle, from 0 to 1. It is near 0 for a call that is not like a call
+  the person answered. It is near 1 for a kind of call that the person
+  answered frequently.
+- `ask_kind`: for an `ask`, `unsure` or `split`.
+  - `unsure`: the evidence ratio is less than 0.5. The person's answers
+    say little about this kind of call, and more answers can move the
+    suggestion.
+  - `split`: the evidence ratio is 0.5 or more, and the approval
+    probability is still between the thresholds. The person's answers
+    say much about this kind of call. The answers can agree or disagree,
+    so `split` does not tell that the person gave different answers.
+
+An example of a `split` ask: the person allowed `publish` two times and
+did not deny it. The approval probability is 0.80. The profile lets a
+call run without a person only above 0.90. The service has evidence,
+but 0.80 is between the thresholds, so the service asks. More allows
+of `publish` can move the probability above 0.90.
 
 An older service sends neither field, and an event that an older Topos
 wrote has neither. Show such a suggestion without them.
