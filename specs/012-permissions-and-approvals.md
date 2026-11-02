@@ -219,6 +219,7 @@ the rule within it as `decided_by_rule` where one applies:
 | `question` | a question tool's call is itself put to a person | none |
 | `learned` | a decision service's suggestion decided ([[037-decision-services]]) | the service's model, its prediction's `source` |
 | `fallback` | the decision service did not answer, so the call asks | none |
+| `denials` | after repeated refusals, the session asks the person for every call that changes something until their next message (added by [[101-what-a-person-consented-to]]) | none |
 
 A rule is named by what the rule says, never by the call's input: a
 pattern is the organization's or the person's own text. `learned`

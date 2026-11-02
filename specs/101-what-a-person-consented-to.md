@@ -1,6 +1,6 @@
 ---
 title: "What a person consented to: each call sent with its reach, a confirmation that says how the person answered, a session that asks for every step after repeated refusals, and both ends of a subagent's handoff"
-status: drafted
+status: testing
 track: core
 depends_on: [004-session-log.md, 008-tools.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 019-git.md, 034-checkpoints-and-rewind.md, 037-decision-services.md, 043-publishing-a-folder.md, 052-a-sessions-network.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 099-hosted-sessions-decided-by-a-decision-service.md]
 affects: [session/, harness/, internal/decisions/, internal/server/, internal/config/, internal/hosted/, internal/toposcli/, authorizer/, prompts/, api/openapi.yaml, docs/]
@@ -281,8 +281,13 @@ suggest `ask` where its model alone would allow, and say why in
 | `ask_kind` | Meaning | `learned` mode |
 |---|---|---|
 | `wider` | the call reaches wider than any call of its kind the person allowed | kept for the person: `decided_by: learned`, verdict `ask`, review probability 1, as a `split` ask is |
+| `split` | the evidence ratio is 0.5 or more and the person's answers about calls of this kind disagree | kept for the person, as today |
+| `short` | the evidence ratio is 0.5 or more and the answers agree, with the approval probability still in the ask band | the rules and the risk score decide, as for `unsure` (decided by the owner on 2026-11-02) |
 | `few` | the person allowed calls of this reach, but not with enough considered answers or in enough sessions | the rules and the risk score decide, as for `unsure` |
 | any other value | | the rules and the risk score decide, as today |
+
+A service that predates `short` sends `split` for answers that agree as
+well; such an ask is kept for the person, as before.
 
 A prediction may also carry `cover`, with `covered` true when the
 person's approvals cover the call. `TOPOS_DECISIONS_LOOSEN` says when a
@@ -444,21 +449,94 @@ wrote about it.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Each call of the table is sent with the `scope`, `target` and `environment.holds` the table gives, on a Cella machine, a host and a person's own computer | `internal/decisions.TestScopeByCall` | not built |
-| No scope or target value holds a path, a host, a URL or a ref name, for calls whose input holds markers in each | `internal/decisions.TestScopeHoldsNoInputText` | not built |
-| A `web_fetch`'s `crosses.organization` follows the allow's boundary, and is left out without one | `internal/decisions.TestBoundaryDecidesOrganization` | not built |
-| `contact` is `first` for the session's first fetch of a host and the `publish` that creates an app, and `repeat` after | `internal/decisions.TestFirstContact` | not built |
-| A call's `agent.tool_use` records `scope` before the call waits: the service's reading joined with Topos's claims and `source: service` when a prediction answered with one, Topos's claims alone and `source: topos` otherwise, and for `bash` without a service no member but `source` | `harness.TestToolUseRecordsScope`, `internal/decisions.TestScopeSource` | not built |
-| No member of a recorded `scope` holds a name of a ref, an app, a host or a path | `harness.TestRecordedScopeHoldsNoName` | not built |
-| A confirmation with the four fields is recorded as sent, a malformed one is `invalid_request`, and one without them is accepted as before | `internal/server.TestConfirmationAnswerFields` | not built |
-| The answer sent carries the confirmation's fields, `waited_ms` from the log, and `remembered` without the pattern or the note | `internal/decisions.TestAnswerCarriesHowThePersonAnswered`, `harness.TestResumeForwardsAnswers` | not built |
-| `api/openapi.yaml` describes `scope` on `Event.agent.tool_use`, the four fields on `Event.user.tool_confirmation`, `session.denials_reached`, the stop reason `denials` and `decided_by: denials` | `TestOpenAPIMatchesHandlers`, `TestOpenAPIIsGenerated` | not built |
-| In `learned` mode a `wider` ask is kept for the person and a `few` ask is left to the rules | `internal/decisions.TestWiderIsKeptAndFewIsLeft` | not built |
-| Under `covered` a learned allow without `cover.covered` leaves the call to the rules, and under `never` a learned allow never runs a call the risk score asks about | `internal/decisions.TestLoosen` | not built |
-| Three refusals in a row, or twenty in a session, append `session.denials_reached`; a read neither counts nor resets; plan-mode blocks do not count | `harness.TestRefusalsAreCounted` | not built |
-| In the fallback every call that changes something asks with `decided_by: denials`, a blocked call stays blocked, and the person's next message ends it | `harness.TestTheFallbackAsksForEveryChange` | not built |
-| An unattended turn that reaches a limit ends with the stop reason `denials`, and the next attended turn starts in the fallback | `harness.TestAnUnattendedTurnStopsOnRefusals` | not built |
-| The authorizer's `denials` lowers the limits and cannot raise them, and 0 in the variables turns a limit off | `internal/server.TestDenialLimits` | not built |
-| A subagent's refusals count toward the session's, a subagent started in the fallback runs in it, and a fork after a handoff reads the same counts from the log | `harness.TestSubagentsShareTheCounts` | not built |
-| A subagent whose run had a refusal returns its result after the fixed warning with `refused` in the meta, and one without returns as before | `harness.TestARefusedSubagentWarnsItsCaller` | not built |
-| `agent` and `send_message` carry `handoff.*` and every call carries `depth`, and no task text reaches the decision service | `internal/decisions.TestHandoffAttributes` | not built |
+| Each call of the table is sent with the `scope`, `target` and `environment.holds` the table gives, on a Cella machine, a host and a person's own computer | `internal/decisions.TestScopeByCall`, `harness.TestTheReachOfACall` | built |
+| No scope or target value holds a path, a host, a URL or a ref name, for calls whose input holds markers in each | `internal/decisions.TestScopeHoldsNoInputText` | built |
+| A `web_fetch`'s `crosses.organization` follows the allow's boundary, and is left out without one | `internal/decisions.TestBoundaryDecidesOrganization`, `internal/server.TestTheBoundaryFollowsTheLatestAllow`, `authorizer.TestDecodeBoundaryAndDenials` | built |
+| `contact` is `first` for the session's first fetch of a host and the `publish` that creates an app, and `repeat` after | `internal/decisions.TestFirstContact` | built |
+| A call's `agent.tool_use` records `scope` before the call waits: the service's reading joined with Topos's claims and `source: service` when a prediction answered with one, Topos's claims alone and `source: topos` otherwise, and for `bash` without a service no member but `source` | `harness.TestToolUseRecordsScope`, `internal/decisions.TestScopeSource`, `session.TestAScopeJoinsTheWiderOfTwo` | built |
+| No member of a recorded `scope` holds a name of a ref, an app, a host or a path | `harness.TestRecordedScopeHoldsNoName` | built |
+| A confirmation with the four fields is recorded as sent, a malformed one is `invalid_request`, and one without them is accepted as before | `internal/server.TestConfirmationAnswerFields`, `session.TestHowThePersonAnsweredIsChecked` | built |
+| The answer sent carries the confirmation's fields, `waited_ms` from the log, and `remembered` without the pattern or the note | `internal/decisions.TestAnswerCarriesHowThePersonAnswered`, `harness.TestResumeForwardsAnswers` | built |
+| `api/openapi.yaml` describes `scope` on `Event.agent.tool_use`, the four fields on `Event.user.tool_confirmation`, `session.denials_reached`, the stop reason `denials` and `decided_by: denials` | `TestOpenAPIMatchesHandlers`, `TestOpenAPIIsGenerated`, `internal/server.TestAFieldNoteDescribesItsMember` | built |
+| In `learned` mode a `wider` and a `split` ask are kept for the person, and a `few`, a `short` and an `unsure` ask are left to the rules | `internal/decisions.TestWiderIsKeptAndFewIsLeft` | built |
+| Under `covered` a learned allow without `cover.covered` leaves the call to the rules, and under `never` a learned allow never runs a call the risk score asks about | `internal/decisions.TestLoosen`, `internal/config.TestLoosenAndDenials` | built |
+| Three refusals in a row, or twenty in a session, append `session.denials_reached`; a read neither counts nor resets; plan-mode blocks do not count | `harness.TestRefusalsAreCounted`, `session.TestRefusalsAreCountedFromTheLog` | built |
+| In the fallback every call that changes something asks with `decided_by: denials`, a blocked call stays blocked, and the person's next message ends it | `harness.TestTheFallbackAsksForEveryChange`, `internal/decisions.TestTheFallbackIsAskedAsConfirm` | built |
+| An unattended turn that reaches a limit ends with the stop reason `denials`, and the next attended turn starts in the fallback | `harness.TestAnUnattendedTurnStopsOnRefusals`, `session.TestAStoppedTurnHandsTheNextTurnTheFallback` | built |
+| The authorizer's `denials` lowers the limits and cannot raise them, and 0 in the variables turns a limit off | `internal/server.TestDenialLimits`, `session.TestAnAllowsDenialsOnlyLower`, `internal/config.TestLoosenAndDenials`, `internal/hosted.TestTheHarnessKnowsTheRefusalLimitsAndTheRefRules` | built |
+| A subagent's refusals count toward the session's, a subagent started in the fallback runs in it, and a fork after a handoff reads the same counts from the log | `harness.TestSubagentsShareTheCounts` | built |
+| A subagent whose run had a refusal returns its result after the fixed warning with `refused` in the meta, and one without returns as before | `harness.TestARefusedSubagentWarnsItsCaller`, `session.TestRefusedInCountsOneThreadsRun` | built |
+| `agent` and `send_message` carry `handoff.*` and every call carries `depth`, and no task text reaches the decision service | `internal/decisions.TestHandoffAttributes`, `harness.TestHandoffAndDepthReachTheDecider` | built |
+| `environment.repositories` is the visibility a read with no credential found for each delivered repository | `runner.TestARepositorysVisibilityIsWhatAReadWithNoCredentialFinds`, `harness.TestTheReachOfACall`, `internal/hosted.TestASessionClonesCommitsAndPushesThroughItsSandbox` | built |
+
+## Outcome
+
+Built on 2026-11-02 as wave 1 of the consent design, with the owner's
+decisions of that day: `short` joins the asks the rules decide,
+`TOPOS_DECISIONS_LOOSEN` defaults to `covered`, and the limits are 3
+and 20, which an authorizer can only lower. Every criterion above is
+proven by its test. The status is `testing` until a release carries it.
+
+Where the build reads the design one way of several, or goes past it:
+
+- **`denials` at a send is not read.** An allow of `session.create` and
+  `session.fork` sets the session's limits, kept in the header as
+  `denials`. No event carries an authorizer's change of a session's
+  policy at a send today, as the lists and thresholds are read at the
+  create alone, so a send's `denials` is ignored rather than given a new
+  event type.
+- **A send's `boundary` rides on `session.network_changed`.** The
+  header keeps the latest allow's boundary as `boundary`; a send whose
+  allow names another appends `session.network_changed` by the
+  authorizer with a `boundary` member, which moves no network by itself.
+  This is a schema v1 addition beside the ones the names table lists.
+- **`environment.repositories` reads the git host at delivery.** The
+  runner reads each delivered repository once with no credential, as
+  the checkpoints of [[035-hosted-checkpoints-at-the-git-host]] do:
+  asked for a credential is `private`, answered is `public`, anything
+  else is not known. `session.machine` records it as `visibility` on
+  each repository, another schema v1 addition. A session sends
+  `mixed` only when every repository's visibility is known, and nothing
+  when one is not. A `file://` repository is never read.
+- **`protected_refs` trusts the installation's git host.** It is sent
+  when every repository of the session is on `TOPOS_ORIGO_URL`, the git
+  host whose ref rules [[019-git]] describes; that spec's test of a
+  refused push to a protected branch is still not built.
+- **A malformed confirmation's sentence is the detail.** The error table
+  gives `invalid_request` one message, "The request is not valid.", so
+  "This confirmation has a field the server cannot read." is the
+  refusal's developer detail, followed by what could not be read.
+- **`first` is the wider contact.** Where the service's scope and
+  Topos's claim differ in `contact`, the recorded scope keeps `first`,
+  the wider reach, as the decision service's order has it, rather than
+  the order the members table lists the two values in.
+- **The reach a prediction reads is read leniently.** A boundary of the
+  prediction's `crosses` may be a boolean or one of `yes`, `no` and
+  `unknown`; `unknown`, and a word outside a scope's lists, is left out
+  of what the call records. `target_kind` is one of a closed list of
+  words (`path`, `ref`, `app`, `host`, `repository`, `package`,
+  `deploy`, `service`), so a service's value outside it is dropped.
+- **A memory call is a read for the counts.** A call that reaches
+  memory folders alone, and a question, neither counts nor ends a run
+  of refusals, as a read-only call does; otherwise a call the fallback
+  leaves to run would reset the run it guards.
+- **The fallback keeps the rules' asks and blocks.** A call that
+  `always_confirm`, its tool, the session's network or `block_at`
+  already asks about or blocks keeps that `decided_by`; `denials` marks
+  the calls the fallback itself made ask.
+- **An unattended stop waits for the step.** The calls a step decided
+  before its refusal reached the limit still run, and the turn ends with
+  `denials` once they are answered, before the next request; every
+  other thread of the turn ends at its next step.
+- **A thread tool's input is not sent.** `agent`, `send_message` and
+  the advisor are sent to the decision service without their input, so
+  no task, message or question of the agent reaches it.
+- **An uncovered allow goes to the rules in `decide` too.** Under
+  `covered`, a learned allow without `cover.covered` is decided by the
+  rules and the risk score in `decide` as in `learned`, recorded with
+  their layer and the suggestion beside it.
+- **What a `publish` reaches.** A call that changes who can open an app
+  and nothing else is `primary`, as a release is. A preview is public
+  only where the call sets `access: link`; otherwise its `public` is
+  `false` for a private app and left out for any other. A fetch's host
+  counts as reached once an earlier fetch of it returned `ok`.
