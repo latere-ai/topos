@@ -269,15 +269,17 @@ func TestAFieldNoteDescribesItsMember(t *testing.T) {
 	for _, m := range []struct{ schema, member string }{
 		{"AgentToolUse", "decided_by"}, {"AgentToolUse", "decided_by_rule"}, {"AgentToolUse", "decision_org"},
 		{"Suggestion", "evidence_ratio"}, {"Suggestion", "ask_kind"}, {"CreateSessionRequest", "rollout"},
+		{"AgentToolUse", "scope"}, {"CallScope", "source"}, {"UserToolConfirmation", "answer_ms"}, {"UserToolConfirmation", "details_opened"},
+		{"UserToolConfirmation", "suggestion_shown"}, {"UserToolConfirmation", "surface"}, {"DenialsReached", "effect"},
 	} {
 		if doc.Components.Schemas[m.schema].Properties[m.member].Description == "" {
 			t.Errorf("%s.%s has no description", m.schema, m.member)
 		}
 	}
-	// A split ask can rest on answers that agree, so its note never says
-	// that they disagree alone.
+	// Every kind of ask is named, and a split ask from a service that
+	// predates short can still rest on answers that agree (spec 101).
 	askKind := doc.Components.Schemas["Suggestion"].Properties["ask_kind"].Description
-	for _, want := range []string{"unsure", "split", "0.5", "agree or disagree"} {
+	for _, want := range []string{"unsure", "split", "short", "wider", "few", "0.5", "predates short"} {
 		if !strings.Contains(askKind, want) {
 			t.Errorf("ask_kind's description does not say %q", want)
 		}

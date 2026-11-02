@@ -44,6 +44,21 @@ func createdNetwork(n *authorizer.Network, m v1.Machine) *session.Network {
 	return &session.Network{Mode: n.Mode, Hosts: slices.Clone(n.Hosts), Ask: n.Ask, Source: session.NetworkFromAuthorizer}
 }
 
+// sentBoundary is c with the organization's boundary an allow of a send
+// named when it is not the session's (spec 101): a change of the session's
+// network from the authorizer that carries it, which moves the network no
+// further than c does. Nil b, or the session's own, leaves c as it is.
+func sentBoundary(sess session.Session, b *session.Boundary, c *session.NetworkChanged) *session.NetworkChanged {
+	if b == nil || (sess.Boundary != nil && slices.Equal(sess.Boundary.Hosts, b.Hosts)) {
+		return c
+	}
+	if c == nil {
+		c = &session.NetworkChanged{Source: session.NetworkFromAuthorizer}
+	}
+	c.Boundary = b
+	return c
+}
+
 // sentNetwork is the change an allow of a send makes to the session's
 // base network (spec 052), nil when it names none or the one the session
 // runs. A session that recorded no network takes the whole of the one

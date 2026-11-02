@@ -111,6 +111,7 @@ var payloadTypes = map[session.Type]reflect.Type{
 	session.TypeWorkSaved:            typeOf[session.WorkSaved](),
 	session.TypeWakeSet:              typeOf[session.WakeSet](),
 	session.TypeWakeCleared:          typeOf[session.WakeCleared](),
+	session.TypeDenialsReached:       typeOf[session.DenialsReached](),
 }
 
 // sentPayloads is the payload a person sends for each type sendEvent
@@ -187,13 +188,56 @@ var fieldNotes = map[reflect.Type]map[string]string{
 		"decision_org": "The organization of the key the call's decision was sent to the decision service under: an organization's id, or the initiator's subject for the initiator's own context. " +
 			"A client that reads the service's records of the call names this organization. " +
 			"Absent where no decision service was sent the decision, as in plan, and on an event written before it, whose key had the initiator's subject.",
+		"scope": "The reach the call was decided on, recorded with its decision and so before the call waits for a person: a client shows it beside the command, and the command or input names the target. " +
+			"No member holds a name, so a ref, an app's slug, a host or a path never appears in it. Absent on an event written before it.",
+	},
+	typeOf[session.CallScope](): {
+		"undo":         "Whether the call can be undone, one of " + strings.Join(session.Undos, ", ") + ": it changes nothing; it can be undone in the working directory with no loss; it can be undone from a copy or by another call; it cannot be undone, or others already saw it. Absent when not known.",
+		"crosses":      "The boundaries the call crosses, each true or false where known and absent where not: never read an absent boundary as false.",
+		"target_class": "The class of what the call changes, one of " + strings.Join(session.TargetClasses, ", ") + ": something disposable; something this session made, such as its branch, its preview or its checkout; something other people or the person's own files use; the default or a protected branch, production, a live release. Absent when not known.",
+		"target_kind":  "The kind of what the call changes, one of " + strings.Join(session.TargetKinds, ", ") + ", never its name. Absent when not known.",
+		"contact":      "first for the session's first contact with the call's target, repeat for a later one. Absent when not known.",
+		"source":       "service when the decision service's reading of the call is in the scope, joined with Topos's own claims; topos when the scope is Topos's claims alone, as in plan, without a decision service, or when its prediction failed or carried no scope. A bash call's reach is in its command, which only the service reads, so a bash call with source topos records no member but source: show its reach as not known, never as safe.",
+	},
+	typeOf[session.Crosses](): {
+		"machine":      "The call changes the machine outside the working directory.",
+		"remote":       "The call reaches a system other than the machine.",
+		"network":      "The call reaches a host outside the session's network.",
+		"organization": "The call reaches a party the organization does not own, as the hosts of the boundary the authorizer named say.",
+		"public":       "The call makes something readable by anyone.",
+	},
+	typeOf[session.UserToolConfirmation](): {
+		"answer_ms":        "The milliseconds the question was visible to the person on the client before their answer: rendered on screen, in a window that has focus, summed when they left and came back; from 0 to 86400000. Set it only where the client measures it.",
+		"details_opened":   "true when the person opened the call's details, the full command or input, the diff or the target, before answering; false when the client offered details and the person did not open them. Absent when the client offers no details.",
+		"suggestion_shown": "true when the client showed any part of the decision service's suggestion, its verdict, the approval probability, its reason or an explanation, before the person answered; false when it showed none.",
+		"surface": "Where the person answered, one of " + strings.Join(session.Surfaces, ", ") + ": the conversation, with the call waiting in it; a system notification, without opening the session; a list of waiting questions or reviews; one gesture that answered more than one call. " +
+			"A server that predates these four fields refuses them as invalid_request, so a client sends them only to a server whose document lists answer_ms here, and sends a confirmation they made invalid once more without them.",
+	},
+	typeOf[session.DenialsReached](): {
+		"consecutive": "The refusals in a row at the refusal that reached the limit: since the last call that changed something and ran.",
+		"total":       "The refusals at that refusal since the session started or its fallback last ended.",
+		"limit":       "The limit the refusal reached first: consecutive or total.",
+		"effect":      "ask on a turn a person began: from the next call until the person's next user.message, every call that changes something asks the person, decided_by denials. stop on an unattended turn: the turn ends with the stop reason denials, and the next turn a person begins asks for every change until that person's next message.",
+	},
+	typeOf[session.Session](): {
+		"boundary": "The organization's boundary the latest allow of the session's create, fork or send named: the hosts the organization owns. A decision service is told, for each web_fetch, whether its host is outside them. Absent when no allow named one.",
+		"denials":  "The limits of the session's refusals the allow of its create or fork named, which apply where lower than the installation's. Absent when it named none.",
+	},
+	typeOf[session.NetworkChanged](): {
+		"boundary": "The organization's boundary an authorizer's change at a send named in place of the session's, which moves no network by itself. Absent when the change kept it.",
+	},
+	typeOf[session.DeliveredRepository](): {
+		"visibility": "What the git host answered a read of the repository with no credential: private when it asked for one, public when it answered. Absent when neither is known.",
 	},
 	typeOf[session.Suggestion](): {
 		"evidence_ratio": "How much the person's answers settle the suggestion, from 0 to 1, as the decision service measures it: near 0 for a call unlike any the person answered, near 1 for a kind of call the person answered often. " +
 			"Absent from a service that does not send it and on an event written before it.",
 		"ask_kind": "Why the service suggests asking, for an ask alone. unsure: the evidence ratio is below 0.5, the person's answers say little about this kind of call, and more answers can move the suggestion. " +
-			"split: the evidence ratio is 0.5 or more and the approval probability is still between the thresholds; the person's answers say much about this kind of call, and they can agree or disagree, " +
-			"as two allows and no deny can give 0.80 under a 0.90 allow threshold, which more allows can pass. " +
+			"split: the evidence ratio is 0.5 or more and the person's answers about this kind of call disagree; a service that predates short also sends split for answers that agree. " +
+			"short: the evidence ratio is 0.5 or more and the answers agree, with the approval probability still between the thresholds, which more answers that agree can pass. " +
+			"wider: the call reaches wider than any call of its kind the person allowed. " +
+			"few: the person allowed calls of this reach, but not with enough considered answers or in enough sessions. " +
+			"In learned mode a wider or a split ask waits for the person, and the rules and the risk score decide the others. " +
 			"Absent for an allow or a block, from a service that does not send it, and on an event written before it. A value a client does not know is read as the ask alone.",
 	},
 }
@@ -286,7 +330,7 @@ func stopReasons() []string {
 		string(session.StopEndTurn), string(session.StopToolConfirmation), string(session.StopToolResult),
 		string(session.StopQuestion), string(session.StopBudget), string(session.StopTurnLimit),
 		string(session.StopOutputLimit), string(session.StopInterrupted), string(session.StopError),
-		string(session.StopMachineWaiting), string(session.StopCompleted), string(session.StopFailed),
+		string(session.StopMachineWaiting), string(session.StopDenials), string(session.StopCompleted), string(session.StopFailed),
 		string(session.StopCanceled), string(session.StopExpired),
 	}
 }

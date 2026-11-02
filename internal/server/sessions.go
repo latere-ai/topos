@@ -630,6 +630,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// the hosts a person allowed in its parent are not carried. The
 	// initiator's instructions are read at the create alone (spec 053).
 	sess.Network = createdNetwork(limits.Network, cfg.Machine)
+	// The organization's boundary and the limits of the session's
+	// refusals are its allow's, a fork's its own allow's (spec 101).
+	sess.Boundary, sess.Denials = limits.Boundary, limits.Denials
 	// A rollout's run reaches none of its initiator's accounts or context
 	// (spec 077, "A run is isolated"): whatever its allow names, it takes
 	// no standing instructions, no attached context or repository and no
@@ -1580,6 +1583,10 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 	// base network before the next turn (spec 052); its instructions are
 	// not read, since they sit in the prompt's cached prefix (spec 053).
 	out := sendChanges{network: sentNetwork(sess, limits.Network)}
+	// Its boundary replaces the session's, recorded with the network's
+	// change, since the session keeps it as it keeps its network (spec
+	// 101); one that names none keeps it.
+	out.network = sentBoundary(sess, limits.Boundary, out.network)
 	// Its connections replace the session's, none when it names none, so
 	// a service connected or disconnected since reaches the next turn
 	// (spec 069). A rollout's run takes none, whatever the allow names

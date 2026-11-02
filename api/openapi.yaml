@@ -2577,13 +2577,16 @@ components:
           type: boolean
         decided_by:
           type: string
-          description: The layer that decided the call, one of network, always_confirm, tool, plan, read_only, always_allow, remembered, sandbox, score, confirm, memory, question, learned, fallback, in the order the rules apply. A value a client does not know is read by the reason alone; absent on an event written before it.
+          description: The layer that decided the call, one of network, always_confirm, tool, plan, read_only, always_allow, remembered, sandbox, score, confirm, memory, question, learned, fallback, denials, in the order the rules apply. A value a client does not know is read by the reason alone; absent on an event written before it.
         decided_by_rule:
           type: string
           description: "The rule within that layer, where one applies: the always-confirm, always-allow or remembered pattern that matched, memory when the always-confirm list names memory and the call reaches memory folders alone, the tool that held the call, the score's band (below_flag_at, flag_at, ask_at or block_at), or the decision service's model. It holds no text of the call's input beyond what a pattern itself says."
         decision_org:
           type: string
           description: "The organization of the key the call's decision was sent to the decision service under: an organization's id, or the initiator's subject for the initiator's own context. A client that reads the service's records of the call names this organization. Absent where no decision service was sent the decision, as in plan, and on an event written before it, whose key had the initiator's subject."
+        scope:
+          $ref: "#/components/schemas/CallScope"
+          description: "The reach the call was decided on, recorded with its decision and so before the call waits for a person: a client shows it beside the command, and the command or input names the target. No member holds a name, so a ref, an app's slug, a host or a path never appears in it. Absent on an event written before it."
     AgentVersion:
       type: object
       required:
@@ -2782,6 +2785,38 @@ components:
           $ref: "#/components/schemas/Opaque"
         cache_hint:
           type: boolean
+    Boundary:
+      type: object
+      required:
+        - hosts
+      properties:
+        hosts:
+          type: array
+          items:
+            type: string
+    CallScope:
+      type: object
+      required:
+        - source
+      properties:
+        undo:
+          type: string
+          description: "Whether the call can be undone, one of none, reversible, recoverable, irreversible: it changes nothing; it can be undone in the working directory with no loss; it can be undone from a copy or by another call; it cannot be undone, or others already saw it. Absent when not known."
+        crosses:
+          $ref: "#/components/schemas/Crosses"
+          description: "The boundaries the call crosses, each true or false where known and absent where not: never read an absent boundary as false."
+        target_class:
+          type: string
+          description: "The class of what the call changes, one of scratch, own, shared, primary: something disposable; something this session made, such as its branch, its preview or its checkout; something other people or the person's own files use; the default or a protected branch, production, a live release. Absent when not known."
+        target_kind:
+          type: string
+          description: The kind of what the call changes, one of path, ref, app, host, repository, package, deploy, service, never its name. Absent when not known.
+        contact:
+          type: string
+          description: first for the session's first contact with the call's target, repeat for a later one. Absent when not known.
+        source:
+          type: string
+          description: "service when the decision service's reading of the call is in the scope, joined with Topos's own claims; topos when the scope is Topos's claims alone, as in plan, without a decision service, or when its prediction failed or carried no scope. A bash call's reach is in its command, which only the service reads, so a bash call with source topos records no member but source: show its reach as not known, never as safe."
     Capture:
       type: object
       properties:
@@ -3039,6 +3074,24 @@ components:
           description: "The id of the rollout the session is one run of, the caller's key for its run: a letter or digit, then at most 127 letters, digits, dots, underscores or hyphens, and neither none nor any. The session's for its whole life."
         model:
           $ref: "#/components/schemas/ModelChange"
+    Crosses:
+      type: object
+      properties:
+        machine:
+          type: boolean
+          description: The call changes the machine outside the working directory.
+        remote:
+          type: boolean
+          description: The call reaches a system other than the machine.
+        network:
+          type: boolean
+          description: The call reaches a host outside the session's network.
+        organization:
+          type: boolean
+          description: The call reaches a party the organization does not own, as the hosts of the boundary the authorizer named say.
+        public:
+          type: boolean
+          description: The call makes something readable by anyone.
     DeliveredRepository:
       type: object
       required:
@@ -3057,6 +3110,9 @@ components:
           type: string
         base_error:
           type: string
+        visibility:
+          type: string
+          description: "What the git host answered a read of the repository with no credential: private when it asked for one, public when it answered. Absent when neither is known."
     Delta:
       type: object
       description: "One live frame of a session's response as it arrives, the data of an event: delta frame. A frame of text is {subagent, turn, step, block, kind, text}: text is the next run of the content block's text, thinking or tool input, to append to what the step's earlier deltas carried for that block. A reset is {subagent, turn, step, reset}: the step's request is sent again, so what its deltas carried is discarded. Deltas are best effort: never appended, never replayed, and dropped rather than slowing the turn; the step's agent.message is the record, so a client that misses deltas loses nothing, and a delta of a step whose agent.message the client holds is stale."
@@ -3091,6 +3147,36 @@ components:
           type: boolean
           const: true
           description: Present only on a reset.
+    DenialLimits:
+      type: object
+      required:
+        - consecutive
+        - total
+      properties:
+        consecutive:
+          type: integer
+        total:
+          type: integer
+    DenialsReached:
+      type: object
+      required:
+        - consecutive
+        - total
+        - limit
+        - effect
+      properties:
+        consecutive:
+          type: integer
+          description: "The refusals in a row at the refusal that reached the limit: since the last call that changed something and ran."
+        total:
+          type: integer
+          description: The refusals at that refusal since the session started or its fallback last ended.
+        limit:
+          type: string
+          description: "The limit the refusal reached first: consecutive or total."
+        effect:
+          type: string
+          description: "ask on a turn a person began: from the next call until the person's next user.message, every call that changes something asks the person, decided_by denials. stop on an unattended turn: the turn ends with the stop reason denials, and the next turn a person begins asks for every change until that person's next message."
     Destination:
       type: object
       required:
@@ -3223,6 +3309,7 @@ components:
         - $ref: "#/components/schemas/Event.messages.read"
         - $ref: "#/components/schemas/Event.model.request"
         - $ref: "#/components/schemas/Event.session.connections_changed"
+        - $ref: "#/components/schemas/Event.session.denials_reached"
         - $ref: "#/components/schemas/Event.session.error"
         - $ref: "#/components/schemas/Event.session.machine"
         - $ref: "#/components/schemas/Event.session.machine_waiting"
@@ -3264,6 +3351,7 @@ components:
           messages.read: "#/components/schemas/Event.messages.read"
           model.request: "#/components/schemas/Event.model.request"
           session.connections_changed: "#/components/schemas/Event.session.connections_changed"
+          session.denials_reached: "#/components/schemas/Event.session.denials_reached"
           session.error: "#/components/schemas/Event.session.error"
           session.machine: "#/components/schemas/Event.session.machine"
           session.machine_waiting: "#/components/schemas/Event.session.machine_waiting"
@@ -3414,6 +3502,15 @@ components:
               const: session.connections_changed
             payload:
               $ref: "#/components/schemas/ConnectionsChanged"
+    Event.session.denials_reached:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.denials_reached
+            payload:
+              $ref: "#/components/schemas/DenialsReached"
     Event.session.error:
       allOf:
         - $ref: "#/components/schemas/EventEnvelope"
@@ -3689,6 +3786,7 @@ components:
         - messages.read
         - model.request
         - session.connections_changed
+        - session.denials_reached
         - session.error
         - session.machine
         - session.machine_waiting
@@ -4365,6 +4463,9 @@ components:
           type: string
         approval_id:
           type: string
+        boundary:
+          $ref: "#/components/schemas/Boundary"
+          description: The organization's boundary an authorizer's change at a send named in place of the session's, which moves no network by itself. Absent when the change kept it.
     Notice:
       type: object
       required:
@@ -4928,6 +5029,18 @@ components:
               type: string
             remember:
               type: string
+            answer_ms:
+              type: integer
+              description: "The milliseconds the question was visible to the person on the client before their answer: rendered on screen, in a window that has focus, summed when they left and came back; from 0 to 86400000. Set it only where the client measures it."
+            details_opened:
+              type: boolean
+              description: true when the person opened the call's details, the full command or input, the diff or the target, before answering; false when the client offered details and the person did not open them. Absent when the client offers no details.
+            suggestion_shown:
+              type: boolean
+              description: true when the client showed any part of the decision service's suggestion, its verdict, the approval probability, its reason or an explanation, before the person answered; false when it showed none.
+            surface:
+              type: string
+              description: "Where the person answered, one of prompt, notification, queue, bulk: the conversation, with the call waiting in it; a system notification, without opening the session; a list of waiting questions or reviews; one gesture that answered more than one call. A server that predates these four fields refuses them as invalid_request, so a client sends them only to a server whose document lists answer_ms here, and sends a confirmation they made invalid once more without them."
     SendEvent.user.tool_result:
       type: object
       required:
@@ -5078,6 +5191,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Connection"
+        boundary:
+          $ref: "#/components/schemas/Boundary"
+          description: "The organization's boundary the latest allow of the session's create, fork or send named: the hosts the organization owns. A decision service is told, for each web_fetch, whether its host is outside them. Absent when no allow named one."
+        denials:
+          $ref: "#/components/schemas/DenialLimits"
+          description: The limits of the session's refusals the allow of its create or fork named, which apply where lower than the installation's. Absent when it named none.
         parent:
           $ref: "#/components/schemas/Parent"
         root:
@@ -5314,6 +5433,7 @@ components:
         - interrupted
         - error
         - machine_waiting
+        - denials
         - completed
         - failed
         - canceled
@@ -5437,7 +5557,7 @@ components:
           description: "How much the person's answers settle the suggestion, from 0 to 1, as the decision service measures it: near 0 for a call unlike any the person answered, near 1 for a kind of call the person answered often. Absent from a service that does not send it and on an event written before it."
         ask_kind:
           type: string
-          description: "Why the service suggests asking, for an ask alone. unsure: the evidence ratio is below 0.5, the person's answers say little about this kind of call, and more answers can move the suggestion. split: the evidence ratio is 0.5 or more and the approval probability is still between the thresholds; the person's answers say much about this kind of call, and they can agree or disagree, as two allows and no deny can give 0.80 under a 0.90 allow threshold, which more allows can pass. Absent for an allow or a block, from a service that does not send it, and on an event written before it. A value a client does not know is read as the ask alone."
+          description: "Why the service suggests asking, for an ask alone. unsure: the evidence ratio is below 0.5, the person's answers say little about this kind of call, and more answers can move the suggestion. split: the evidence ratio is 0.5 or more and the person's answers about this kind of call disagree; a service that predates short also sends split for answers that agree. short: the evidence ratio is 0.5 or more and the answers agree, with the approval probability still between the thresholds, which more answers that agree can pass. wider: the call reaches wider than any call of its kind the person allowed. few: the person allowed calls of this reach, but not with enough considered answers or in enough sessions. In learned mode a wider or a split ask waits for the person, and the rules and the risk score decide the others. Absent for an allow or a block, from a service that does not send it, and on an event written before it. A value a client does not know is read as the ask alone."
     SuggestionThresholds:
       type: object
       required:
@@ -6039,6 +6159,18 @@ components:
           type: string
         remember:
           type: string
+        answer_ms:
+          type: integer
+          description: "The milliseconds the question was visible to the person on the client before their answer: rendered on screen, in a window that has focus, summed when they left and came back; from 0 to 86400000. Set it only where the client measures it."
+        details_opened:
+          type: boolean
+          description: true when the person opened the call's details, the full command or input, the diff or the target, before answering; false when the client offered details and the person did not open them. Absent when the client offers no details.
+        suggestion_shown:
+          type: boolean
+          description: true when the client showed any part of the decision service's suggestion, its verdict, the approval probability, its reason or an explanation, before the person answered; false when it showed none.
+        surface:
+          type: string
+          description: "Where the person answered, one of prompt, notification, queue, bulk: the conversation, with the call waiting in it; a system notification, without opening the session; a list of waiting questions or reviews; one gesture that answered more than one call. A server that predates these four fields refuses them as invalid_request, so a client sends them only to a server whose document lists answer_ms here, and sends a confirmation they made invalid once more without them."
     UserToolResult:
       type: object
       required:

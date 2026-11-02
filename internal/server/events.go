@@ -150,9 +150,15 @@ func (c *call) sendEvent() error {
 		p.Sender = sender
 		payload, action = p, authorizer.ActionSessionInterrupt
 	case session.TypeUserToolConfirmation:
+		// How the person answered is optional and read strictly (spec
+		// 101): a field of another type or outside its range is refused,
+		// as every malformed confirmation is.
 		var p session.UserToolConfirmation
 		if err := strict(b.Payload, &p); err != nil {
-			return err
+			return refuse(CodeInvalidRequest, "This confirmation has a field the server cannot read: %v", classify(err).detail)
+		}
+		if err := p.CheckAnswer(); err != nil {
+			return refuse(CodeInvalidRequest, "This confirmation has a field the server cannot read: %v", err)
 		}
 		if (p.ToolUseID == "") == (p.ApprovalID == "") || (p.Decision != session.DecisionAllow && p.Decision != session.DecisionDeny) {
 			return refuse(CodeInvalidRequest, "a user.tool_confirmation names exactly one of tool_use_id and approval_id, and a decision of allow or deny")
