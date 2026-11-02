@@ -182,6 +182,64 @@ func (t *Tool) Confirm(c tools.Call) string {
 	return confirmAccess
 }
 
+// Reach is what a publish call reaches (spec 101): the app host, always;
+// public when the call sets access link, or releases an app anyone with
+// its address opens, and not when the app is private and stays so;
+// irreversible for access link and recoverable for a release, a preview
+// or access private; a first contact when the call creates the thread's
+// own app; and its target the app, by its id where the session knows
+// one, primary for a release or a change of who can open it and own for
+// a preview. Nothing in it names the app or the folder.
+func (t *Tool) Reach(c tools.Call) tools.Reach {
+	in, err := decode(c.Input)
+	if err != nil {
+		return tools.Reach{}
+	}
+	target := &tools.ReachTarget{Kind: "app", Class: session.TargetOwn}
+	if in.Release || in.accessAlone() {
+		target.Class = session.TargetPrimary
+	}
+	out := tools.Reach{Undo: session.UndoRecoverable, Crosses: session.Crosses{Remote: new(true)}, Target: target}
+	// The app the call reaches, where the input and the thread's state
+	// name it: a slug the call names or the one app it may use, an app
+	// attached to the session, chosen by the folder when it runs, or the
+	// thread's own, which a first call creates.
+	var known *session.PublishMeta
+	slug, refused := t.pick(c.State, in)
+	switch {
+	case refused != nil:
+	case slug != "":
+		known, out.Contact = c.State.Apps[slug], session.ContactRepeat
+		if r, _, ok := t.attachment(c.State, slug); ok && r.App.ID != "" {
+			target.ID = r.App.ID
+		}
+	case slices.ContainsFunc(session.Repositories(t.s), func(r session.Resource) bool { return r.App != nil }):
+		out.Contact = session.ContactRepeat
+	case c.State.App != nil:
+		known, out.Contact = c.State.App, session.ContactRepeat
+	default:
+		out.Contact = session.ContactFirst
+	}
+	if known != nil && target.ID == "" {
+		target.ID = known.AppID
+	}
+	var visibility string
+	if known != nil {
+		visibility = known.Visibility
+	}
+	switch {
+	case in.Access == session.PublishAccessLink:
+		out.Undo, out.Crosses.Public = session.UndoIrreversible, new(true)
+	case in.Access == session.PublishAccessPrivate:
+		out.Crosses.Public = new(false)
+	case visibility == session.VisibilityPrivate:
+		out.Crosses.Public = new(false)
+	case in.Release && (visibility == session.VisibilityUnlisted || visibility == session.VisibilityPublic):
+		out.Crosses.Public = new(true)
+	}
+	return out
+}
+
 type input struct {
 	Path    string `json:"path"`
 	App     string `json:"app"`
