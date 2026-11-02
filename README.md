@@ -103,7 +103,7 @@ Not built yet: write-only credentials, memory stores, MCP servers an
 agent's definition names, external runners and handoff, the event sink,
 the conformance suite and the release archives. The task suite runs, but
 no release has measured its bar against a pinned model yet. In the
-[specs](specs) deck, 26 specs are complete, 60 in progress or in testing
+[specs](specs) deck, 26 specs are complete, 61 in progress or in testing
 and 9 drafted or vague, none of those 9 built yet;
 [specs/README.md](specs/README.md) says which build phases are closed.
 
@@ -175,8 +175,10 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   nobody watches is decided, and the `attended` the log records.
 - [docs/how-a-call-was-decided.md](docs/how-a-call-was-decided.md): the
   layer and the rule that decided each call, `decided_by`, so a client
-  tells a rule from what a decision service learned, and the
-  organization a call was decided under, `decision_org`.
+  tells a rule from what a decision service learned; the organization a
+  call was decided under, `decision_org`; what a call reaches, `scope`;
+  how a person answered, which a client adds to a confirmation; and how
+  repeated refusals hand a session back to its person.
 - [docs/context-report.md](docs/context-report.md): how full a
   conversation's context is, and what fills it.
 - [docs/cost-and-progress.md](docs/cost-and-progress.md): what a session

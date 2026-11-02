@@ -10,6 +10,79 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A call records what it reaches.** `agent.tool_use` records `scope`,
+  the reach the call was decided on, before the call waits for a
+  person: whether it can be undone (`undo`), the boundaries it crosses
+  (`crosses`), the class and kind of its target, whether it is a first
+  contact, and `source`, `service` when the decision service read the
+  call and `topos` when the scope is Topos's own claims alone. A client
+  can show "cannot be undone" or "makes the app public" beside the
+  command. No member holds a path, a host, a branch or an app's name. A
+  `bash` call without a decision service records no reach but its
+  source: show its reach as not known. See
+  `docs/how-a-call-was-decided.md`.
+- **A confirmation can say how the person answered.** A client can add
+  `answer_ms`, `details_opened`, `suggestion_shown` and `surface` to a
+  `user.tool_confirmation`. The server records them, and refuses a value
+  of another type or outside its range as `invalid_request`. Send them
+  only to a server whose `GET /v1/openapi.yaml` lists `answer_ms`; an
+  older server refuses them.
+- **Repeated refusals hand the session back to the person.** After 3
+  refusals in a row or 20 in a session, toposd records
+  `session.denials_reached`. On a turn a person began, every call that
+  changes something then waits for the person, with `decided_by:
+  denials`, until their next message. A turn a trigger began stops with
+  the new stop reason `denials`, and the person's next turn asks the
+  same way. Subagents share the counts. `TOPOS_DENIALS_CONSECUTIVE` and
+  `TOPOS_DENIALS_TOTAL` set the limits, `0` turns one off, and an
+  authorizer's `denials` can lower them for a session.
+- **A subagent's refused calls warn its caller.** When calls of a
+  subagent's run did not run because a rule or the person refused them,
+  the result of its `agent` or `send_message` call starts with a fixed
+  warning, and the `tool.result` records `refused` in its `meta`.
+- **The decision service learns what each call reaches and how each
+  answer was given.** Each call is sent with Topos's claims about its
+  reach (`scope`, `target`), the limits its machine enforces
+  (`environment.holds`: `egress`, `protected_refs`, `checkpoints`), the
+  visibility of the session's repositories (`environment.repositories`),
+  its subagent depth, and what an `agent` or `send_message` call hands
+  over. Each answer carries the four fields of its confirmation,
+  `waited_ms` from the log, and `remembered`, and never the note or the
+  pattern.
+- **An authorizer can name the organization's hosts.** An allow of
+  `session.create`, `session.fork` or `session.send` may carry
+  `boundary`, the hosts the organization owns. The session keeps the
+  latest one, and a `web_fetch` tells the decision service whether its
+  host is outside them.
+- **A delivered repository records its visibility.** The first machine's
+  `session.machine` names each repository's `visibility`, `private` or
+  `public`, from one read with no credential at the git host when the
+  repository is delivered.
+
+### Changed
+
+- **In `learned`, the decision service's new kinds of ask.** An ask of
+  kind `wider` (the call reaches wider than any the person allowed)
+  waits for the person, as `split` does. An ask of kind `short`
+  (answers that agree, still in the ask band) or `few` (approvals that
+  are not enough), and any kind Topos does not know, is decided by the
+  rules and the risk score.
+- **A learned allow runs a call the risk score asks about only where the
+  person's approvals cover it.** `TOPOS_DECISIONS_LOOSEN` sets this for
+  `learned` and `decide`. `covered`, the default, lets an `allow` decide
+  only when the prediction carries `cover.covered: true`, and leaves
+  every other `allow` to the rules and the risk score, with the
+  suggestion recorded. A decision service that sends no `cover` no
+  longer runs a call the risk score would ask about, so an installation
+  in `decide` or `learned` with such a service sees more asks until the
+  service sends `cover`. `never` lets the stricter of the allow and the
+  rules' verdict decide.
+- **The decision service is not sent a subagent's task.** An `agent`,
+  `send_message` or advisor call reaches the decision service without
+  its input.
+
 ### Fixed
 
 - **A background command's files are gone once its log says it
