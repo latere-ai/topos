@@ -524,6 +524,11 @@ Where the build reads the design one way of several, or goes past it:
   `always_confirm`, its tool, the session's network or `block_at`
   already asks about or blocks keeps that `decided_by`; `denials` marks
   the calls the fallback itself made ask.
+- **A rollout's run stops as an unattended turn does.** A run of a
+  rollout ([[077-rollouts]]) begins with a message, so its turns count as
+  attended, but no person is there to ask and every ask is refused at
+  once; a limit reached in it records `effect: stop` and ends the turn
+  with `denials`, rather than refusing every later change of the run.
 - **An unattended stop waits for the step.** The calls a step decided
   before its refusal reached the limit still run, and the turn ends with
   `denials` once they are answered, before the next request; every
