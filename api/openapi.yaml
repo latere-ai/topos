@@ -2583,6 +2583,7 @@ components:
           description: "The rule within that layer, where one applies: the always-confirm, always-allow or remembered pattern that matched, memory when the always-confirm list names memory and the call reaches memory folders alone, the tool that held the call, the score's band (below_flag_at, flag_at, ask_at or block_at), or the decision service's model. It holds no text of the call's input beyond what a pattern itself says."
         decision_org:
           type: string
+          description: "The organization of the key the call's decision was sent to the decision service under: an organization's id, or the initiator's subject for the initiator's own context. A client that reads the service's records of the call names this organization. Absent where no decision service was sent the decision, as in plan, and on an event written before it, whose key had the initiator's subject."
     AgentVersion:
       type: object
       required:
@@ -5433,8 +5434,10 @@ components:
           type: string
         evidence_ratio:
           type: number
+          description: "How much the person's answers settle the suggestion, from 0 to 1, as the decision service measures it: near 0 for a call unlike any the person answered, near 1 for a kind of call the person answered often. Absent from a service that does not send it and on an event written before it."
         ask_kind:
           type: string
+          description: "Why the service suggests asking, for an ask alone. unsure: the evidence ratio is below 0.5, the person's answers say little about this kind of call, and more answers can move the suggestion. split: the evidence ratio is 0.5 or more and the approval probability is still between the thresholds; the person's answers say much about this kind of call, and they can agree or disagree, as two allows and no deny can give 0.80 under a 0.90 allow threshold, which more allows can pass. Absent for an allow or a block, from a service that does not send it, and on an event written before it. A value a client does not know is read as the ask alone."
     SuggestionThresholds:
       type: object
       required:

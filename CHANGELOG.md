@@ -17,6 +17,11 @@ committed: the commit log already holds that.
   layers that decide a call, `decided_by_rule` says what rule within the
   layer it names, and a create's `rollout` states its id's rule. A
   generated client or reference now shows what each means.
+- **The API document describes `decision_org`, `evidence_ratio` and
+  `ask_kind`.** An `agent.tool_use`'s `decision_org` names the
+  organization of the key that its decision was sent under. A
+  suggestion's `evidence_ratio` says how much the person's answers
+  settle it, and its `ask_kind` says if an ask is `unsure` or `split`.
 
 ### Fixed
 

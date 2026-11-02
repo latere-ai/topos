@@ -267,10 +267,19 @@ func TestAFieldNoteDescribesItsMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, m := range []struct{ schema, member string }{
-		{"AgentToolUse", "decided_by"}, {"AgentToolUse", "decided_by_rule"}, {"CreateSessionRequest", "rollout"},
+		{"AgentToolUse", "decided_by"}, {"AgentToolUse", "decided_by_rule"}, {"AgentToolUse", "decision_org"},
+		{"Suggestion", "evidence_ratio"}, {"Suggestion", "ask_kind"}, {"CreateSessionRequest", "rollout"},
 	} {
 		if doc.Components.Schemas[m.schema].Properties[m.member].Description == "" {
 			t.Errorf("%s.%s has no description", m.schema, m.member)
+		}
+	}
+	// A split ask can rest on answers that agree, so its note never says
+	// that they disagree alone.
+	askKind := doc.Components.Schemas["Suggestion"].Properties["ask_kind"].Description
+	for _, want := range []string{"unsure", "split", "0.5", "agree or disagree"} {
+		if !strings.Contains(askKind, want) {
+			t.Errorf("ask_kind's description does not say %q", want)
 		}
 	}
 	decidedBy := doc.Components.Schemas["AgentToolUse"].Properties["decided_by"].Description
