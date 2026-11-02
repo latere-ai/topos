@@ -35,9 +35,12 @@ committed: the commit log already holds that.
   changes something then waits for the person, with `decided_by:
   denials`, until their next message. A turn a trigger began stops with
   the new stop reason `denials`, and the person's next turn asks the
-  same way. Subagents share the counts. `TOPOS_DENIALS_CONSECUTIVE` and
-  `TOPOS_DENIALS_TOTAL` set the limits, `0` turns one off, and an
-  authorizer's `denials` can lower them for a session.
+  same way, and so does a run of a rollout. Subagents share the counts.
+  `TOPOS_DENIALS_CONSECUTIVE` and `TOPOS_DENIALS_TOTAL` set the limits,
+  `0` turns one off, and an authorizer's `denials` can lower them for a
+  session. `session.denials_reached` is a new event type, which a runner
+  of an earlier release refuses with `schema_too_new`: upgrade the
+  server and the runners together.
 - **A subagent's refused calls warn its caller.** When calls of a
   subagent's run did not run because a rule or the person refused them,
   the result of its `agent` or `send_message` call starts with a fixed
