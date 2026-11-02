@@ -805,8 +805,8 @@ func TestLoosenAndDenials(t *testing.T) {
 	} {
 		name, val, _ := strings.Cut(v, "=")
 		m := maps.Clone(decisions)
-		if strings.HasSuffix(val, "|no") {
-			m, val = map[string]string{}, strings.TrimSuffix(val, "|no")
+		if before, ok := strings.CutSuffix(val, "|no"); ok {
+			m, val = map[string]string{}, before
 		}
 		m[name] = val
 		if _, err := Load(RoleServe, serve(m)); err == nil || !strings.Contains(err.Error(), want) {
