@@ -290,6 +290,7 @@ var released = map[string]string{
 	"results/threads/no-worktrees-v2.md":             "49a0871e02a5b67976a28f9fd3ef1493693af5bb6ba9d4286277d140bc5aef5c",
 	"results/threads/not-spawned-v2.md":              "96fd1ab0736d4857f2078b3aed4e6319b1e372bc1f24bfb4d8e09acc3b6c8464",
 	"results/threads/stopped-v2.md":                  "7c8518a69cc71400091b376b24f1eed1e81c1e68cd5b88bad89e4261a3088d82",
+	"results/subagent/refused-v1.md":                 "19e72a4c2a8f1a3133963162d88cdb89f94309078101b50bf3ae8fa3c4e40b55",
 	"results/threads/subagent-gone-v2.md":            "9f1af5dbaa15b3e914be9732d97d5a6521d27842b8ddd2610c81d4409e179bc2",
 	"results/threads/too-many-v2.md":                 "be34952ed6ed07b481a15b7d558adab187477943970c72d5a01d5a669f99bded",
 	"results/threads/uncommitted-v2.md":              "084c71ab1ed238bccc02d2784061335ba7d889f336d34f4cb6fbe9cd243ad43d",

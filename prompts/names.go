@@ -503,6 +503,10 @@ const (
 	SubagentNotStarted    Name = "results/threads/not-spawned-v2"
 	SubagentEnded         Name = "results/threads/ended-v2"
 	SubagentGone          Name = "results/threads/subagent-gone-v2"
+	// SubagentRefused takes Count: the line a subagent's result begins
+	// with when Count of its calls in the run did not run, because a rule
+	// or the person refused them (spec 101).
+	SubagentRefused Name = "results/subagent/refused-v1"
 )
 
 // The registry's answers to a call it refuses (spec 008), and the line

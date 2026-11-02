@@ -326,6 +326,7 @@ var textCases = func() []textCase {
 		{name: SubagentEnded, data: Data{"Thread": "evt_9"}, want: "subagent evt_9 has ended"},
 		{name: "results/threads/subagent-gone-v1", data: Data{"Thread": "evt_9", "Agent": "reviewer"}, want: fmt.Sprintf("thread %s runs %q, which is no longer a subagent", "evt_9", "reviewer")},
 		{name: SubagentGone, data: Data{"Thread": "evt_9", "Agent": "reviewer"}, want: `subagent evt_9 was started as "reviewer", which is no longer one of your subagents`},
+		{name: SubagentRefused, data: Data{"Count": 2}, want: "2 of this subagent's calls did not run: a rule or the person refused them. Check its work before you rely on it."},
 
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": "read, write"}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "read, write")},
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": ""}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "")},
