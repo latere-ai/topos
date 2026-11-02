@@ -44,11 +44,15 @@ const (
 	// DecidedFallback: the decision service did not answer, so the call
 	// waits for a person.
 	DecidedFallback = "fallback"
+	// DecidedDenials: after repeated refusals, the session asks the person
+	// for every call that changes something until their next message
+	// (spec 101).
+	DecidedDenials = "denials"
 )
 
 // Decided lists every value of decided_by, in the order the rules apply.
 var Decided = []string{
 	DecidedNetwork, DecidedAlwaysConfirm, DecidedTool, DecidedPlan, DecidedReadOnly,
 	DecidedAlwaysAllow, DecidedRemembered, DecidedSandbox, DecidedScore, DecidedConfirm,
-	DecidedMemory, DecidedQuestion, DecidedLearned, DecidedFallback,
+	DecidedMemory, DecidedQuestion, DecidedLearned, DecidedFallback, DecidedDenials,
 }

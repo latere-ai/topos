@@ -48,6 +48,10 @@ const (
 	// session on it yet (spec 080). The next user.message, or a
 	// session.resumed, continues the session on it.
 	StopMachineWaiting StopReason = "machine_waiting"
+	// StopDenials is an unattended turn that stopped at a refusal that
+	// reached a limit of the session's refusals (spec 101). The next turn
+	// a person begins asks them for every call that changes something.
+	StopDenials StopReason = "denials"
 )
 
 // Stop reasons of an ended session.
@@ -320,7 +324,16 @@ type Session struct {
 	// fork named, as each send's allow has replaced them since (spec 069);
 	// empty for none.
 	Connections []Connection `json:"connections,omitempty"`
-	Parent      *Parent      `json:"parent,omitempty"`
+	// Boundary is the organization's boundary the latest allow of the
+	// session's create, fork or send named (spec 101): the hosts the
+	// organization owns. Nil when none named one, and a web_fetch then
+	// sends no organization boundary to a decision service.
+	Boundary *Boundary `json:"boundary,omitempty"`
+	// Denials are the limits of refusals the allow of the session's create
+	// or fork named (spec 101), which apply where lower than the
+	// installation's; nil when it named none.
+	Denials *DenialLimits `json:"denials,omitempty"`
+	Parent  *Parent       `json:"parent,omitempty"`
 	// Root is the id of the session at the top of this session's fork
 	// tree: its parent's root, or its parent's id where the parent has
 	// none; its own id on a fork that started a tree of its own; empty on

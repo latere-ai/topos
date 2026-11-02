@@ -6,6 +6,7 @@ package session
 import (
 	"slices"
 	"strings"
+	"time"
 )
 
 // The modes of a session's network (spec 052), which are Cella's egress
@@ -54,15 +55,25 @@ type Network struct {
 // change added and removed, the mode and ask when they changed, and who
 // made it. A person's allow adds a host to the session's network for the
 // rest of the session and names the call or the approval it answered; an
-// authorizer's change at a send replaces the base network.
+// authorizer's change at a send replaces the base network. Boundary is
+// the organization's boundary an authorizer's change at a send named in
+// place of the session's (spec 101), nil when it kept it.
 type NetworkChanged struct {
-	Added      []string `json:"added,omitempty"`
-	Removed    []string `json:"removed,omitempty"`
-	Mode       string   `json:"mode,omitempty"`
-	Ask        *bool    `json:"ask,omitempty"`
-	Source     string   `json:"source"`
-	ToolUseID  string   `json:"tool_use_id,omitempty"`
-	ApprovalID string   `json:"approval_id,omitempty"`
+	Added      []string  `json:"added,omitempty"`
+	Removed    []string  `json:"removed,omitempty"`
+	Mode       string    `json:"mode,omitempty"`
+	Ask        *bool     `json:"ask,omitempty"`
+	Source     string    `json:"source"`
+	ToolUseID  string    `json:"tool_use_id,omitempty"`
+	ApprovalID string    `json:"approval_id,omitempty"`
+	Boundary   *Boundary `json:"boundary,omitempty"`
+}
+
+// Moves reports whether the change moves the network itself: a host it
+// added or removed, or the mode or ask it changed. A change that names
+// the organization's boundary alone moves none of them.
+func (c NetworkChanged) Moves() bool {
+	return len(c.Added) > 0 || len(c.Removed) > 0 || c.Mode != "" || c.Ask != nil
 }
 
 // Apply is base with an authorizer's change applied: the mode and ask it
@@ -180,6 +191,10 @@ type Approval struct {
 	Decided      *ApprovalDecided
 	Confirmation *UserToolConfirmation
 	Message      *UserMessage
+	// At is the time of the approval.requested, and ConfirmedAt of its
+	// confirmation, zero without one: a decision service is told how long
+	// the approval waited (spec 101).
+	At, ConfirmedAt time.Time
 }
 
 // Open reports whether the approval asks and nothing settled it yet.
@@ -205,7 +220,7 @@ func Approvals(evs []Event) []Approval {
 				continue
 			}
 			index[p.ApprovalID] = len(out)
-			out = append(out, Approval{Request: p, Seq: e.Seq, Subagent: e.Subagent})
+			out = append(out, Approval{Request: p, Seq: e.Seq, Subagent: e.Subagent, At: e.Time})
 		case TypeApprovalDecided:
 			var p ApprovalDecided
 			if e.Decode(&p) != nil {
@@ -220,7 +235,7 @@ func Approvals(evs []Event) []Approval {
 				continue
 			}
 			if i, ok := index[p.ApprovalID]; ok && out[i].Confirmation == nil && out[i].Message == nil {
-				out[i].Confirmation = &p
+				out[i].Confirmation, out[i].ConfirmedAt = &p, e.Time
 			}
 		case TypeUserMessage:
 			var p UserMessage

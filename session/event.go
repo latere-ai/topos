@@ -62,6 +62,10 @@ const (
 	// first to read (spec 098).
 	TypeUserWithdraw Type = "user.withdraw"
 	TypeMessagesRead Type = "messages.read"
+	// TypeDenialsReached is a refusal that reached a limit of the
+	// session's refusals (spec 101): the session asks the person for every
+	// call that changes something, or its unattended turn stops.
+	TypeDenialsReached Type = "session.denials_reached"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -77,7 +81,7 @@ var Known = map[Type]bool{
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
 	TypeFilesKept: true, TypeConnectionsChanged: true, TypeConnectionRequested: true,
 	TypeWorkSaved: true, TypeMachineWaiting: true, TypeWakeSet: true, TypeWakeCleared: true,
-	TypeUserWithdraw: true, TypeMessagesRead: true,
+	TypeUserWithdraw: true, TypeMessagesRead: true, TypeDenialsReached: true,
 }
 
 // Event is one entry of a session's log.
@@ -170,6 +174,16 @@ type UserToolConfirmation struct {
 	Decision   string `json:"decision"`
 	Note       string `json:"note,omitempty"`
 	Remember   string `json:"remember,omitempty"`
+	// AnswerMS, DetailsOpened, SuggestionShown and Surface say how the
+	// person answered, as the client measured it (spec 101): how long the
+	// question was visible to them, whether they opened the call's
+	// details, whether the client showed the decision service's
+	// suggestion first, and where they answered. A client sets each it can
+	// measure and leaves out each it cannot; none holds text.
+	AnswerMS        *int64 `json:"answer_ms,omitempty"`
+	DetailsOpened   *bool  `json:"details_opened,omitempty"`
+	SuggestionShown *bool  `json:"suggestion_shown,omitempty"`
+	Surface         string `json:"surface,omitempty"`
 }
 
 // Decisions of a tool confirmation.
@@ -270,6 +284,10 @@ type AgentToolUse struct {
 	// decision service was sent the decision, and on an event written
 	// before it, whose key had the initiator's subject.
 	DecisionOrg string `json:"decision_org,omitempty"`
+	// Scope is the reach the call was decided on (spec 101), appended with
+	// its decision and so before it waits for a person; nil on an event
+	// written before it.
+	Scope *CallScope `json:"scope,omitempty"`
 }
 
 // Spill names where the rest of a capped tool output went.
@@ -570,6 +588,11 @@ type DeliveredRepository struct {
 	App       string `json:"app,omitempty"`
 	Base      string `json:"base,omitempty"`
 	BaseError string `json:"base_error,omitempty"`
+	// Visibility is what the git host answered a read of the repository
+	// with no credential (spec 101): VisibilityPrivate when it asked for
+	// one, VisibilityPublic when it answered, and empty when neither is
+	// known.
+	Visibility string `json:"visibility,omitempty"`
 }
 
 // The bases an app's checkout starts from (spec 058): the commit the app

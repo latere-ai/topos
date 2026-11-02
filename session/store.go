@@ -610,7 +610,13 @@ func ApplyBatch(s *Session, events []Event) {
 		if e.Type == TypeNetworkChanged && !e.Redacted() && !s.Copied(e) {
 			var p NetworkChanged
 			if e.Decode(&p) == nil && p.Source == NetworkFromAuthorizer {
-				s.Network = p.Apply(s.Network)
+				if p.Moves() {
+					s.Network = p.Apply(s.Network)
+				}
+				// The latest allow's boundary is the session's (spec 101).
+				if p.Boundary != nil {
+					s.Boundary = p.Boundary
+				}
 			}
 			continue
 		}
