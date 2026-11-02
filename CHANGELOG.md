@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A background command's files are gone once its log says it
+  exited.** On a machine that runs commands in a stage sandbox, a long
+  command's script file was removed after the exit line was written, so
+  a reader that saw the line could still find the file. The file now goes
+  first, as it already did for a command run on the host itself.
+
 ## v0.68.1 - 2026-11-03
 
 ### Changed

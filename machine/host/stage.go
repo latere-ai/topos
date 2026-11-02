@@ -410,8 +410,7 @@ func (h *Host) stageBackground(ctx context.Context, r machine.ExecRequest) (mach
 	h.stages[l.handle.ID] = job
 	go func() {
 		defer close(job.done)
-		err := h.follow(ctx, l, out, log)
-		err = errors.Join(err, remove())
+		err := h.follow(ctx, l, out, log, remove)
 		h.mu.Lock()
 		delete(h.stages, l.handle.ID)
 		if err != nil {
@@ -423,8 +422,10 @@ func (h *Host) stageBackground(ctx context.Context, r machine.ExecRequest) (mach
 }
 
 // follow copies a job's stage log into its job log until the job ends,
-// then appends the exit line and closes both.
-func (h *Host) follow(ctx context.Context, l launched, out io.ReadCloser, log *os.File) error {
+// then removes the job's files with remove, appends the exit line and
+// closes both. The files go before the line, as on the host's own jobs, so
+// a reader that sees the line finds none of them left.
+func (h *Host) follow(ctx context.Context, l launched, out io.ReadCloser, log *os.File, remove func() error) error {
 	bg := context.WithoutCancel(ctx)
 	var errs []error
 	code := -1
@@ -447,7 +448,7 @@ func (h *Host) follow(ctx context.Context, l launched, out io.ReadCloser, log *o
 		}
 		time.Sleep(stageObserve)
 	}
-	errs = append(errs, h.finish(bg, l))
+	errs = append(errs, h.finish(bg, l), remove())
 	if _, err := fmt.Fprintf(log, "\n[job %d exited with code %d]\n", stagePID(l.handle), code); err != nil {
 		errs = append(errs, fmt.Errorf("write the exit line: %w", err))
 	}
