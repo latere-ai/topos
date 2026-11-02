@@ -425,8 +425,8 @@ func TestNetworkAnswersReachTheLearner(t *testing.T) {
 	if out := fetch.turn(ctx); out.StopReason != session.StopEndTurn {
 		t.Fatalf("after the allow %+v", out)
 	}
-	if !slices.Equal(fl.decided, []string{"toolu_1"}) || !slices.Equal(fl.answered, []string{"toolu_1"}) || !fl.approve[0] || fl.by[0] != "usr_ada" {
-		t.Fatalf("fetch: decided %v, answered %v %v by %v", fl.decided, fl.answered, fl.approve, fl.by)
+	if approve, by := fl.approvals(); !slices.Equal(fl.decided, []string{"toolu_1"}) || !slices.Equal(fl.answered, []string{"toolu_1"}) || !approve[0] || by[0] != "usr_ada" {
+		t.Fatalf("fetch: decided %v, answered %v %v by %v", fl.decided, fl.answered, approve, by)
 	}
 
 	l := &learner{}
@@ -458,8 +458,8 @@ func TestNetworkAnswersReachTheLearner(t *testing.T) {
 	if n := len(ne.events(ctx, session.TypeApprovalDecided)); n != 3 {
 		t.Fatalf("%d approvals decided", n)
 	}
-	if !slices.Equal(l.answered, []string{"toolu_1", "toolu_1"}) || !slices.Equal(l.approve, []bool{true, false}) || !slices.Equal(l.by, []string{"usr_ada", "usr_ada"}) {
-		t.Fatalf("answered %v %v by %v", l.answered, l.approve, l.by)
+	if approve, by := l.approvals(); !slices.Equal(l.answered, []string{"toolu_1", "toolu_1"}) || !slices.Equal(approve, []bool{true, false}) || !slices.Equal(by, []string{"usr_ada", "usr_ada"}) {
+		t.Fatalf("answered %v %v by %v", l.answered, approve, by)
 	}
 }
 

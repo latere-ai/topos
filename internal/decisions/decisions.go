@@ -26,6 +26,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,18 @@ const ConfirmTimeout = 300 * time.Millisecond
 // person began the call's turn (spec 087): false on a turn a trigger's
 // message began.
 const AttributeAttended = "attended"
+
+// The attributes of an action that say how deep it was delegated and what
+// a thread tool's call hands over (spec 101): the subagent depth of the
+// thread that made the call, on every call; and, on agent and
+// send_message, whether the subagent holds a tool whose effect is write,
+// one whose effect is external, and, for agent, its isolation.
+const (
+	AttributeDepth            = "depth"
+	AttributeHandoffWrites    = "handoff.writes"
+	AttributeHandoffExternal  = "handoff.external"
+	AttributeHandoffIsolation = "handoff.isolation"
+)
 
 // The decision sources the harness sends, by mode. A decision's source is
 // its mode's and the layer that decided it, as [Source] joins them.
@@ -102,6 +115,35 @@ type Options struct {
 	// Mode is how much the service decides in progressive; zero is
 	// [ModeDecide]. Confirm and plan are the same in every mode.
 	Mode Mode
+	// Loosen is when a learned allow may run a call the rules and the
+	// risk score would not run without a person (spec 101); zero is
+	// [LoosenCovered].
+	Loosen Loosen
+}
+
+// Loosen is when a learned allow decides a progressive call, in learned
+// and in decide (spec 101).
+type Loosen string
+
+const (
+	// LoosenCovered lets a learned allow decide when its prediction says
+	// the person's approvals cover the call, cover.covered; any other
+	// allow, and every allow of a service that sends no cover, is left to
+	// the rules and the risk score, with the suggestion recorded.
+	LoosenCovered Loosen = "covered"
+	// LoosenNever lets the stricter of a learned allow and the rules'
+	// verdict decide: the service can make a call wait or stop it, and
+	// never run one the risk score would ask about.
+	LoosenNever Loosen = "never"
+)
+
+// ParseLoosen reads a loosening by its name.
+func ParseLoosen(s string) (Loosen, error) {
+	switch l := Loosen(s); l {
+	case LoosenCovered, LoosenNever:
+		return l, nil
+	}
+	return "", fmt.Errorf("decisions: the loosening %q is not covered or never", s)
 }
 
 // Mode is how much a decision service decides in progressive mode.
@@ -114,14 +156,15 @@ const (
 	// recorded beside it, as a confirm-mode call is.
 	ModeShadow Mode = "shadow"
 	// ModeLearned lets the service decide a progressive call where it has
-	// evidence about the person: its allow, its block, and an ask of kind
-	// split, whose evidence ratio is 0.5 or more while its approval
-	// probability is still between the thresholds; the person's answers
-	// say much about the call, and they can agree or disagree. Where it has
-	// too few answers (ask_kind unsure), where its prediction carries no
-	// ask_kind, or where it does not answer, the rules and the risk score
-	// decide, as without a service, with the suggestion recorded beside
-	// them.
+	// evidence about the person: its allow, as Loosen lets it, its block,
+	// and an ask the person's own answers keep for them, of kind split,
+	// whose answers disagree, or wider, a call that reaches wider than any
+	// of its kind the person allowed (spec 101). Where it has too few
+	// answers (unsure), answers that agree but do not settle the call yet
+	// (short), approvals that are not enough (few), a kind of ask the
+	// harness does not know or none, or where it does not answer, the
+	// rules and the risk score decide, as without a service, with the
+	// suggestion recorded beside them.
 	ModeLearned Mode = "learned"
 	// ModeDecide lets the service's suggestion decide every progressive
 	// call the rules leave open, and a call it cannot answer waits for a
@@ -172,8 +215,10 @@ type Decider struct {
 	confirm time.Duration
 	rand    func() float64
 	report  func(error)
-	// mode is how much the service decides in progressive.
-	mode Mode
+	// mode is how much the service decides in progressive, and loosen
+	// when its allow decides.
+	mode   Mode
+	loosen Loosen
 	// pending holds the confirm-mode decisions still being sent, by key,
 	// each closed when its send ends, so an answer is never sent before the
 	// decision it answers.
@@ -206,10 +251,15 @@ func New(o Options) (*Decider, error) {
 			return nil, err
 		}
 	}
+	if o.Loosen != "" {
+		if _, err := ParseLoosen(string(o.Loosen)); err != nil {
+			return nil, err
+		}
+	}
 	d := &Decider{
 		base: strings.TrimRight(u.String(), "/"), tokens: tokens, org: cmp.Or(o.Org, OrgInitiator),
 		client: o.Client, limit: cmp.Or(o.Timeout, Timeout), confirm: cmp.Or(o.ConfirmTimeout, ConfirmTimeout),
-		rand: o.Rand, report: o.Report, mode: cmp.Or(o.Mode, ModeDecide), pending: map[key]chan struct{}{},
+		rand: o.Rand, report: o.Report, mode: cmp.Or(o.Mode, ModeDecide), loosen: cmp.Or(o.Loosen, LoosenCovered), pending: map[key]chan struct{}{},
 	}
 	if d.client == nil {
 		d.client = otel.HTTPClient()
@@ -248,9 +298,31 @@ type actor struct {
 	Session string `json:"session,omitempty"`
 }
 
+// environment is where a call runs: a host with credentials or a
+// sandbox, the limits it enforces whatever the call does, and the
+// visibility of the session's repositories (spec 101).
 type environment struct {
-	Kind         string `json:"kind"`
-	Credentialed bool   `json:"credentialed"`
+	Kind         string   `json:"kind"`
+	Credentialed bool     `json:"credentialed"`
+	Holds        []string `json:"holds,omitempty"`
+	Repositories string   `json:"repositories,omitempty"`
+}
+
+// scope is the reach Topos claims for a call (spec 101): whether it can
+// be undone, the boundaries it crosses as far as Topos knows, and whether
+// it is a first contact. Every value is a word of a closed list.
+type scope struct {
+	Undo    string           `json:"undo,omitempty"`
+	Crosses *session.Crosses `json:"crosses,omitempty"`
+	Contact string           `json:"contact,omitempty"`
+}
+
+// target is what a call changes: its kind, an opaque id where it has
+// one, never a path or a host, and its class.
+type target struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id,omitempty"`
+	Class string `json:"class,omitempty"`
 }
 
 type signal struct {
@@ -266,10 +338,13 @@ type action struct {
 	Name        string          `json:"name"`
 	Effect      string          `json:"effect"`
 	Input       json.RawMessage `json:"input,omitempty"`
+	Scope       *scope          `json:"scope,omitempty"`
+	Target      *target         `json:"target,omitempty"`
 	Environment environment     `json:"environment"`
 	// Attributes are observable facts of the call beside its fields:
 	// attended, whether a person began its turn (spec 087), so a service
-	// can weigh a call nobody watches.
+	// can weigh a call nobody watches; depth, how deep it was delegated;
+	// and what a thread tool's call hands over (spec 101).
 	Attributes map[string]any `json:"attributes,omitempty"`
 	Signals    []signal       `json:"signals,omitempty"`
 }
@@ -292,6 +367,76 @@ type prediction struct {
 	// the prediction; a service that predates them sends neither.
 	EvidenceRatio *float64 `json:"evidence_ratio,omitempty"`
 	AskKind       string   `json:"ask_kind,omitempty"`
+	// Scope is the reach the service read, the wider of its reading of
+	// the input and what Topos sent, and Cover whether the person's
+	// approvals cover the call (spec 101); a service that predates them
+	// sends neither.
+	Scope *readScope `json:"scope,omitempty"`
+	Cover *cover     `json:"cover,omitempty"`
+}
+
+// cover says whether the person's approvals cover a call.
+type cover struct {
+	Covered bool `json:"covered"`
+}
+
+// covered reports whether the prediction says the person's approvals
+// cover the call.
+func (p prediction) covered() bool { return p.Cover != nil && p.Cover.Covered }
+
+// readScope is the scope a prediction carries. Each dimension may be
+// unknown, and a boundary of crosses may be a boolean or one of yes, no
+// and unknown, so each is read leniently: a value outside a scope's
+// lists is not known, and is left out of what the call records.
+type readScope struct {
+	Undo        string                     `json:"undo"`
+	Crosses     map[string]json.RawMessage `json:"crosses"`
+	TargetClass string                     `json:"target_class"`
+	TargetKind  string                     `json:"target_kind"`
+	Contact     string                     `json:"contact"`
+}
+
+// record is the scope as a call records it: the words of the lists
+// alone, and no boundary that is not known.
+func (r readScope) record() session.CallScope {
+	known := func(order []string, v string) string {
+		if slices.Contains(order, v) {
+			return v
+		}
+		return ""
+	}
+	out := session.CallScope{
+		Undo: known(session.Undos, r.Undo), TargetClass: known(session.TargetClasses, r.TargetClass),
+		TargetKind: known(session.TargetKinds, r.TargetKind), Contact: known(session.Contacts, r.Contact),
+		Source: session.ScopeFromService,
+	}
+	c := session.Crosses{
+		Machine: boundary(r.Crosses["machine"]), Remote: boundary(r.Crosses["remote"]), Network: boundary(r.Crosses["network"]),
+		Organization: boundary(r.Crosses["organization"]), Public: boundary(r.Crosses["public"]),
+	}
+	if !c.Empty() {
+		out.Crosses = &c
+	}
+	return out
+}
+
+// boundary reads one boundary of a prediction's crosses: true or yes,
+// false or no, and nil for anything else, unknown included.
+func boundary(raw json.RawMessage) *bool {
+	var b bool
+	if json.Unmarshal(raw, &b) == nil {
+		return &b
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		switch s {
+		case "yes":
+			return new(true)
+		case "no":
+			return new(false)
+		}
+	}
+	return nil
 }
 
 type decision struct {
@@ -302,10 +447,19 @@ type decision struct {
 	Action            *action `json:"action,omitempty"`
 }
 
+// answer is a person's answer to a call, with how the person answered
+// and how long the call waited (spec 101); a field the client did not
+// measure is left out.
 type answer struct {
 	key
-	Approve bool   `json:"approve"`
-	By      string `json:"by,omitempty"`
+	Approve         bool   `json:"approve"`
+	By              string `json:"by,omitempty"`
+	AnswerMS        *int64 `json:"answer_ms,omitempty"`
+	WaitedMS        int64  `json:"waited_ms"`
+	DetailsOpened   *bool  `json:"details_opened,omitempty"`
+	SuggestionShown *bool  `json:"suggestion_shown,omitempty"`
+	Surface         string `json:"surface,omitempty"`
+	Remembered      bool   `json:"remembered"`
 }
 
 func (d *Decider) action(c harness.Call, risk session.Risk) action {
@@ -313,18 +467,45 @@ func (d *Decider) action(c harness.Call, risk session.Risk) action {
 	if c.MachineKind == machine.KindCella {
 		env = environment{Kind: "sandbox"}
 	}
+	env.Holds, env.Repositories = c.Holds, c.Repositories
+	// A thread tool's input is the agent's own words to a subagent or an
+	// advisor, its task or its message, which no part of the contract
+	// carries (spec 101).
+	input := c.Input
+	switch harness.ToolName(c.Name) {
+	case harness.ToolAgent, harness.ToolSendMessage, harness.ToolAdvisor:
+		input = nil
+	}
 	a := action{
 		key:         d.key(c.Session, c.ToolUseID),
 		Actor:       actor{Kind: "agent", ID: cmp.Or(c.Session.Agent.ID, c.Session.Agent.Name), Session: c.Session.ID},
 		Kind:        "tool",
 		Name:        c.Name,
 		Effect:      string(c.Props.Effect),
-		Input:       c.Input,
+		Input:       input,
 		Environment: env,
-		Attributes:  map[string]any{AttributeAttended: c.Attended},
+		Attributes:  map[string]any{AttributeAttended: c.Attended, AttributeDepth: c.Depth},
 	}
 	if a.Effect == "" {
 		a.Effect = "external"
+	}
+	if r := c.Reach; r.Undo != "" || r.Contact != "" || !r.Crosses.Empty() {
+		a.Scope = &scope{Undo: r.Undo, Contact: r.Contact}
+		if !r.Crosses.Empty() {
+			crosses := r.Crosses
+			a.Scope.Crosses = &crosses
+		}
+	}
+	if t := c.Reach.Target; t != nil && t.Kind != "" {
+		a.Target = &target{Kind: t.Kind, ID: t.ID, Class: t.Class}
+	}
+	// A thread tool's call carries what it hands over and never the task.
+	if h := c.Handoff; h != nil {
+		a.Attributes[AttributeHandoffWrites] = h.Writes
+		a.Attributes[AttributeHandoffExternal] = h.External
+		if h.Isolation != "" {
+			a.Attributes[AttributeHandoffIsolation] = h.Isolation
+		}
 	}
 	if risk.Source != "" {
 		a.Signals = []signal{{Source: risk.Source, Score: risk.Score}}
@@ -350,86 +531,151 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 	return risk, out, nil
 }
 
-// decide decides a call outside plan mode and sends the decision.
+// decide decides a call outside plan mode and sends the decision. Every
+// decision records the reach the call was decided on: the service's
+// reading joined with Topos's claims when a prediction carried one, and
+// Topos's claims alone otherwise (spec 101).
 func (d *Decider) decide(ctx context.Context, c harness.Call, risk session.Risk, a action, rules harness.Decision) harness.Decision {
+	claimed := harness.ClaimedScope(c.Reach)
 	if harness.ModeOn(c.Policy.Mode, c.MachineKind) != harness.ModeProgressive {
-		return d.watch(ctx, a, rules, SourceConfirm)
+		return d.watch(ctx, a, rules, SourceConfirm, claimed)
 	}
 	if d.mode == ModeShadow {
-		return d.watch(ctx, a, rules, SourceProgressive)
+		return d.watch(ctx, a, rules, SourceProgressive, claimed)
+	}
+	// While the session asks for every change, the service is asked as in
+	// confirm mode: its suggestion is recorded, the decision sent, and the
+	// person's answer teaches it (spec 101).
+	if out, ok := inFallback(c, risk, rules); ok {
+		return d.watch(ctx, a, out, SourceProgressive, claimed)
 	}
 	if settled, ok := c.Policy.Settle(c, risk); ok {
+		settled.Scope = &claimed
 		d.record(ctx, a, settled, SourceProgressive, false)
 		return settled
 	}
 	p, perr := d.predict(ctx, a)
+	scope := &claimed
+	if perr == nil && p.Scope != nil {
+		joined := p.Scope.record().Join(claimed)
+		scope = &joined
+	}
 	if d.mode == ModeLearned && (perr != nil || !p.hasEvidence()) {
 		if perr != nil {
 			d.report(perr)
 		}
-		return d.byRules(ctx, a, rules, p, perr == nil)
+		return d.byRules(ctx, a, rules, p, perr == nil, scope)
 	}
 	if perr != nil {
 		d.report(perr)
 		v := verdict.OnFailure(verdict.Allow)
-		out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1, DecidedBy: session.DecidedFallback}
+		out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1, DecidedBy: session.DecidedFallback, Scope: scope}
 		d.record(ctx, a, out, SourceProgressive, false)
 		return out
 	}
+	if p.Verdict == string(verdict.Allow) && !d.loosens(p, rules) {
+		return d.byRules(ctx, a, rules, p, true, scope)
+	}
 	u := d.rand()
 	v, prob := verdict.Decide(verdict.Verdict(p.Verdict), verdict.Allow, p.AuditRate, u)
-	out := harness.Decision{Verdict: v, Reason: reason(p, v), ReviewProbability: prob, Draw: &u, Suggestion: suggestion(p), DecidedBy: session.DecidedLearned, Rule: p.Source}
+	out := harness.Decision{Verdict: v, Reason: reason(p, v), ReviewProbability: prob, Draw: &u, Suggestion: suggestion(p), DecidedBy: session.DecidedLearned, Rule: p.Source, Scope: scope}
 	d.record(ctx, a, out, SourceProgressive, true)
 	return out
 }
 
-// byRules applies the rules' decision of a progressive call in learned
-// mode, where the service has no evidence about the person: the risk score
+// loosens reports whether a learned allow decides a call under the
+// decider's Loosen (spec 101): under covered, when the person's approvals
+// cover the call; under never, when the rules' verdict is an allow too.
+// No allow lifts a call above the rules' ceiling, which Settle applied
+// first.
+func (d *Decider) loosens(p prediction, rules harness.Decision) bool {
+	if d.loosen == LoosenNever {
+		return harness.Stricter(verdict.Allow, rules.Verdict) == verdict.Allow
+	}
+	return p.covered()
+}
+
+// inFallback is the decision of a progressive call that changes something
+// while the session asks for every one (spec 101), and false for any
+// other call: a call the rules' ceiling blocks or asks about keeps that
+// decision, and every other asks, decided_by denials, whatever an
+// always_allow or a remembered pattern would allow.
+func inFallback(c harness.Call, risk session.Risk, rules harness.Decision) (harness.Decision, bool) {
+	if !c.Fallback || c.Memory || !harness.Changes(c.Props) {
+		return rules, false
+	}
+	out := rules
+	if settled, ok := c.Policy.Settle(c, risk); ok && harness.Stricter(settled.Verdict, verdict.Ask) == settled.Verdict {
+		out = settled
+		out.Scope = rules.Scope
+	}
+	return harness.InFallback(c, out), true
+}
+
+// byRules applies the rules' decision of a progressive call the service
+// does not decide: in learned mode, where it has no evidence about the
+// person, and for an allow its Loosen leaves to the rules. The risk score
 // decides as without a service, an automatic verdict is picked for review
 // at the service's audit rate when it answered, and the suggestion is
 // recorded beside the decision. decided_by stays the rules' layer.
-func (d *Decider) byRules(ctx context.Context, a action, rules harness.Decision, p prediction, predicted bool) harness.Decision {
+func (d *Decider) byRules(ctx context.Context, a action, rules harness.Decision, p prediction, predicted bool, scope *session.CallScope) harness.Decision {
 	if predicted {
 		u := d.rand()
 		v, prob := verdict.Decide(rules.Verdict, verdict.Allow, p.AuditRate, u)
 		rules.Verdict, rules.ReviewProbability, rules.Draw = v, prob, &u
 		rules.Suggestion = suggestion(p)
 	}
+	rules.Scope = scope
 	d.record(ctx, a, rules, SourceProgressive, predicted)
 	return rules
 }
 
-// hasEvidence is whether a prediction rests on the person's answers: an
-// allow, a block, or a split ask. An unsure ask, which has too few
-// answers, and an ask from a service that does not say which ask it is,
-// do not.
+// hasEvidence is whether a prediction rests on the person's answers in
+// learned mode: an allow, a block, or an ask the person's answers keep
+// for them, split or wider (spec 101). An unsure, a short or a few ask,
+// and an ask from a service that does not say which ask it is or names
+// one the harness does not know, do not.
 func (p prediction) hasEvidence() bool {
-	return p.Verdict != string(verdict.Ask) || p.AskKind == AskSplit
+	return p.Verdict != string(verdict.Ask) || p.AskKind == AskSplit || p.AskKind == AskWider
 }
 
-// The kinds of ask a prediction can carry, told apart by the service's
-// evidence ratio.
+// The kinds of ask a prediction can carry (spec 101).
 const (
 	// AskUnsure is an ask with an evidence ratio below 0.5: the person's
 	// answers say little about the call yet, and more answers can move it.
 	AskUnsure = "unsure"
-	// AskSplit is an ask with an evidence ratio of 0.5 or more and the
-	// approval probability still between the thresholds: the person's
-	// answers say much about the call, and they can agree or disagree.
-	// Two allows and no deny can give 0.80 under a 0.90 allow threshold,
-	// and more allows can move it past 0.90.
+	// AskSplit is an ask with an evidence ratio of 0.5 or more whose
+	// answers disagree: the person allowed and denied calls like it, and
+	// the approval probability is still between the thresholds.
 	AskSplit = "split"
+	// AskShort is an ask with an evidence ratio of 0.5 or more whose
+	// answers agree, with the approval probability still in the ask band:
+	// more answers that agree can move it past a threshold.
+	AskShort = "short"
+	// AskWider is an ask for a call that reaches wider than any call of
+	// its kind the person allowed.
+	AskWider = "wider"
+	// AskFew is an ask for a call of a reach the person allowed, but not
+	// with enough considered answers or in enough sessions.
+	AskFew = "few"
 )
 
 // watch records the rules' decision with the service's suggestion beside
 // it, the prediction bounded by the confirm timeout and the decision sent
 // in the background: the service is asked and learns, and decides nothing.
-func (d *Decider) watch(ctx context.Context, a action, rules harness.Decision, mode string) harness.Decision {
+// The decision records the reach the service read joined with claimed,
+// or claimed alone.
+func (d *Decider) watch(ctx context.Context, a action, rules harness.Decision, mode string, claimed session.CallScope) harness.Decision {
 	p, perr := d.predictWithin(ctx, a, d.confirm)
+	rules.Scope = &claimed
 	if perr != nil {
 		d.report(perr)
 	} else {
 		rules.Suggestion = suggestion(p)
+		if p.Scope != nil {
+			joined := p.Scope.record().Join(claimed)
+			rules.Scope = &joined
+		}
 	}
 	d.recordLater(ctx, a, rules, mode, perr == nil)
 	return rules
@@ -513,13 +759,18 @@ func (d *Decider) sent(ctx context.Context, k key) error {
 }
 
 // Answered implements [harness.Learner]. It waits for the call's decision
-// to be sent, so the service never receives an answer before it.
-func (d *Decider) Answered(ctx context.Context, s session.Session, toolUseID string, approve bool, by string) error {
+// to be sent, so the service never receives an answer before it. The
+// answer carries how the person answered and how long the call waited
+// (spec 101), never the confirmation's note or pattern.
+func (d *Decider) Answered(ctx context.Context, s session.Session, toolUseID string, a harness.Answer) error {
 	k := d.key(s, toolUseID)
 	if err := d.sent(ctx, k); err != nil {
 		return err
 	}
-	return d.post(ctx, "/v1/answers", answer{key: k, Approve: approve, By: by}, nil)
+	return d.post(ctx, "/v1/answers", answer{
+		key: k, Approve: a.Approve, By: a.By, AnswerMS: a.AnswerMS, WaitedMS: a.WaitedMS,
+		DetailsOpened: a.DetailsOpened, SuggestionShown: a.SuggestionShown, Surface: a.Surface, Remembered: a.Remembered,
+	}, nil)
 }
 
 func (d *Decider) predict(ctx context.Context, a action) (prediction, error) {

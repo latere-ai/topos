@@ -126,8 +126,10 @@ func bash(mode harness.Mode, command string) harness.Call {
 	}
 }
 
+// allowSuggestion is an allow the person's approvals cover, which decides
+// a call under the default LoosenCovered.
 func allowSuggestion() prediction {
-	return prediction{Verdict: "allow", Approve: 0.97, Uncertainty: 0.2, Thresholds: thresholds{AllowAbove: 0.9, BlockBelow: 0.25}, AuditRate: 0.05, Source: "learned/1", Reason: "approved often"}
+	return prediction{Verdict: "allow", Approve: 0.97, Uncertainty: 0.2, Thresholds: thresholds{AllowAbove: 0.9, BlockBelow: 0.25}, AuditRate: 0.05, Source: "learned/1", Reason: "approved often", Cover: &cover{Covered: true}}
 }
 
 func TestProgressiveTakesTheSuggestion(t *testing.T) {
@@ -329,14 +331,14 @@ func TestPlanModeAsksNothing(t *testing.T) {
 func TestAnswered(t *testing.T) {
 	s := &service{}
 	d := newDecider(t, s, 0.5)
-	if err := d.Answered(context.Background(), sess, "toolu_1", false, "https://issuer.example|usr_lead"); err != nil {
+	if err := d.Answered(context.Background(), sess, "toolu_1", harness.Answer{By: "https://issuer.example|usr_lead"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.answered) != 1 || s.answered[0].ActionID != "ses_1/toolu_1" || s.answered[0].Approve || s.answered[0].By != "https://issuer.example|usr_lead" {
 		t.Errorf("answers %+v", s.answered)
 	}
 	f := &service{status: http.StatusBadGateway}
-	if err := newDecider(t, f, 0.5).Answered(context.Background(), sess, "toolu_1", true, ""); err == nil {
+	if err := newDecider(t, f, 0.5).Answered(context.Background(), sess, "toolu_1", harness.Answer{Approve: true}); err == nil {
 		t.Error("a failing answer reported no error")
 	}
 }
@@ -481,7 +483,7 @@ func TestConfirmModeBoundsTheDelay(t *testing.T) {
 	if out.Verdict != harness.VerdictAllow || out.Suggestion != nil {
 		t.Errorf("confirm with a hanging service %+v", out)
 	}
-	if err := d.Answered(context.Background(), call.Session, call.ToolUseID, true, ""); err != nil {
+	if err := d.Answered(context.Background(), call.Session, call.ToolUseID, harness.Answer{Approve: true}); err != nil {
 		t.Fatal(err)
 	}
 	s.mu.Lock()
@@ -510,7 +512,7 @@ func TestAnswerWaitsForItsDecision(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if err := d.Answered(ctx, call.Session, call.ToolUseID, true, ""); err == nil {
+	if err := d.Answered(ctx, call.Session, call.ToolUseID, harness.Answer{Approve: true}); err == nil {
 		t.Error("an answer was sent before its decision")
 	}
 	settle(d)
@@ -703,7 +705,7 @@ func TestTheOrganizationOfACallsKey(t *testing.T) {
 		if _, _, err := d.Decide(ctx, call); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.Answered(ctx, c.s, "toolu_1", true, ""); err != nil {
+		if err := d.Answered(ctx, c.s, "toolu_1", harness.Answer{Approve: true}); err != nil {
 			t.Fatal(err)
 		}
 		srv.Close()

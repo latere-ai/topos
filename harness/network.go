@@ -347,7 +347,7 @@ func (t *turn) settleApprovals(ctx context.Context, w *waits) error {
 			return err
 		}
 		if a.Confirmation != nil && a.Request.ToolUseID != "" {
-			t.forwardAnswer(ctx, a.Request.ToolUseID, *a.Confirmation)
+			t.forwardAnswer(ctx, a.Request.ToolUseID, *a.Confirmation, a.At, a.ConfirmedAt)
 		}
 	}
 	return nil

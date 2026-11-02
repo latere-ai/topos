@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
@@ -166,8 +168,7 @@ func TestToolUseRecordsTheDecisionsOrganization(t *testing.T) {
 type learner struct {
 	decided  []string
 	answered []string
-	approve  []bool
-	by       []string
+	answers  []Answer
 }
 
 func (l *learner) Decide(ctx context.Context, c Call) (session.Risk, Decision, error) {
@@ -175,15 +176,24 @@ func (l *learner) Decide(ctx context.Context, c Call) (session.Risk, Decision, e
 	return Rules{}.Decide(ctx, c)
 }
 
-func (l *learner) Answered(_ context.Context, _ session.Session, id string, approve bool, by string) error {
+// approvals and bys are what each answer approved and who gave it.
+func (l *learner) approvals() (approve []bool, by []string) {
+	for _, a := range l.answers {
+		approve, by = append(approve, a.Approve), append(by, a.By)
+	}
+	return approve, by
+}
+
+func (l *learner) Answered(_ context.Context, _ session.Session, id string, a Answer) error {
 	l.answered = append(l.answered, id)
-	l.approve = append(l.approve, approve)
-	l.by = append(l.by, by)
+	l.answers = append(l.answers, a)
 	return errors.New("the service is down, which changes nothing")
 }
 
-// Resume tells a learning decider each confirmation it settles, and never
-// decides an asked call again.
+// Resume tells a learning decider each confirmation it settles, with how
+// the person answered and how long the call waited in the log's time
+// (spec 101), and never decides an asked call again. The pattern and the
+// note stay in the session.
 func TestResumeForwardsAnswers(t *testing.T) {
 	l := &learner{}
 	e := setup(t, func(c *Config) { c.Machine = fakeMachine{kind: machine.KindHost}; c.Decider = l })
@@ -196,11 +206,12 @@ func TestResumeForwardsAnswers(t *testing.T) {
 	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
 		t.Fatalf("outcome %+v", out)
 	}
-	for _, c := range []session.UserToolConfirmation{
-		{Sender: e.s.Initiator, ToolUseID: "toolu_a", Decision: session.DecisionAllow},
+	for i, c := range []session.UserToolConfirmation{
+		{Sender: e.s.Initiator, ToolUseID: "toolu_a", Decision: session.DecisionAllow, Remember: "bash(make*)",
+			AnswerMS: new(int64(4200)), DetailsOpened: new(true), SuggestionShown: new(false), Surface: session.SurfacePrompt},
 		{Sender: session.Sender{Subject: "lead", Kind: session.SenderPerson}, ToolUseID: "toolu_b", Decision: session.DecisionDeny, Note: "no"},
 	} {
-		ev, err := session.NewEvent(session.TypeUserToolConfirmation, c, t0)
+		ev, err := session.NewEvent(session.TypeUserToolConfirmation, c, t0.Add(time.Duration(i+3)*time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -213,8 +224,12 @@ func TestResumeForwardsAnswers(t *testing.T) {
 	if len(l.decided) != 2 {
 		t.Errorf("decided %v; a resumed call must not be decided again", l.decided)
 	}
-	if len(l.answered) != 2 || l.answered[0] != "toolu_a" || !l.approve[0] || l.approve[1] || l.by[1] != "lead" {
-		t.Errorf("answered %v %v by %v", l.answered, l.approve, l.by)
+	want := []Answer{
+		{Approve: true, By: e.s.Initiator.Subject, AnswerMS: new(int64(4200)), WaitedMS: 3000, DetailsOpened: new(true), SuggestionShown: new(false), Surface: session.SurfacePrompt, Remembered: true},
+		{Approve: false, By: "lead", WaitedMS: 4000},
+	}
+	if len(l.answered) != 2 || l.answered[0] != "toolu_a" || !reflect.DeepEqual(l.answers, want) {
+		t.Errorf("answered %v %+v, want %+v", l.answered, l.answers, want)
 	}
 	if got := e.write.ran(); len(got) != 1 {
 		t.Errorf("ran %v; the allowed call runs and the denied one does not, whatever the service says", got)

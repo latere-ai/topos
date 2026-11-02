@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"strings"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
@@ -25,6 +26,10 @@ type pendingCall struct {
 	// confirmation (spec 012): the first one appended after the call's
 	// agent.tool_use while no confirmation had answered it.
 	message *session.UserMessage
+	// asked is the time of the call's agent.tool_use, and confirmed of
+	// its confirmation, zero without one: how long the call waited (spec
+	// 101).
+	asked, confirmed time.Time
 }
 
 // openCalls returns the thread's calls without a tool.result or a
@@ -52,7 +57,7 @@ func openCalls(log []session.Event, thread string) []pendingCall {
 				continue
 			}
 			index[p.ToolUseID] = len(open)
-			open = append(open, pendingCall{use: p, seq: e.Seq})
+			open = append(open, pendingCall{use: p, seq: e.Seq, asked: e.Time})
 		case e.Type == session.TypeUserToolConfirmation:
 			var p session.UserToolConfirmation
 			if e.Decode(&p) != nil {
@@ -63,6 +68,7 @@ func openCalls(log []session.Event, thread string) []pendingCall {
 			if i, ok := index[p.ToolUseID]; ok && open[i].message == nil {
 				open[i].confirmation = &p
 				open[i].runsAfter = 0
+				open[i].confirmed = e.Time
 			}
 		case e.Type == session.TypeUserMessage:
 			// A person's message is in the session's own thread and denies
@@ -155,13 +161,15 @@ func rememberedPatterns(log []session.Event) []string {
 
 // forwardAnswer tells a learning decider a person's confirmation as the
 // answer to the call toolUseID (spec 037): the confirmation of an asked
-// call, or of a network approval that call's connection raised. It is
-// best effort: the call or the approval is settled as it would be without
-// a decision service, whatever the decider says.
-func (t *turn) forwardAnswer(ctx context.Context, toolUseID string, c session.UserToolConfirmation) {
+// call, or of a network approval that call's connection raised, with how
+// the person answered and how long it waited from the event that asked,
+// at asked, to the confirmation's own, at answered, in the log's time
+// (spec 101). It is best effort: the call or the approval is settled as
+// it would be without a decision service, whatever the decider says.
+func (t *turn) forwardAnswer(ctx context.Context, toolUseID string, c session.UserToolConfirmation, asked, answered time.Time) {
 	l, ok := t.h.decider().(Learner)
 	if !ok {
 		return
 	}
-	_ = l.Answered(ctx, t.s, toolUseID, c.Decision == session.DecisionAllow, c.Sender.Subject)
+	_ = l.Answered(ctx, t.s, toolUseID, answerOf(c, answered.Sub(asked).Milliseconds()))
 }

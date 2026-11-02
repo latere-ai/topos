@@ -509,25 +509,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 			return errorResult(CodeIsolationUnavailable, prompts.Text(prompts.SubagentNoWorktrees)), nil
 		}
 	}
-	held := t.reg.Names()
-	var names []string
-	for _, n := range held {
-		// The question, request_connection, publish, trigger, wake and
-		// notify tools are the session's own thread's: the thread that holds
-		// the conversation with the person asks, a session has one app, and
-		// standing work, the session's wake and its notices are the
-		// conversation's (specs 039, 069, 043 and 086).
-		if n == ToolAgent || n == ToolSendMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish || n == session.ToolTrigger || n == session.ToolWake || n == session.ToolNotify {
-			continue
-		}
-		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {
-			continue
-		}
-		if narrow != nil && !slices.Contains(narrow, n) {
-			continue
-		}
-		names = append(names, n)
-	}
+	names := t.handedTools(sub, narrow)
 	cfg := t.childConfig(sub)
 	id := session.NewID(session.PrefixEvent)
 	started := session.SubagentStarted{
@@ -564,11 +546,37 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	if err != nil {
 		return tools.Result{}, err
 	}
+	child.driven = e.Seq
 	res, err := child.drive(ctx)
 	if err != nil || started.Isolation != "worktree" {
 		return res, err
 	}
 	return child.commitWorktree(ctx, started, res, note)
+}
+
+// handedTools are the tools a subagent this thread starts holds: the
+// ones this thread holds that the subagent declares and the call's tools
+// narrow to.
+func (t *turn) handedTools(sub Subagent, narrow []string) []string {
+	var names []string
+	for _, n := range t.reg.Names() {
+		// The question, request_connection, publish, trigger, wake and
+		// notify tools are the session's own thread's: the thread that holds
+		// the conversation with the person asks, a session has one app, and
+		// standing work, the session's wake and its notices are the
+		// conversation's (specs 039, 069, 043 and 086).
+		if n == ToolAgent || n == ToolSendMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish || n == session.ToolTrigger || n == session.ToolWake || n == session.ToolNotify {
+			continue
+		}
+		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {
+			continue
+		}
+		if narrow != nil && !slices.Contains(narrow, n) {
+			continue
+		}
+		names = append(names, n)
+	}
+	return names
 }
 
 // threadMachine is the machine a thread runs on: its worktree's for an
@@ -657,6 +665,7 @@ func (t *turn) message(ctx context.Context, callID, thread, content string, end 
 	if err != nil {
 		return tools.Result{}, err
 	}
+	child.driven = e.Seq
 	res, err := child.drive(ctx)
 	if err == nil && started.Isolation == "worktree" {
 		res, err = child.commitWorktree(ctx, started, res, "")
@@ -736,7 +745,7 @@ func (t *turn) drive(ctx context.Context) (tools.Result, error) {
 	switch out.StopReason {
 	case session.StopEndTurn:
 		text := finalText(t.events(), t.thread)
-		return tools.Text(tools.OutcomeOK, idle(text, t.thread)), nil
+		return t.warnRefused(tools.Text(tools.OutcomeOK, idle(text, t.thread))), nil
 	case session.StopToolConfirmation, session.StopToolResult:
 		return tools.Result{}, &errPause{reason: out.StopReason}
 	}
@@ -746,7 +755,7 @@ func (t *turn) drive(ctx context.Context) (tools.Result, error) {
 	if out.StopReason == session.StopFailed {
 		return tools.Text(tools.OutcomeError, stopped), &runUnopened{code: out.Detail, err: errors.New(stopped)}
 	}
-	return tools.Text(tools.OutcomeError, stopped), nil
+	return t.warnRefused(tools.Text(tools.OutcomeError, stopped)), nil
 }
 
 // idle is the result of a call whose thread went idle: the thread's final
@@ -821,7 +830,8 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 		return unknownEffect(), nil
 	}
 	if done, text := settled(t.events(), thread, driven); done {
-		return tools.Text(tools.OutcomeOK, idle(text, thread)), nil
+		res := tools.Text(tools.OutcomeOK, idle(text, thread))
+		return warnRefused(t.events(), thread, driven, res), nil
 	}
 	started, ok := t.spawned(thread)
 	if !ok {
@@ -851,6 +861,7 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 	if err != nil {
 		return tools.Result{}, err
 	}
+	child.driven = driven
 	res, err := child.drive(ctx)
 	if err == nil && started.Isolation == "worktree" {
 		res, err = child.commitWorktree(ctx, started, res, "")

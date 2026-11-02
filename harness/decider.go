@@ -43,6 +43,26 @@ type Call struct {
 	// the feature memory in place of its tool's own, and the rules settle
 	// it.
 	Memory bool
+	// Reach is Topos's own claims about what the call reaches (spec 101),
+	// filled from what the harness knows without reading the input as
+	// text; Holds are the limits the call's machine enforces whatever the
+	// call does, of HoldEgress, HoldProtectedRefs and HoldCheckpoints; and
+	// Repositories is the visibility of the session's repositories,
+	// RepositoriesPrivate, RepositoriesPublic or RepositoriesMixed, "" for
+	// a session with none or one whose visibility is not known.
+	Reach        tools.Reach
+	Holds        []string
+	Repositories string
+	// Depth is the subagent depth of the thread that made the call: 0 for
+	// the session's own conversation, 1 for a subagent it started.
+	Depth int
+	// Handoff is what an agent or send_message call hands its subagent,
+	// nil for every other call.
+	Handoff *Handoff
+	// Fallback is set while the session asks for every call that changes
+	// something, after repeated refusals (spec 101): a decider applies
+	// InFallback to its decision.
+	Fallback bool
 }
 
 // Decider decides a validated call: its risk score and its verdict. The
@@ -58,21 +78,26 @@ type Decider interface {
 type Rules struct{}
 
 // Decide implements [Decider]. The rules review nothing at random, so a
-// shown verdict has review probability 1 and any other 0.
+// shown verdict has review probability 1 and any other 0. The decision
+// records the call's scope from Topos's own claims (spec 101), and in the
+// fallback of repeated refusals a change asks.
 func (Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
 	named := func(host string) bool { return slices.Contains(c.Policy.Egress, host) }
 	if n := c.Policy.Network; n != nil {
 		named = n.Inside
 	}
+	scope := ClaimedScope(c.Reach)
 	if c.Memory {
 		d := held(c.Policy.decideMemory(c.Name, c.Props, c.Input, c.MachineKind), c.Confirm, c.Name)
 		_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
+		d.Scope = &scope
 		return memoryRisk(), d, nil
 	}
 	risk := score(c.Name, c.Props, c.Input, c.MachineKind, named)
 	d := held(c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered), c.Confirm, c.Name)
 	_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
-	return risk, d, nil
+	d.Scope = &scope
+	return risk, InFallback(c, d), nil
 }
 
 // held is d for a call its tool holds for a person, why: a verdict that
@@ -82,7 +107,7 @@ func held(d Decision, why, tool string) Decision {
 	if why == "" || Stricter(d.Verdict, VerdictAsk) == d.Verdict {
 		return d
 	}
-	return Decision{Verdict: VerdictAsk, Reason: why, ReviewProbability: 1, Suggestion: d.Suggestion, DecidedBy: session.DecidedTool, Rule: tool}
+	return Decision{Verdict: VerdictAsk, Reason: why, ReviewProbability: 1, Suggestion: d.Suggestion, DecidedBy: session.DecidedTool, Rule: tool, Scope: d.Scope}
 }
 
 // decider is the configured decider, or the rules.
@@ -147,8 +172,9 @@ func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
 // Learner is a Decider that also learns from the person's answers to the
 // calls it decided (spec 037). Resume tells it each confirmation it
 // settles, of an asked call or of a network approval, which answers the
-// call whose connection raised it; an error is not the session's, and the
+// call whose connection raised it, with how the person answered and how
+// long the call waited (spec 101); an error is not the session's, and the
 // call goes on as it would.
 type Learner interface {
-	Answered(ctx context.Context, s session.Session, toolUseID string, approve bool, by string) error
+	Answered(ctx context.Context, s session.Session, toolUseID string, a Answer) error
 }

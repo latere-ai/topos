@@ -220,6 +220,17 @@ type Config struct {
 	// Meter counts where bash calls ran and which calls opened the
 	// session's machine (spec 097); nil counts nothing.
 	Meter Meter
+	// Denials are the installation's limits of refusals, which start the
+	// fallback of spec 101 (TOPOS_DENIALS_CONSECUTIVE and
+	// TOPOS_DENIALS_TOTAL): nil is 3 in a row and 20 in a session, and a
+	// limit of zero is off. The ones the session's allow named apply where
+	// lower.
+	Denials *session.DenialLimits
+	// ProtectedRefs says the session's repositories are reached through a
+	// git host whose ref rules refuse a push to a protected branch (spec
+	// 019), which every call of a session with repositories is sent as
+	// the hold protected_refs (spec 101).
+	ProtectedRefs bool
 	// MCP is how the drive's listing of each connection of kind mcp ended,
 	// by the connection's name (spec 069): the connections block names
 	// these mcp connections and no other, and the drive's first turn
@@ -525,6 +536,11 @@ type turn struct {
 	// repeats tells a call made again unchanged after an error, which the
 	// turn ends on once it repeats MaxRepeatedCalls times.
 	repeats repeats
+	// driven is the sequence of the event that drove a thread's run, its
+	// subagent.started or subagent.message: the refusals after it are the
+	// ones its caller is warned of (spec 101). Zero for the session's own
+	// thread.
+	driven uint64
 }
 
 func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
@@ -540,6 +556,11 @@ func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
 func (t *turn) commit(ctx context.Context, batch ...session.Event) error {
 	t.sh.mu.Lock()
 	defer t.sh.mu.Unlock()
+	return t.appendLocked(ctx, batch)
+}
+
+// appendLocked is commit under the log's lock, which the caller holds.
+func (t *turn) appendLocked(ctx context.Context, batch []session.Event) error {
 	// Work that happened is always recorded, a cancel notwithstanding; a
 	// lost lease still refuses the append.
 	foreign, err := t.l.Append(context.WithoutCancel(ctx), batch)
@@ -798,7 +819,7 @@ func (t *turn) resume(ctx context.Context) error {
 			}
 		case c.use.Verdict == string(VerdictAsk):
 			if c.confirmation != nil {
-				t.forwardAnswer(ctx, c.use.ToolUseID, *c.confirmation)
+				t.forwardAnswer(ctx, c.use.ToolUseID, *c.confirmation, c.asked, c.confirmed)
 			}
 			switch {
 			case c.message != nil:
@@ -836,6 +857,11 @@ func (t *turn) resume(ctx context.Context) error {
 				return err
 			}
 		}
+	}
+	// A person's deny of a call or of an approval is a refusal, which may
+	// reach a limit of the session's refusals (spec 101).
+	if err := t.checkDenials(ctx); err != nil {
+		return err
 	}
 	calls := make([]plannedCall, 0, len(run))
 	for _, c := range run {
@@ -895,6 +921,9 @@ func (t *turn) resume(ctx context.Context) error {
 	if interrupted {
 		return t.finish(ctx, session.StopInterrupted, "")
 	}
+	if t.stoppedByDenials() {
+		return t.finish(ctx, session.StopDenials, "")
+	}
 	if waiting {
 		return t.finish(ctx, reason, "")
 	}
@@ -914,6 +943,11 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	}
 	if t.repeats.stuck != "" {
 		return t.stopRepeated(ctx)
+	}
+	// A turn whose refusals stopped it ends every thread at its next step
+	// (spec 101).
+	if t.stoppedByDenials() {
+		return t.finish(ctx, session.StopDenials, "")
 	}
 	if !t.h.c.Clock().Before(t.deadline) {
 		return t.finish(ctx, session.StopTurnLimit, "")
@@ -1599,6 +1633,11 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 			return err
 		}
 	}
+	// A call the rules blocked is a refusal, which may reach a limit of
+	// the session's refusals (spec 101).
+	if err := t.checkDenials(ctx); err != nil {
+		return err
+	}
 	if len(planned.run) == 0 && len(planned.ask) == 0 && len(planned.client) == 0 && len(answered) == 0 {
 		detail := ""
 		if res.StopReason == ir.StopRefusal {
@@ -1645,6 +1684,12 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 	}
 	if interrupted {
 		return t.finish(ctx, session.StopInterrupted, t.cutDetail())
+	}
+	// An unattended turn whose refusals reached a limit stops once the
+	// step's calls are answered, whatever else of the step waits (spec
+	// 101).
+	if t.stoppedByDenials() {
+		return t.finish(ctx, session.StopDenials, "")
 	}
 	if waiting {
 		return t.finish(ctx, reason, "")
@@ -1780,6 +1825,12 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 	// plans them, a person's change included (spec 041).
 	mode := t.mode()
 	decider := t.h.decider()
+	// What each call reaches is claimed from what the step knows (spec
+	// 101), and the session's refusals say whether it asks for every
+	// change.
+	reaching, repos := t.reaching(network), repositories(t.events())
+	holds := reaching.Holds()
+	fallback := session.RefusalsOf(t.events()).Fallback
 	// asked reports that the step already holds a question call that is
 	// asked; each later one is refused.
 	asked := false
@@ -1858,16 +1909,34 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			}
 			confirm = c.Confirm(tools.Call{ID: id, Input: input, State: *state})
 		}
-		risk, d, err := decider.Decide(ctx, Call{
+		if _, ok := tool.(tools.Reacher); ok && state == nil {
+			st := t.toolState()
+			state = &st
+		}
+		var st tools.State
+		if state != nil {
+			st = *state
+		}
+		memory := t.h.onMemory(tool, input)
+		call := Call{
 			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered, Confirm: confirm,
-			Attended: attended, Memory: t.h.onMemory(tool, input),
-		})
+			Attended: attended, Memory: memory,
+			Reach: reaching.Of(tool, name, tools.Call{ID: id, Input: input, State: st}, memory), Holds: holds, Repositories: repos,
+			Depth: t.depth, Handoff: t.handoff(name, input), Fallback: fallback,
+		}
+		risk, d, err := decider.Decide(ctx, call)
 		if err != nil {
 			return stepPlan{}, nil, nil, err
 		}
 		// The organization a decision service holds the call's decision
-		// under stays the decider's whatever the harness narrows below.
-		org := d.Org
+		// under, and the reach it was decided on, stay the decider's
+		// whatever the harness narrows below; a decider that records no
+		// reach records Topos's claims (spec 101).
+		org, scope := d.Org, d.Scope
+		if scope == nil {
+			claimed := ClaimedScope(call.Reach)
+			scope = &claimed
+		}
 		// A call its tool holds for a person waits for one whatever the
 		// decider answered: no list, pattern, score or service runs it
 		// without them. Plan mode blocks it, as it blocks every call that
@@ -1889,7 +1958,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			ToolUseID: id, Name: wrote, Input: written, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
 			Mode: string(mode), Client: props.Client, Repeatable: props.Repeatable,
 			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion, Attended: &attended,
-			DecidedBy: d.DecidedBy, DecidedByRule: d.Rule, DecisionOrg: org,
+			DecidedBy: d.DecidedBy, DecidedByRule: d.Rule, DecisionOrg: org, Scope: scope,
 		}
 		e, err := t.event(session.TypeAgentToolUse, use)
 		if err != nil {

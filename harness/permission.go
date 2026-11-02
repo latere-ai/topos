@@ -301,6 +301,11 @@ type Decision struct {
 	// decision service under (spec 100), empty when it sent none; the
 	// harness records it as the call's decision_org.
 	Org string
+	// Scope is the reach the call was decided on (spec 101), which the
+	// harness records on the call's agent.tool_use: a decision service's
+	// reading joined with Topos's claims, or Topos's claims alone. Nil
+	// records Topos's claims.
+	Scope *session.CallScope
 }
 
 // Decide applies the lists, the session's network and the mode to one
