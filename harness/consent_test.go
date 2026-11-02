@@ -310,6 +310,21 @@ func TestAnUnattendedTurnStopsOnRefusals(t *testing.T) {
 	if u := e.uses(ctx)["toolu_w2"]; u.Verdict != "allow" {
 		t.Fatalf("after the fallback %+v", u)
 	}
+
+	// A rollout's run has no person to ask either: it stops.
+	ext := &fakeTool{name: "ext", props: tools.Properties{Effect: tools.EffectExternal}}
+	r := setupSession(t, func(c *Config) {
+		c.Policy = Policy{Mode: ModeProgressive, Thresholds: Thresholds{FlagAt: 0.3, AskAt: 0.5, BlockAt: 0.55}}
+		withTools(t, ext)(c)
+	}, func(s *session.Session) { s.Rollout = "rol_1" })
+	r.stub.Script(model, reply(ir.StopToolUse, extCall("toolu_1"), extCall("toolu_2"), extCall("toolu_3")))
+	r.send(ctx, "Run.")
+	if out := r.turn(ctx); out.StopReason != session.StopDenials {
+		t.Fatalf("a rollout's run %+v", out)
+	}
+	if got := r.reached(ctx); len(got) != 1 || got[0].Effect != session.DenialsStop {
+		t.Fatalf("a rollout's denials_reached %+v", got)
+	}
 }
 
 // TestSubagentsShareTheCounts (spec 101): a subagent's refusals count

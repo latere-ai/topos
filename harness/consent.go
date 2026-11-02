@@ -377,12 +377,14 @@ func (t *turn) denialLimits() session.DenialLimits {
 // checkDenials appends a session.denials_reached when the log's refusals
 // reach a limit outside the fallback (spec 101), after the refusal that
 // reached it: the effect is ask on an attended turn and stop on an
-// unattended one. The check and the append hold the log's lock, so two
-// threads that refuse at once append one.
+// unattended one, and on every turn of a rollout's run, which has no
+// person to ask either and refuses each ask at once (spec 077). The
+// check and the append hold the log's lock, so two threads that refuse
+// at once append one.
 func (t *turn) checkDenials(ctx context.Context) error {
 	limits := t.denialLimits()
 	effect := session.DenialsAsk
-	if !t.attended() {
+	if !t.attended() || t.s.Rollout != "" {
 		effect = session.DenialsStop
 	}
 	t.sh.mu.Lock()
@@ -400,10 +402,30 @@ func (t *turn) checkDenials(ctx context.Context) error {
 }
 
 // stoppedByDenials reports whether a session.denials_reached that stops
-// the turn was appended since the turn began: every thread of it ends at
-// its next step (spec 101).
+// the turn was appended since the turn began, with no person's message
+// after it: every thread of the turn ends at its next step (spec 101).
+// It reads the turn's own events alone, newest first.
 func (t *turn) stoppedByDenials() bool {
-	return session.RefusalsOf(t.events()).Stopped > t.startSeq
+	evs := t.events()
+	for i := len(evs) - 1; i >= 0 && evs[i].Seq > t.startSeq; i-- {
+		e := evs[i]
+		if e.Redacted() {
+			continue
+		}
+		switch e.Type {
+		case session.TypeUserMessage:
+			var m session.UserMessage
+			if e.Decode(&m) == nil && m.Sender.Kind == session.SenderPerson {
+				return false
+			}
+		case session.TypeDenialsReached:
+			var d session.DenialsReached
+			if e.Decode(&d) == nil {
+				return d.Effect == session.DenialsStop
+			}
+		}
+	}
+	return false
 }
 
 // warnRefused is the result of the call that drove this thread's run,
