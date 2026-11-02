@@ -761,12 +761,22 @@ func (d *Decider) sent(ctx context.Context, k key) error {
 // Answered implements [harness.Learner]. It waits for the call's decision
 // to be sent, so the service never receives an answer before it. The
 // answer carries how the person answered and how long the call waited
-// (spec 101), never the confirmation's note or pattern.
+// (spec 101), never the confirmation's note or pattern. A field the
+// service would refuse is left out rather than relayed, so the answer
+// still teaches it: an answer_ms outside 0 to session.MaxAnswerMS, a
+// surface outside session.Surfaces, and a negative wait, sent as 0.
 func (d *Decider) Answered(ctx context.Context, s session.Session, toolUseID string, a harness.Answer) error {
 	k := d.key(s, toolUseID)
 	if err := d.sent(ctx, k); err != nil {
 		return err
 	}
+	if a.AnswerMS != nil && (*a.AnswerMS < 0 || *a.AnswerMS > session.MaxAnswerMS) {
+		a.AnswerMS = nil
+	}
+	if !slices.Contains(session.Surfaces, a.Surface) {
+		a.Surface = ""
+	}
+	a.WaitedMS = max(a.WaitedMS, 0)
 	return d.post(ctx, "/v1/answers", answer{
 		key: k, Approve: a.Approve, By: a.By, AnswerMS: a.AnswerMS, WaitedMS: a.WaitedMS,
 		DetailsOpened: a.DetailsOpened, SuggestionShown: a.SuggestionShown, Surface: a.Surface, Remembered: a.Remembered,

@@ -342,6 +342,8 @@ func TestAnswerCarriesHowThePersonAnswered(t *testing.T) {
 	for _, a := range []harness.Answer{
 		{Approve: true, By: "usr_ada", AnswerMS: new(int64(1800)), WaitedMS: 4000, DetailsOpened: new(false), SuggestionShown: new(true), Surface: session.SurfaceQueue, Remembered: true},
 		{By: "usr_ada", WaitedMS: 20},
+		{By: "usr_ada", AnswerMS: new(int64(session.MaxAnswerMS + 1)), WaitedMS: -5, Surface: "rule"},
+		{By: "usr_ada", AnswerMS: new(int64(-1)), Surface: session.SurfaceBulk},
 	} {
 		if err := d.Answered(context.Background(), sess, "toolu_1", a); err != nil {
 			t.Fatal(err)
@@ -353,12 +355,21 @@ func TestAnswerCarriesHowThePersonAnswered(t *testing.T) {
 		delete(m, "action_id")
 		return m
 	}
+	// A field the service would refuse is left out, and a negative wait
+	// is sent as 0.
 	want := []map[string]any{
 		{"approve": true, "by": "usr_ada", "answer_ms": 1800.0, "waited_ms": 4000.0, "details_opened": false, "suggestion_shown": true, "surface": "queue", "remembered": true},
 		{"approve": false, "by": "usr_ada", "waited_ms": 20.0, "remembered": false},
+		{"approve": false, "by": "usr_ada", "waited_ms": 0.0, "remembered": false},
+		{"approve": false, "by": "usr_ada", "waited_ms": 0.0, "surface": "bulk", "remembered": false},
 	}
-	if len(bodies) != 2 || !reflect.DeepEqual(strip(bodies[0]), want[0]) || !reflect.DeepEqual(strip(bodies[1]), want[1]) {
+	if len(bodies) != len(want) {
 		t.Fatalf("answers %v, want %v", bodies, want)
+	}
+	for i := range want {
+		if got := strip(bodies[i]); !reflect.DeepEqual(got, want[i]) {
+			t.Errorf("answer %d: %v, want %v", i, got, want[i])
+		}
 	}
 }
 
