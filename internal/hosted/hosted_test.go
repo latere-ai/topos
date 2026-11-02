@@ -575,3 +575,49 @@ func isCode(err error, code string) bool {
 	mc, ok := errors.AsType[*models.Coded](err)
 	return ok && mc.Code == code
 }
+
+// TestTheHarnessKnowsTheRefusalLimitsAndTheRefRules (spec 101): a hosted
+// session's harness takes the installation's limits of refusals, and the
+// hold protected_refs where every repository of the session is on the
+// installation's git host.
+func TestTheHarnessKnowsTheRefusalLimitsAndTheRefRules(t *testing.T) {
+	st := session.NewMemoryStore()
+	s := newSession(t, st, reviewer)
+	var asked v1.Machine
+	h, err := Harness(Options{Store: st, ModelsURL: luxstub.New(t).URL() + "/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked),
+		Denials: session.DenialLimits{Consecutive: 2, Total: 9}, GitHost: "https://git.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := h(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if cfg.Denials == nil || *cfg.Denials != (session.DenialLimits{Consecutive: 2, Total: 9}) || cfg.ProtectedRefs {
+		t.Fatalf("denials %+v, protected refs %v for a session with no repository", cfg.Denials, cfg.ProtectedRefs)
+	}
+	repo := func(urls ...string) session.Session {
+		var out session.Session
+		for _, u := range urls {
+			out.Resources = append(out.Resources, session.Resource{Type: session.ResourceRepository, URL: u})
+		}
+		return out
+	}
+	for _, c := range []struct {
+		s    session.Session
+		git  string
+		want bool
+	}{
+		{repo("https://git.example.com/acme/api.git"), "https://git.example.com", true},
+		{repo("https://GIT.example.com/acme/api.git", "https://git.example.com/acme/web.git"), "https://git.example.com/", true},
+		{repo("https://git.example.com/acme/api.git", "https://code.example/acme/web.git"), "https://git.example.com", false},
+		{repo("https://git.example.com/acme/api.git"), "", false},
+		{repo("https://git.example.com/acme/api.git"), "::not a url", false},
+		{repo(), "https://git.example.com", false},
+	} {
+		if got := onGitHost(c.s, c.git); got != c.want {
+			t.Errorf("%+v on %q: %v, want %v", c.s.Resources, c.git, got, c.want)
+		}
+	}
+}

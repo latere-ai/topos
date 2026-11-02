@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -125,6 +126,15 @@ type Options struct {
 	// the rules alone. One decider serves every session of the process: it
 	// keys each call by its session and the session's initiator.
 	Decider harness.Decider
+	// Denials are TOPOS_DENIALS_CONSECUTIVE and TOPOS_DENIALS_TOTAL, the
+	// installation's limits of a session's refusals (spec 101), which the
+	// ones a session's allow named lower; the zero value turns both off.
+	Denials session.DenialLimits
+	// GitHost is TOPOS_ORIGO_URL, the installation's git host, whose ref
+	// rules refuse a push to a protected branch (spec 019): every call of
+	// a session whose repositories are all on it is sent the hold
+	// protected_refs (spec 101). Empty sends it for none.
+	GitHost string
 	Clock   func() time.Time
 	// Log is each session's harness.Config.Log: what a turn did about a
 	// response that wrote a tool call as text (spec 062). Nil discards it.
@@ -156,6 +166,24 @@ type builder struct {
 }
 
 func setup(code string, err error) error { return &runner.SetupError{Code: code, Err: err} }
+
+// onGitHost reports whether s has repositories and every one is on the
+// git host at gitURL, whose ref rules refuse a push to a protected branch
+// (spec 019).
+func onGitHost(s session.Session, gitURL string) bool {
+	host, err := url.Parse(gitURL)
+	repos := session.Repositories(s)
+	if gitURL == "" || err != nil || host.Host == "" || len(repos) == 0 {
+		return false
+	}
+	for _, r := range repos {
+		u, err := url.Parse(r.URL)
+		if err != nil || !strings.EqualFold(u.Host, host.Host) {
+			return false
+		}
+	}
+	return true
+}
 
 func (b builder) config(ctx context.Context, s session.Session) (harness.Config, error) {
 	r, ok, err := runner.Agent(ctx, b.o.Store, s)
@@ -203,6 +231,8 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	}
 	cfg.Policy.Mode = cmp.Or(cfg.Policy.Mode, harness.ModeConfirm)
 	cfg.Decider = b.o.Decider
+	cfg.Denials = &b.o.Denials
+	cfg.ProtectedRefs = onGitHost(s, b.o.GitHost)
 	if cfg.Files, err = b.files(ctx, s); err != nil {
 		return harness.Config{}, err
 	}

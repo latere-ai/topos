@@ -777,6 +777,44 @@ func TestDecisions(t *testing.T) {
 	}
 }
 
+// TestLoosenAndDenials (spec 101): TOPOS_DECISIONS_LOOSEN is covered
+// or never and needs TOPOS_DECISIONS_URL; TOPOS_DENIALS_CONSECUTIVE and
+// TOPOS_DENIALS_TOTAL are 3 and 20 unset, read by both roles, 0 turns a
+// limit off, and a value that is not a count stops the start.
+func TestLoosenAndDenials(t *testing.T) {
+	decisions := map[string]string{"TOPOS_DECISIONS_URL": "https://decisions.example", "TOPOS_DECISIONS_TOKEN": "tok"}
+	c, err := Load(RoleServe, serve(decisions))
+	if err != nil || c.DecisionsLoosen != "" || c.DenialsConsecutive != 3 || c.DenialsTotal != 20 {
+		t.Fatalf("the defaults: %+v %v", c, err)
+	}
+	set := maps.Clone(decisions)
+	set["TOPOS_DECISIONS_LOOSEN"], set["TOPOS_DENIALS_CONSECUTIVE"], set["TOPOS_DENIALS_TOTAL"] = " never ", "0", " 7 "
+	if c, err = Load(RoleServe, serve(set)); err != nil || c.DecisionsLoosen != "never" || c.DenialsConsecutive != 0 || c.DenialsTotal != 7 {
+		t.Fatalf("set: %+v %v", c, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+		"TOPOS_DENIALS_TOTAL": "5"}))
+	if err != nil || r.DenialsConsecutive != 3 || r.DenialsTotal != 5 {
+		t.Fatalf("a runner role: %+v %v", r, err)
+	}
+	for v, want := range map[string]string{
+		"TOPOS_DECISIONS_LOOSEN=always":     `TOPOS_DECISIONS_LOOSEN is "always", either covered or never`,
+		"TOPOS_DENIALS_CONSECUTIVE=-1":      `TOPOS_DENIALS_CONSECUTIVE is "-1", not a count of refusals`,
+		"TOPOS_DENIALS_TOTAL=many":          `TOPOS_DENIALS_TOTAL is "many", not a count of refusals`,
+		"TOPOS_DECISIONS_LOOSEN=covered|no": "TOPOS_DECISIONS_LOOSEN needs TOPOS_DECISIONS_URL",
+	} {
+		name, val, _ := strings.Cut(v, "=")
+		m := maps.Clone(decisions)
+		if strings.HasSuffix(val, "|no") {
+			m, val = map[string]string{}, strings.TrimSuffix(val, "|no")
+		}
+		m[name] = val
+		if _, err := Load(RoleServe, serve(m)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", v, err, want)
+		}
+	}
+}
+
 // TestParsingURL (spec 082): TOPOS_PARSING_URL is read without its
 // trailing slash by the server and a runner, and a URL that is not one
 // stops the start.

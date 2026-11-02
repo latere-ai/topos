@@ -211,12 +211,29 @@ type Config struct {
 	// by the initiator's own context) or agent (a call of an
 	// organization's agent by that organization). Empty is initiator.
 	DecisionsOrg string
+	// DecisionsLoosen is TOPOS_DECISIONS_LOOSEN, when a learned allow may
+	// run a call the rules and the risk score would not run without a
+	// person (spec 101): covered (only where the service says the
+	// person's approvals cover the call) or never (the stricter of the
+	// allow and the rules' verdict decides). Empty is covered.
+	DecisionsLoosen string
+	// DenialsConsecutive and DenialsTotal are TOPOS_DENIALS_CONSECUTIVE
+	// and TOPOS_DENIALS_TOTAL, the refusals in a row and in a session
+	// that make a session ask the person for every call that changes
+	// something, or stop an unattended turn (spec 101): 3 and 20 unset,
+	// and 0 turns a limit off.
+	DenialsConsecutive int
+	DenialsTotal       int
 }
 
 // Defaults of the runner variables.
 const (
-	DefaultRunnerCapacity = 16
-	DefaultMachineHelpers = "/usr/local/lib/topos"
+	// DefaultDenialsConsecutive and DefaultDenialsTotal are the limits of
+	// a session's refusals (spec 101).
+	DefaultDenialsConsecutive = 3
+	DefaultDenialsTotal       = 20
+	DefaultRunnerCapacity     = 16
+	DefaultMachineHelpers     = "/usr/local/lib/topos"
 	// DefaultConnectionsAudience is TOPOS_CONNECTIONS_AUDIENCE's default.
 	DefaultConnectionsAudience = "connections"
 )
@@ -427,6 +444,27 @@ func (c *Config) readRunner(getenv Getenv) []string {
 			problems = append(problems, "TOPOS_RUNNER_CAPACITY is "+strconv.Quote(v)+", not a count of sessions")
 		}
 		c.RunnerCapacity = n
+	}
+	// The limits of a session's refusals are the harness's, which every
+	// runner applies the same way (spec 101).
+	c.DenialsConsecutive, c.DenialsTotal = DefaultDenialsConsecutive, DefaultDenialsTotal
+	for _, d := range []struct {
+		name, v string
+		dst     *int
+	}{
+		{"TOPOS_DENIALS_CONSECUTIVE", getenv("TOPOS_DENIALS_CONSECUTIVE"), &c.DenialsConsecutive},
+		{"TOPOS_DENIALS_TOTAL", getenv("TOPOS_DENIALS_TOTAL"), &c.DenialsTotal},
+	} {
+		v := strings.TrimSpace(d.v)
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			problems = append(problems, d.name+" is "+strconv.Quote(v)+", not a count of refusals; 0 turns the limit off")
+			continue
+		}
+		*d.dst = n
 	}
 	c.CellaURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_CELLA_URL")), "/")
 	c.CellaTokenFile = strings.TrimSpace(getenv("TOPOS_CELLA_TOKEN_FILE"))
@@ -649,8 +687,14 @@ func (c *Config) readDecisions(getenv Getenv, server bool) []string {
 	default:
 		problems = append(problems, "TOPOS_DECISIONS_ORG is "+strconv.Quote(c.DecisionsOrg)+", either initiator or agent")
 	}
+	c.DecisionsLoosen = strings.TrimSpace(getenv("TOPOS_DECISIONS_LOOSEN"))
+	switch c.DecisionsLoosen {
+	case "", "covered", "never":
+	default:
+		problems = append(problems, "TOPOS_DECISIONS_LOOSEN is "+strconv.Quote(c.DecisionsLoosen)+", either covered or never")
+	}
 	if c.DecisionsURL == "" {
-		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience, "TOPOS_DECISIONS_ORG": c.DecisionsOrg} {
+		for name, v := range map[string]string{"TOPOS_DECISIONS_TOKEN": c.DecisionsToken, "TOPOS_DECISIONS_AUDIENCE": c.DecisionsAudience, "TOPOS_DECISIONS_ORG": c.DecisionsOrg, "TOPOS_DECISIONS_LOOSEN": c.DecisionsLoosen} {
 			if v != "" {
 				problems = append(problems, name+" needs TOPOS_DECISIONS_URL, the decision service it is for")
 			}

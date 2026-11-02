@@ -573,7 +573,11 @@ func decider(cfg config.Config, identities *idp.Client, log *slog.Logger) (harne
 	if err != nil {
 		return nil, fmt.Errorf("TOPOS_DECISIONS_ORG: %w", err)
 	}
-	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Mode: mode, Org: org, Report: func(err error) {
+	loosen, err := decisions.ParseLoosen(cmp.Or(cfg.DecisionsLoosen, string(decisions.LoosenCovered)))
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_DECISIONS_LOOSEN: %w", err)
+	}
+	o := decisions.Options{URL: cfg.DecisionsURL, Client: otel.HTTPClient(), Mode: mode, Org: org, Loosen: loosen, Report: func(err error) {
 		log.Warn("decision service", "err", err)
 	}}
 	if identities != nil && cfg.DecisionsAudience != "" {
@@ -644,7 +648,8 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// The app host a session publishes to (spec 043), reached by the
 	// runner with the session's own token.
 	apps := publish.Options{URL: cfg.AppsURL, Audience: cfg.AppsAudience, GitURL: cfg.OrigoURL}
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, ParsingURL: cfg.ParsingURL, Decider: decider, Log: log})
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, ParsingURL: cfg.ParsingURL, Decider: decider, Log: log,
+		Denials: session.DenialLimits{Consecutive: cfg.DenialsConsecutive, Total: cfg.DenialsTotal}, GitHost: cfg.OrigoURL})
 	if err != nil {
 		return nil, err
 	}
