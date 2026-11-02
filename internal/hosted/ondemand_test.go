@@ -580,9 +580,14 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	if !strings.Contains(msg, "builder <builder@agents.topos.invalid>") || !strings.Contains(msg, runner.TrailerSession+": "+c.s.ID) {
 		t.Fatalf("the git host's branch %s holds:\n%s", branch, msg)
 	}
+	// Every request carries the placeholder but one, the read with no
+	// credential that finds the repository private (spec 101).
 	host.mu.Lock()
 	seen := slices.Clone(host.seen)
 	host.mu.Unlock()
+	if anonymous := slices.Index(seen, ""); anonymous >= 0 {
+		seen = slices.Delete(seen, anonymous, anonymous+1)
+	}
 	if len(seen) == 0 || slices.ContainsFunc(seen, func(a string) bool { return a != "Bearer cella-placeholder-"+name+"-origo" }) {
 		t.Fatalf("the git host saw %q, want the placeholder alone", seen)
 	}
@@ -599,14 +604,15 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 			t.Fatal("a tool result carries the git host's token")
 		}
 	}
-	// The sandbox's attachment names the delivered repository, its branch
-	// and the commit the branch started at, the default branch's.
+	// The sandbox's attachment names the delivered repository, its branch,
+	// the commit the branch started at, the default branch's, and that the
+	// git host asked a read with no credential for one.
 	machines := c.events(session.TypeSessionMachine)
 	var attached session.SessionMachine
 	if len(machines) != 1 || machines[0].Decode(&attached) != nil || attached.Reason != "attached" {
 		t.Fatalf("session.machine %+v", machines)
 	}
-	want := []session.DeliveredRepository{{URL: host.srv.URL + "/app.git", Branch: branch, Commit: start}}
+	want := []session.DeliveredRepository{{URL: host.srv.URL + "/app.git", Branch: branch, Commit: start, Visibility: session.VisibilityPrivate}}
 	if !slices.Equal(attached.Repositories, want) {
 		t.Fatalf("the attachment names %+v, want %+v", attached.Repositories, want)
 	}

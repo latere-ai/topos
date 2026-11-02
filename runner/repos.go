@@ -112,6 +112,7 @@ func deliver(ctx context.Context, s session.Session, m machine.Machine, served f
 			got.Base, got.BaseError = session.BaseDefault, "the repository does not hold the commit "+start
 		}
 		got.Commit = commit
+		got.Visibility = visibility(ctx, m, repo.URL)
 		delivered = append(delivered, got)
 	}
 	if err := errors.Join(errs...); err != nil {
@@ -226,6 +227,38 @@ func deliveryScript(s session.Session, repo session.Resource, dir, start string)
 	w(`printf '%s' ` + quote(hook) + ` >"$hooks/commit-msg"`)
 	w(`chmod 755 "$hooks/commit-msg"`)
 	return b.String(), nil
+}
+
+// probeTimeout bounds the read that tells a private repository from a
+// public one.
+const probeTimeout = time.Minute
+
+// askedForCredential is git's account, in the C locale, of a git host
+// that answered 401 to a request git had no credential to repeat it
+// with.
+const askedForCredential = "could not read Username"
+
+// visibility is what the git host answers a read of the repository at
+// url with no credential, every one git could send taken away (spec
+// 101): VisibilityPrivate when it asks for one, VisibilityPublic when it
+// answers, and "" for any other answer, and for a repository that is not
+// reached over http or https, whose visibility no git host reports.
+func visibility(ctx context.Context, m machine.Machine, url string) string {
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
+		return ""
+	}
+	env := map[string]string{"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": "", "LC_ALL": "C"}
+	strip := "-c " + quote("http."+url+".extraHeader=") + " -c http.extraHeader= -c credential.helper= -c core.askPass="
+	res, err := m.Exec(ctx, machine.ExecRequest{Command: "git " + strip + " ls-remote --quiet " + quote(url) + " HEAD", Env: env, Timeout: probeTimeout})
+	switch {
+	case err != nil || res.TimedOut:
+		return ""
+	case res.ExitCode == 0:
+		return session.VisibilityPublic
+	case strings.Contains(string(res.Output), askedForCredential):
+		return session.VisibilityPrivate
+	}
+	return ""
 }
 
 // runScript runs a delivery script, reporting its output on failure.
