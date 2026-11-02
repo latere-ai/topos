@@ -113,6 +113,36 @@ type Confirmer interface {
 	Confirm(c Call) string
 }
 
+// Reacher is the optional interface of a tool that says what its calls
+// reach (spec 101): whether a call can be undone, the boundaries it
+// crosses, the class of its target and whether it is a first contact.
+// Reach reads the call's input and its State, as Confirm does, and
+// answers words of the closed lists of a scope alone, never a path, a
+// host, an app's slug or other text of the input; a target's ID is an
+// opaque id where it has one.
+type Reacher interface {
+	Reach(c Call) Reach
+}
+
+// Reach is what a call claims about its own reach (spec 101). A member
+// left empty is not known, and a boundary of Crosses left nil is not
+// known either.
+type Reach struct {
+	Undo    string
+	Crosses session.Crosses
+	Contact string
+	Target  *ReachTarget
+}
+
+// ReachTarget is what a call changes: Kind, a word such as path, app or
+// host; ID, an opaque id, never a path or a host, "" when there is none;
+// and Class, one of session.TargetClasses, "" when it is not known.
+type ReachTarget struct {
+	Kind  string
+	ID    string
+	Class string
+}
+
 // Pather is the optional interface of a tool whose calls name the paths
 // they act on (spec 093): read, write, edit, glob and grep. Paths answers
 // a call's paths as its input writes them, "" for the working directory
@@ -222,6 +252,10 @@ type Meta struct {
 	// folder (spec 093), which a client shows as a memory saved or
 	// forgotten.
 	Memory *MemoryMeta `json:"memory,omitempty"`
+	// Refused is how many of a subagent's calls did not run in the run
+	// whose final text is an agent or send_message call's result, because
+	// a rule or the person refused them (spec 101); zero for none.
+	Refused int `json:"refused,omitempty"`
 }
 
 // MemoryMeta is one change of a memory folder's file: the folder's name,
