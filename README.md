@@ -44,7 +44,7 @@ embeddable runtime, are gone from `main` and stay available at their tags
 through the Go module proxy; [docs/history](docs/history) holds their specs.
 
 The core's releases start at v0.9.0 (2026-09-29). Built and released as
-of v0.36.0 (2026-10-13):
+of v0.68.0 (2026-11-02):
 
 - the session log, kept in memory, in a directory or in Postgres, and the
   harness: the built-in tools, the permission modes, subagents, context
@@ -64,8 +64,10 @@ of v0.36.0 (2026-10-13):
   the installation configures, a session's files, the images an answer
   shows and the files it links served to a client and, where the
   installation runs a files service, kept in a folder of the
-  conversation's own, today's date on every turn, and the sites a
-  session's machine may reach set per session;
+  conversation's own, today's date on every turn, the sites a session's
+  machine may reach set per session, and, for an agent that names
+  `history`, what its context cleared or summarized, read back from the
+  session's log as it was written;
 - `publish` of a folder as a site: the agent gives a site its name and
   address the first time it publishes it, a session's app starts as the
   app host makes it, and opening an app to anyone who has its link, or
@@ -85,30 +87,24 @@ of v0.36.0 (2026-10-13):
   a remote MCP server's tools are offered to the model; and
   `request_connection` asks the person to connect a service the session
   needs;
-- a connection to a decision service: `topos run` can get a suggested
-  verdict for each tool call from an external service.
-
-Built since and in no release yet: a connection service on the host the
-model gateway publishes under no longer stops every hosted session. Serve
-and the runner refuse that configuration at their start, and a sandbox
-whose connections token would share a host with another of its secrets
-opens without it. An agent that names `history` reads back what its
-context cleared or summarized, from the session's log as it was written.
-A decision service's suggestion on a call keeps the service's
-`ask_kind` and `evidence_ratio`, so a client can show why a call asks.
-A hosted session records the organization that owns its agent as `org`.
-With `TOPOS_DECISIONS_ORG=agent`, the decision service keys the calls of
-an organization's agent by that organization. Each call records the
-organization of its key as `decision_org`. Each decision reaches the
-decision service with the layer that decided it, as
-`topos/<mode>/<decided_by>`.
+- a connection to a decision service: `topos run` and `toposd` can get a
+  suggested verdict for each tool call from an external service, and
+  `TOPOS_DECISIONS_MODE` sets how much it decides for a hosted session.
+  A suggestion keeps the service's `ask_kind` and `evidence_ratio`, so a
+  client can show why a call asks. A hosted session records the
+  organization that owns its agent as `org`. With
+  `TOPOS_DECISIONS_ORG=agent`, the decision service keys the calls of an
+  organization's agent by that organization, and each call records the
+  organization of its key as `decision_org`. Each decision reaches the
+  decision service with the layer that decided it, as
+  `topos/<mode>/<decided_by>`.
 
 Not built yet: write-only credentials, memory stores, MCP servers an
 agent's definition names, external runners and handoff, the event sink,
 the conformance suite and the release archives. The task suite runs, but
 no release has measured its bar against a pinned model yet. In the
-[specs](specs) deck, 22 specs are complete, 39 in progress or in testing
-and 8 drafted or vague, none of those 8 built yet;
+[specs](specs) deck, 26 specs are complete, 60 in progress or in testing
+and 9 drafted or vague, none of those 9 built yet;
 [specs/README.md](specs/README.md) says which build phases are closed.
 
 ## Try it
