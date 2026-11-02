@@ -3,10 +3,12 @@
 
 package server
 
+import "latere.ai/x/topos/session"
+
 // RunRule is the sentence the create route states a rollout's run and a
 // model named at create by (spec 077, R1 and R3).
 const RunRule = "The body's rollout, the id of the rollout the session is one run of, " +
-	"a letter or digit then at most 127 letters, digits, dots, underscores or hyphens, and neither none nor any, " +
+	session.RolloutRule + ", " +
 	"is the session's for its whole life, and session.create carries it as rollout. " +
 	"A rollout's runs are left out of the session list, the search and the summary unless their rollout parameter names the rollout or any, " +
 	"and no person attends them: a call that would wait for a person's confirmation is answered at once as denied, and the session does not wait. " +

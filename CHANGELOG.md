@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **The API document describes `decided_by`, `decided_by_rule` and a
+  create's `rollout`.** An `agent.tool_use`'s `decided_by` lists the
+  layers that decide a call, `decided_by_rule` says what rule within the
+  layer it names, and a create's `rollout` states its id's rule. A
+  generated client or reference now shows what each means.
+
 ## v0.68.0 - 2026-11-02
 
 ### Added

@@ -17,6 +17,7 @@ import (
 	"latere.ai/x/pkg/authz"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/session"
 )
 
 var update = flag.Bool("update", false, "rewrite api/openapi.yaml from the route table")
@@ -241,6 +242,41 @@ func TestOpenAPIStatesTheOrganization(t *testing.T) {
 	for _, id := range []string{"getSession", "listEvents"} {
 		if !stated[id] {
 			t.Errorf("%s does not state the session's organization", id)
+		}
+	}
+}
+
+// TestAFieldNoteDescribesItsMember: a member whose name and type cannot
+// say what it means carries its note in the committed document, and
+// decided_by names every layer that decides a call.
+func TestAFieldNoteDescribesItsMember(t *testing.T) {
+	raw, err := os.ReadFile(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Description string `yaml:"description"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []struct{ schema, member string }{
+		{"AgentToolUse", "decided_by"}, {"AgentToolUse", "decided_by_rule"}, {"CreateSessionRequest", "rollout"},
+	} {
+		if doc.Components.Schemas[m.schema].Properties[m.member].Description == "" {
+			t.Errorf("%s.%s has no description", m.schema, m.member)
+		}
+	}
+	decidedBy := doc.Components.Schemas["AgentToolUse"].Properties["decided_by"].Description
+	for _, layer := range session.Decided {
+		if !strings.Contains(decidedBy, layer) {
+			t.Errorf("decided_by's description does not name %s", layer)
 		}
 	}
 }

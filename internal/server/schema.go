@@ -172,6 +172,21 @@ var requestNotes = map[reflect.Type]string{
 	typeOf[repositoryRequest]():            "type is repository: an https url with no credential in it, and a branch, a tag or a commit as ref.",
 }
 
+// fieldNotes say what a member means where its name and type cannot, each
+// member named as its JSON names it; a note naming no member of its type
+// is an error.
+var fieldNotes = map[reflect.Type]map[string]string{
+	typeOf[createBody](): {
+		"rollout": "The id of the rollout the session is one run of, the caller's key for its run: " + session.RolloutRule + ". The session's for its whole life.",
+	},
+	typeOf[session.AgentToolUse](): {
+		"decided_by": "The layer that decided the call, one of " + strings.Join(session.Decided, ", ") + ", in the order the rules apply. " +
+			"A value a client does not know is read by the reason alone; absent on an event written before it.",
+		"decided_by_rule": "The rule within that layer, where one applies: the always-confirm, always-allow or remembered pattern that matched, memory when the always-confirm list names memory and the call reaches memory folders alone, " +
+			"the tool that held the call, the score's band (below_flag_at, flag_at, ask_at or block_at), or the decision service's model. It holds no text of the call's input beyond what a pattern itself says.",
+	},
+}
+
 // rawFields are the members a type holds as json.RawMessage, which its
 // handler decodes on its own, each with the type it decodes the member
 // as, so the document describes the member by that type's schema.
@@ -513,9 +528,17 @@ func (s *schemas) fields(t reflect.Type, props *yaml.MapSlice, required *[]strin
 		if ft.Kind() == reflect.Pointer && !optional {
 			schema = yaml.MapSlice{{Key: "anyOf", Value: []yaml.MapSlice{schema, {{Key: "type", Value: "null"}}}}}
 		}
+		if note, ok := fieldNotes[t][name]; ok {
+			schema = append(slices.Clone(schema), yaml.MapItem{Key: "description", Value: note})
+		}
 		*props = append(*props, yaml.MapItem{Key: name, Value: schema})
 		if !optional {
 			*required = append(*required, name)
+		}
+	}
+	for name := range fieldNotes[t] {
+		if !slices.ContainsFunc(*props, func(m yaml.MapItem) bool { return m.Key == name }) && s.err == nil {
+			s.err = fmt.Errorf("server: a note describes %s.%s, which is not a member", t, name)
 		}
 	}
 }
