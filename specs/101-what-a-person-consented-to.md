@@ -55,11 +55,13 @@ comes back.
 
 This spec makes Topos say what it knows:
 
-1. **Each call is sent with its reach**: the class of its target, the
-   boundaries it crosses, whether it can be undone, whether it is a
-   first contact, and the limits the session's machine enforces, all as
-   words from a closed list and never as a path, a host or a branch
-   name.
+1. **Each call is sent with its reach, and records it**: the class and
+   kind of its target, the boundaries it crosses, whether it can be
+   undone, whether it is a first contact, and the limits the session's
+   machine enforces, all as words from a closed list and never as a
+   path, a host or a branch name. The call's `agent.tool_use` records
+   the reach it was decided on, before it waits, so a client can tell
+   the person what the call reaches before they answer.
 2. **A confirmation says how the person answered**: four optional
    fields a client sets on `user.tool_confirmation`, recorded on the
    event and passed to the decision service with the time the call
@@ -87,6 +89,7 @@ spec fixes only what Topos sends and how it reads the answer.
 |---|---|---|
 | The action sent | `decisions.(*Decider).action` in `internal/decisions/decisions.go` | `actor` (`agent`, the agent's id, the session), `kind` `tool`, `name`, `effect` (the tool's, `external` when unset), `input`, `environment` (`host` with `credentialed` true, or `sandbox` on a Cella machine), `attributes.attended` ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]), and `signals` with the `rules/1` score. No `target`, no `reversible`, nothing about the session's network, the organization, a publish's access or the repositories |
 | The answer sent | `Decider.Answered`, through `harness.Learner` from `turn.forwardAnswer` in `harness/resume.go` | `approve` and `by` alone |
+| What a call records | `session.AgentToolUse` | the risk, the verdict, the reason, the mode, `review_probability`, `draw`, the decision service's `suggestion`, `attended`, `decided_by`, `decided_by_rule` and `decision_org`; nothing about what the call reaches, so a client that asks the person can show the command and nothing about its reach |
 | A confirmation | `session.UserToolConfirmation` | `sender`, `tool_use_id` or `approval_id`, `decision`, `note`, `remember`; decoded strictly by `POST /v1/sessions/{id}/events`, so a field the server does not know is `invalid_request` |
 | Learned mode | `prediction.hasEvidence` | the service's `allow`, `block` and `split` ask decide; any other ask, or a kind the harness does not know, is left to the rules and the risk score |
 | Refusals in a row | nowhere | the harness repeats-call rule ([[015-api]]) ends a turn after 3 identical failing calls, but nothing counts refused calls |
@@ -108,7 +111,7 @@ or from the session's configuration into them.
 | `scope.undo` | `none`, `reversible`, `recoverable`, `irreversible` | whether the call can be undone: changes nothing; can be undone in the working directory with no loss; can be undone from a copy or by another call; cannot be undone, or others already saw it |
 | `scope.crosses` | an object with any of `machine`, `remote`, `network`, `organization`, `public`, each `true` or `false` | the boundaries the call crosses, as far as Topos knows: the machine outside the working directory, another system, a host outside the session's network, a party the organization does not own, anyone at all. A boundary Topos does not know is left out, not sent as `false` |
 | `scope.contact` | `first`, `repeat` | whether the call is the session's first contact with its target |
-| `target` | `{kind, id, class}`, `class` one of `scratch`, `own`, `shared`, `primary` | what the call changes: `own` is something this session made (its branch, its preview, its checkout), `shared` something other people or the person's own files use, `primary` the default or a protected branch, production, a live release |
+| `target` | `{kind, id, class}`, `kind` a word such as `path`, `app` or `host`, `class` one of `scratch`, `own`, `shared`, `primary` | what the call changes: `own` is something this session made (its branch, its preview, its checkout), `shared` something other people or the person's own files use, `primary` the default or a protected branch, production, a live release. `id` is sent only where it is an opaque id, never a path or a host |
 | `environment.holds` | a list of `egress`, `protected_refs`, `checkpoints` | the limits the machine enforces whatever the call does: no host outside the session's network is reached without its own approval; the git host refuses a push to a protected branch; the working directory is kept in checkpoints it can be restored from |
 | `environment.repositories` | `private`, `public`, `mixed` | the visibility, at the git host, of the repositories the session was given, when it has any; a push to them is that visible |
 
@@ -124,7 +127,7 @@ with `--force` cannot be undone, a refspec that names `main` is
 | a call whose tool reads or changes nothing (`read`, `glob`, `grep`, `history`, `todo`, a question) | `undo: none` | none |
 | `write`, `edit` | `crosses.machine` true when the resolved path is outside the working directory, false otherwise; `crosses.remote` false; `undo: reversible` when the path is inside the working directory and the machine holds `checkpoints` | `kind: path`, no `id`; `class: own` on a Cella machine, whose working directory is the session's own checkout, and `shared` on a host or a person's own computer ([[080-device-machines]]), whose files are the person's |
 | `bash` | nothing: the call's reach is in its command, which only the service's own tables read | none |
-| `web_fetch` | `undo: none`; `crosses.remote` true; `crosses.network` false for a host inside the session's network ([[052-a-sessions-network]]) and true outside it; `crosses.organization` false for a host the boundary names and true for one it does not, left out without a boundary; `crosses.public` false; `contact: first` when no earlier `web_fetch` of the session reached the host, else `repeat` | none |
+| `web_fetch` | `undo: none`; `crosses.remote` true; `crosses.network` false for a host inside the session's network ([[052-a-sessions-network]]) and true outside it; `crosses.organization` false for a host the boundary names and true for one it does not, left out without a boundary; `crosses.public` false; `contact: first` when no earlier `web_fetch` of the session reached the host, else `repeat` | `kind: host`, no `id`, no `class` |
 | `publish` ([[043-publishing-a-folder]]) | `crosses.remote` true; `crosses.public` true when the call sets `access: link` or releases an app that anyone with its address opens, false when the app is private and stays so; `undo: irreversible` for `access: link`, `recoverable` for a release or a preview; `contact: first` when the call creates the app, else `repeat` | `kind: app`, `id` the app's id when it exists; `class: primary` for a release, `own` for a preview |
 | `agent`, and `send_message` to a subagent | `undo: none` | none; see [Both ends of a handoff](#both-ends-of-a-handoff) |
 | every other call (MCP tools, `request_connection`, `trigger`, `wake`, `notify`, a client's tool) | nothing | none |
@@ -159,6 +162,45 @@ rules" and "allow exceptions" are this core's `always_confirm` and
 the thread that made it: 0 for the session's own conversation, 1 for a
 subagent it started, and so on ([[013-threads-and-subagents]]).
 
+### What the call records
+
+`agent.tool_use` gains `scope`, the reach the call was decided on,
+appended with the call's decision and so before the call waits for a
+person. A client words it for the person beside the command ("changes
+the default branch", "cannot be undone", "makes the app public"); the
+command or input itself is what names the target.
+
+| Member | Values |
+|---|---|
+| `undo` | `none`, `reversible`, `recoverable`, `irreversible` |
+| `crosses` | an object with any of `machine`, `remote`, `network`, `organization`, `public`, each `true` or `false` |
+| `target_class` | `scratch`, `own`, `shared`, `primary` |
+| `target_kind` | the kind of the target, a word such as `path`, `ref`, `app`, `host`, `repository`, `package` |
+| `contact` | `first`, `repeat` |
+| `source` | `service` when the decision service's reading is in it, `topos` when it is Topos's own claims alone |
+
+Every member but `source` is optional, and a member left out is not
+known; no member holds a name, so `main`, an app's slug or a host never
+appears in it.
+
+- **With a decision service that answered.** Its prediction carries the
+  scope it read, `scope`, which already takes the wider of its reading
+  of the input and what Topos sent. Each member is the service's value,
+  or Topos's own claim where the service gives none or a narrower one,
+  in the order of the members table above (`false` before `true`).
+  `source` is `service`. For a `bash` call, only the service reads the
+  command, so this is the only way a `bash` call records its reach.
+- **Without one.** In plan mode, without a decision service, when the
+  prediction failed or came too late, or when the service's prediction
+  carries no `scope`, the call records Topos's own claims from the
+  table above and `source` is `topos`. A `bash` call then records no
+  reach but `source`, and a client says that the reach of the command
+  is not known rather than showing none as safe.
+
+`scope` is an optional addition to schema v1 ([[004-session-log]]); a
+reader that does not know it ignores it, and an event written before it
+has none.
+
 ### How the person answered
 
 **What a client sets.** `user.tool_confirmation` gains four optional
@@ -184,6 +226,11 @@ new fields. A client sends them only to a server whose
 `GET /v1/openapi.yaml` lists `answer_ms` in
 `Event.user.tool_confirmation`; a client that gets `invalid_request` for
 a confirmation that carried them sends it once more without them.
+
+**What a client does not send.** The application the person answered
+from is `sender.client`, which the server writes from the verified
+token ([[085-the-client-a-message-came-from-and-a-days-activity]]); a
+client never sends it, and it is not sent to the decision service.
 
 **What the server measures.** `waited_ms` is the milliseconds from the
 event that asked (the call's `agent.tool_use`, or the
@@ -357,6 +404,16 @@ names no rule, no reason and nothing the decision service said; a
 reason a decision service gives is the person's and never reaches an
 agent ([[037-decision-services]]).
 
+### Names and where they are listed
+
+| Name | Kind | Listed at build in |
+|---|---|---|
+| `TOPOS_DECISIONS_LOOSEN`, `TOPOS_DENIALS_CONSECUTIVE`, `TOPOS_DENIALS_TOTAL` | variables | the configuration table of [[002-scaffold-and-configuration]] |
+| `boundary`, `denials` | members of an allow | the authorizer's limits ([[006-identity]]) |
+| `denials` | a value of `decided_by` | the closed set of [[012-permissions-and-approvals]] |
+| `session.denials_reached`, the stop reason `denials`, `scope` on `agent.tool_use`, the four fields of `user.tool_confirmation` | schema v1 additions | the tables of [[004-session-log]] |
+| `results/subagent/refused-v1` | a prompt | the prompts tree ([[011-instructions-and-skills]]) |
+
 ### What Topos never sends
 
 The agent's messages and reasoning, a tool's output, a subagent's task,
@@ -391,9 +448,11 @@ wrote about it.
 | No scope or target value holds a path, a host, a URL or a ref name, for calls whose input holds markers in each | `internal/decisions.TestScopeHoldsNoInputText` | not built |
 | A `web_fetch`'s `crosses.organization` follows the allow's boundary, and is left out without one | `internal/decisions.TestBoundaryDecidesOrganization` | not built |
 | `contact` is `first` for the session's first fetch of a host and the `publish` that creates an app, and `repeat` after | `internal/decisions.TestFirstContact` | not built |
+| A call's `agent.tool_use` records `scope` before the call waits: the service's reading joined with Topos's claims and `source: service` when a prediction answered with one, Topos's claims alone and `source: topos` otherwise, and for `bash` without a service no member but `source` | `harness.TestToolUseRecordsScope`, `internal/decisions.TestScopeSource` | not built |
+| No member of a recorded `scope` holds a name of a ref, an app, a host or a path | `harness.TestRecordedScopeHoldsNoName` | not built |
 | A confirmation with the four fields is recorded as sent, a malformed one is `invalid_request`, and one without them is accepted as before | `internal/server.TestConfirmationAnswerFields` | not built |
 | The answer sent carries the confirmation's fields, `waited_ms` from the log, and `remembered` without the pattern or the note | `internal/decisions.TestAnswerCarriesHowThePersonAnswered`, `harness.TestResumeForwardsAnswers` | not built |
-| `api/openapi.yaml` describes the four fields on `Event.user.tool_confirmation`, `session.denials_reached`, the stop reason `denials` and `decided_by: denials` | `TestOpenAPIMatchesHandlers`, `TestOpenAPIIsGenerated` | not built |
+| `api/openapi.yaml` describes `scope` on `Event.agent.tool_use`, the four fields on `Event.user.tool_confirmation`, `session.denials_reached`, the stop reason `denials` and `decided_by: denials` | `TestOpenAPIMatchesHandlers`, `TestOpenAPIIsGenerated` | not built |
 | In `learned` mode a `wider` ask is kept for the person and a `few` ask is left to the rules | `internal/decisions.TestWiderIsKeptAndFewIsLeft` | not built |
 | Under `covered` a learned allow without `cover.covered` leaves the call to the rules, and under `never` a learned allow never runs a call the risk score asks about | `internal/decisions.TestLoosen` | not built |
 | Three refusals in a row, or twenty in a session, append `session.denials_reached`; a read neither counts nor resets; plan-mode blocks do not count | `harness.TestRefusalsAreCounted` | not built |
