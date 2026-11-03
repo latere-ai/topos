@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.69.0 - 2026-11-03
+
 ### Added
 
 - **A call records what it reaches.** `agent.tool_use` records `scope`,
