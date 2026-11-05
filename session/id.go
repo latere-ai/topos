@@ -5,6 +5,7 @@ package session
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"latere.ai/x/pkg/ulid"
@@ -39,9 +40,14 @@ func NewID(prefix string) string { return ids.New(prefix) }
 // ErrBadID is returned by CheckID for a string that is not a prefixed ULID.
 var ErrBadID = errors.New("not a prefixed ULID")
 
-// CheckID reports whether id is prefix followed by a ULID in either case.
+// CheckID reports whether id is prefix followed by a ULID in uppercase, the
+// case topos mints. An id names a directory and a blob path, so a second
+// spelling of one id would alias it on a case-insensitive filesystem.
 func CheckID(prefix, id string) error {
 	if !ulid.Valid(prefix, id) {
+		return ErrBadID
+	}
+	if rest := id[len(prefix):]; rest != strings.ToUpper(rest) {
 		return ErrBadID
 	}
 	return nil
