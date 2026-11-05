@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.70.0 - 2026-11-05
+
 ### Added
 
 - **A release can deploy itself.** The release workflow has a `deploy` job
