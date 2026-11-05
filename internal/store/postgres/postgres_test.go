@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -134,11 +135,15 @@ func database(t *testing.T) string {
 	if err := conn.Close(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	dsn := strings.Replace(admin, "/topos?", "/"+name+"?", 1)
-	if !strings.Contains(dsn, "/"+name+"?") {
-		t.Fatalf("cannot derive a database DSN from %q", admin)
+	// The admin URL names whatever database the server was started with,
+	// so the new one replaces the path and keeps the rest of the URL.
+	u, err := url.Parse(admin)
+	if err != nil {
+		t.Fatalf("cannot derive a database DSN from the admin URL: %v", err)
 	}
-	return dsn
+	u.Path = "/" + name
+	u.RawPath = ""
+	return u.String()
 }
 
 func TestPostgresStoreConformance(t *testing.T) {
