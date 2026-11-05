@@ -73,15 +73,16 @@ func TestCheckApp(t *testing.T) {
 		}
 	}
 	for name, a := range map[string]ResourceApp{
-		"an upper-case slug":  {Slug: "Tide", Name: "T", URL: ok.URL},
-		"a slug with a dot":   {Slug: "tide.tables", Name: "T", URL: ok.URL},
-		"a long slug":         {Slug: strings.Repeat("a", 64), Name: "T", URL: ok.URL},
-		"no name":             {Slug: "tide", URL: ok.URL},
-		"a name of two lines": {Slug: "tide", Name: "Tide\ntables", URL: ok.URL},
-		"a long name":         {Slug: "tide", Name: strings.Repeat("n", MaxAppName+1), URL: ok.URL},
-		"an http address":     {Slug: "tide", Name: "T", URL: "http://tide.apps.example"},
-		"a relative address":  {Slug: "tide", Name: "T", URL: "/tide"},
-		"a credential":        {Slug: "tide", Name: "T", URL: "https://u:p@tide.apps.example"},
+		"an upper-case slug":      {Slug: "Tide", Name: "T", URL: ok.URL},
+		"a slug with a dot":       {Slug: "tide.tables", Name: "T", URL: ok.URL},
+		"a long slug":             {Slug: strings.Repeat("a", 64), Name: "T", URL: ok.URL},
+		"no name":                 {Slug: "tide", URL: ok.URL},
+		"a name of two lines":     {Slug: "tide", Name: "Tide\ntables", URL: ok.URL},
+		"a long name":             {Slug: "tide", Name: strings.Repeat("n", MaxAppName+1), URL: ok.URL},
+		"a name with an override": {Slug: "tide", Name: "Tide\u202etables", URL: ok.URL},
+		"an http address":         {Slug: "tide", Name: "T", URL: "http://tide.apps.example"},
+		"a relative address":      {Slug: "tide", Name: "T", URL: "/tide"},
+		"a credential":            {Slug: "tide", Name: "T", URL: "https://u:p@tide.apps.example"},
 	} {
 		if err := CheckApp(a); err == nil {
 			t.Errorf("%s passed", name)

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -60,8 +59,7 @@ func ValidAppSlug(slug string) bool { return appSlug.MatchString(slug) }
 var appIDForm = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // oneLine reports why s cannot be a line a person reads, "" when it can:
-// empty, longer than limit characters, or holding a control character or
-// a line or paragraph separator.
+// empty, longer than limit characters, or not one clean line.
 func oneLine(s string, limit int) string {
 	switch n := utf8.RuneCountInString(s); {
 	case n == 0:
@@ -69,10 +67,8 @@ func oneLine(s string, limit int) string {
 	case n > limit:
 		return fmt.Sprintf("it is %d characters, more than %d", n, limit)
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) || r == ' ' || r == ' ' {
-			return fmt.Sprintf("it holds the control character %U", r)
-		}
+	if fault := lineFault(s); fault != "" {
+		return "it " + fault
 	}
 	return ""
 }

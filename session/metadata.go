@@ -9,7 +9,6 @@ import (
 	"maps"
 	"regexp"
 	"slices"
-	"unicode"
 )
 
 // MaxMetadataValue is the longest value of a session's metadata entry a
@@ -34,10 +33,8 @@ func CheckMetadataValue(v string) string {
 	if len(v) > MaxMetadataValue {
 		return fmt.Sprintf("the value is %d bytes, more than %d", len(v), MaxMetadataValue)
 	}
-	for _, r := range v {
-		if unicode.IsControl(r) || r == ' ' || r == ' ' {
-			return fmt.Sprintf("the value holds the control character %U", r)
-		}
+	if fault := lineFault(v); fault != "" {
+		return "the value " + fault
 	}
 	return ""
 }

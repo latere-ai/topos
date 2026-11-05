@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"slices"
 	"time"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -439,10 +438,8 @@ func CheckTitle(title string) string {
 	case n > MaxTitleLength:
 		return fmt.Sprintf("the title is %d characters, more than %d", n, MaxTitleLength)
 	}
-	for _, r := range title {
-		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
-			return fmt.Sprintf("the title holds the control character %U", r)
-		}
+	if fault := lineFault(title); fault != "" {
+		return "the title " + fault
 	}
 	return ""
 }

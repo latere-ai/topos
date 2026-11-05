@@ -42,21 +42,22 @@ func TestWakeBounds(t *testing.T) {
 		input json.RawMessage
 		want  string
 	}{
-		"too soon":            {set(wakeNow.Add(trigger.MinWakeDelay - time.Minute).Format(time.RFC3339)), "(too_soon). The earliest a wake may be is " + wakeNow.Add(trigger.MinWakeDelay).Format(time.RFC3339)},
-		"too far ahead":       {json.RawMessage(`{"action":"set","after":"200h","title":"t","note":"n"}`), "(too_late). The latest a wake may be is " + wakeNow.Add(trigger.MaxWakeAhead).Format(time.RFC3339)},
-		"after the session":   {set(wakeNow.Add(8 * 24 * time.Hour).Format(time.RFC3339)), "(too_late)"},
-		"no offset":           {set("2026-10-23T12:00:00"), "not an RFC 3339 time with an offset"},
-		"seconds":             {json.RawMessage(`{"action":"set","after":"90s","title":"t","note":"n"}`), "in hours and minutes"},
-		"both at and after":   {json.RawMessage(`{"action":"set","at":"2026-10-23T12:00:00Z","after":"3h","title":"t","note":"n"}`), "at or after, one of them"},
-		"neither":             {json.RawMessage(`{"action":"set","title":"t","note":"n"}`), "at or after, one of them"},
-		"no title":            {json.RawMessage(`{"action":"set","after":"3h","note":"n"}`), "title is required"},
-		"a long title":        {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"` + strings.Repeat("x", trigger.MaxWakeTitle+1) + `"}`), "title is longer than"},
-		"a title of 2 lines":  {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"a\nb"}`), "title is one line"},
-		"no note":             {json.RawMessage(`{"action":"set","after":"3h","title":"t"}`), "note is required"},
-		"a long note":         {json.RawMessage(`{"action":"set","after":"3h","title":"t","note":"` + strings.Repeat("x", trigger.MaxWakeNote+1) + `"}`), "note is longer than"},
-		"another action":      {json.RawMessage(`{"action":"snooze"}`), "it is set or cancel"},
-		"an unknown field":    {json.RawMessage(`{"action":"set","in":"3h"}`), "unknown field"},
-		"an input not object": {json.RawMessage(`[]`), "cannot unmarshal"},
+		"too soon":                 {set(wakeNow.Add(trigger.MinWakeDelay - time.Minute).Format(time.RFC3339)), "(too_soon). The earliest a wake may be is " + wakeNow.Add(trigger.MinWakeDelay).Format(time.RFC3339)},
+		"too far ahead":            {json.RawMessage(`{"action":"set","after":"200h","title":"t","note":"n"}`), "(too_late). The latest a wake may be is " + wakeNow.Add(trigger.MaxWakeAhead).Format(time.RFC3339)},
+		"after the session":        {set(wakeNow.Add(8 * 24 * time.Hour).Format(time.RFC3339)), "(too_late)"},
+		"no offset":                {set("2026-10-23T12:00:00"), "not an RFC 3339 time with an offset"},
+		"seconds":                  {json.RawMessage(`{"action":"set","after":"90s","title":"t","note":"n"}`), "in hours and minutes"},
+		"both at and after":        {json.RawMessage(`{"action":"set","at":"2026-10-23T12:00:00Z","after":"3h","title":"t","note":"n"}`), "at or after, one of them"},
+		"neither":                  {json.RawMessage(`{"action":"set","title":"t","note":"n"}`), "at or after, one of them"},
+		"no title":                 {json.RawMessage(`{"action":"set","after":"3h","note":"n"}`), "title is required"},
+		"a long title":             {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"` + strings.Repeat("x", trigger.MaxWakeTitle+1) + `"}`), "title is longer than"},
+		"a title of 2 lines":       {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"a\nb"}`), "title is one line"},
+		"a title with an override": {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"a\u202eb"}`), "title is one line"},
+		"no note":                  {json.RawMessage(`{"action":"set","after":"3h","title":"t"}`), "note is required"},
+		"a long note":              {json.RawMessage(`{"action":"set","after":"3h","title":"t","note":"` + strings.Repeat("x", trigger.MaxWakeNote+1) + `"}`), "note is longer than"},
+		"another action":           {json.RawMessage(`{"action":"snooze"}`), "it is set or cancel"},
+		"an unknown field":         {json.RawMessage(`{"action":"set","in":"3h"}`), "unknown field"},
+		"an input not object":      {json.RawMessage(`[]`), "cannot unmarshal"},
 	}
 	for name, c := range cases {
 		r := w.Check(tools.Call{ID: "toolu_1", Input: c.input})

@@ -19,6 +19,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
+	"latere.ai/x/pkg/sanitize"
 
 	"latere.ai/x/topos/harness/parsing"
 	"latere.ai/x/topos/prompts"
@@ -224,7 +225,7 @@ func readLines(ctx context.Context, b *builtin, c Call, p string, in readInput, 
 		shown++
 		text := string(line)
 		if utf8.RuneCountInString(text) > ReadMaxLineChars {
-			text, long = cutRunes(text, ReadMaxLineChars), true
+			text, long = sanitize.Truncate(text, ReadMaxLineChars), true
 		}
 		if long {
 			text += " " + prompts.Render(prompts.ReadLineCut, prompts.Data{"Max": ReadMaxLineChars})
@@ -291,16 +292,4 @@ func readLine(br *bufio.Reader) (line []byte, long, more bool, err error) {
 		}
 		return line, long, true, nil
 	}
-}
-
-// cutRunes keeps the first n characters of s.
-func cutRunes(s string, n int) string {
-	i := 0
-	for j := range s {
-		if i == n {
-			return s[:j]
-		}
-		i++
-	}
-	return s
 }

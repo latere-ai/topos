@@ -10,8 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
+
+	"latere.ai/x/pkg/sanitize"
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/prompts"
@@ -59,7 +60,7 @@ func noticeTitle(raw json.RawMessage) (string, error) {
 		return "", errors.New("title is required: one line the person reads, what you found")
 	case utf8.RuneCountInString(title) > session.MaxNoticeTitle:
 		return "", fmt.Errorf("title is longer than %d characters", session.MaxNoticeTitle)
-	case strings.ContainsFunc(title, func(r rune) bool { return unicode.IsControl(r) || r == ' ' || r == ' ' }):
+	case !sanitize.IsLine(title):
 		return "", errors.New("title is one line")
 	}
 	return title, nil

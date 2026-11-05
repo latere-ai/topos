@@ -30,7 +30,7 @@ func TestMetadataRules(t *testing.T) {
 		ok    bool
 	}{
 		{"", true}, {"prj_01", true}, {"a value: with = and &", true}, {"日本語", true}, {strings.Repeat("v", MaxMetadataValue), true},
-		{strings.Repeat("v", MaxMetadataValue+1), false}, {"tab\there", false}, {"line\nbreak", false}, {"nul\x00", false}, {"sep ", false},
+		{strings.Repeat("v", MaxMetadataValue+1), false}, {"tab\there", false}, {"line\nbreak", false}, {"nul\x00", false}, {"a\u202eb", false}, {"a\xffb", false}, {"sep ", false},
 	} {
 		if why := CheckMetadataValue(c.value); (why == "") != c.ok {
 			t.Errorf("CheckMetadataValue(%q) = %q, want ok %v", c.value, why, c.ok)

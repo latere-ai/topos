@@ -12,8 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
+
+	"latere.ai/x/pkg/sanitize"
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/manifest/trigger"
@@ -122,7 +123,7 @@ func (in wakeInput) check() error {
 		return errors.New("title is required: one line the person reads, what you will look for")
 	case utf8.RuneCountInString(title) > trigger.MaxWakeTitle:
 		return fmt.Errorf("title is longer than %d characters", trigger.MaxWakeTitle)
-	case strings.ContainsFunc(title, func(r rune) bool { return unicode.IsControl(r) || r == ' ' || r == ' ' }):
+	case !sanitize.IsLine(title):
 		return errors.New("title is one line")
 	case strings.TrimSpace(in.Note) == "":
 		return errors.New("note is required: what you tell yourself, what to look at and what to do with each answer")

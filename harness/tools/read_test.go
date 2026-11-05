@@ -73,7 +73,7 @@ func TestReadCutsLongLines(t *testing.T) {
 	f := open(t)
 	ctx := t.Context()
 	read := builtinTool(t, NameRead)
-	cut := fmt.Sprintf(" [... line cut at %d characters]", ReadMaxLineChars)
+	cut := fmt.Sprintf("… [... line cut at %d characters]", ReadMaxLineChars)
 	lines := []string{
 		strings.Repeat("x", 2500),
 		strings.Repeat("é", 3000),
@@ -201,16 +201,4 @@ func (e *errAfter) Read(p []byte) (int, error) {
 	n := copy(p, e.data)
 	e.data = e.data[n:]
 	return n, nil
-}
-
-func TestCutRunes(t *testing.T) {
-	if got := cutRunes("héllo", 2); got != "hé" {
-		t.Fatalf("cut %q", got)
-	}
-	if got := cutRunes("hé", 5); got != "hé" {
-		t.Fatalf("a short string %q", got)
-	}
-	if got := cutRunes("", 0); got != "" {
-		t.Fatalf("empty %q", got)
-	}
 }

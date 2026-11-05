@@ -603,4 +603,12 @@ func TestCheckTitle(t *testing.T) {
 			t.Errorf("CheckTitle(%q) passed", bad)
 		}
 	}
+	// A bidirectional control reorders the text around it, and invalid
+	// UTF-8 is no text; the refusal names which.
+	if why := CheckTitle("Report \u202egpj.exe"); !strings.Contains(why, "U+202E") {
+		t.Errorf("a title with a right-to-left override: %q", why)
+	}
+	if why := CheckTitle("a\xffb"); !strings.Contains(why, "not UTF-8") {
+		t.Errorf("a title with invalid UTF-8: %q", why)
+	}
 }

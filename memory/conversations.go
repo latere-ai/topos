@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"latere.ai/x/pkg/sanitize"
 
 	"latere.ai/x/topos/session"
 )
@@ -134,7 +135,7 @@ func RenderConversation(s session.Session, events []session.Event) []byte {
 		}
 		// The first message alone is past the bound: as much of it as
 		// fits, and what is left out.
-		b.WriteString(cutRunes(sec, MaxConversationBytes-noteRoom-b.Len()))
+		b.WriteString(sanitize.TruncateBytes(sec, MaxConversationBytes-noteRoom-b.Len()))
 		if left == 1 {
 			fmt.Fprintf(&b, "\n[The rest of this message is not in this file, which holds at most %d KiB.]\n", MaxConversationBytes>>10)
 		} else {
@@ -167,17 +168,3 @@ func plural(n int) string {
 
 // oneLine is a title on one line.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-// cutRunes is s cut to at most n bytes on a character's start.
-func cutRunes(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
-}

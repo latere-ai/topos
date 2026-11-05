@@ -12,8 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
+
+	"latere.ai/x/pkg/sanitize"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/manifest/trigger"
@@ -135,15 +136,10 @@ func (v *validator) displayName(at, s string) {
 		v.add(at, "blank; leave it out to show the name")
 	case n > MaxDisplayName:
 		v.add(at, fmt.Sprintf("%d characters, at most %d", n, MaxDisplayName))
-	case strings.ContainsFunc(s, unprintable):
+	case !sanitize.IsLine(s):
 		v.add(at, "holds a control character, a line break or a bidirectional control")
 	}
 	v.text(at, s)
-}
-
-// unprintable is a character a one-line display name refuses.
-func unprintable(r rune) bool {
-	return unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Bidi_Control)
 }
 
 // ref checks a reference: a name, or an id with the kind's prefix, and

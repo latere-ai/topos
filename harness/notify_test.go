@@ -130,7 +130,7 @@ func TestNotifyIsOneLineOnceATurn(t *testing.T) {
 	ctx := t.Context()
 	long := strings.Repeat("x", session.MaxNoticeTitle+1)
 	e.stub.Script(model,
-		reply(ir.StopToolUse, call("toolu_1", session.ToolNotify, `{"title":"`+long+`"}`), call("toolu_2", session.ToolNotify, `{"title":"a\nb"}`)),
+		reply(ir.StopToolUse, call("toolu_1", session.ToolNotify, `{"title":"`+long+`"}`), call("toolu_2", session.ToolNotify, `{"title":"a\nb"}`), call("toolu_5", session.ToolNotify, `{"title":"a\u202eb"}`)),
 		reply(ir.StopToolUse, call("toolu_3", session.ToolNotify, `{"title":"The fare dropped"}`)),
 		reply(ir.StopToolUse, call("toolu_4", session.ToolNotify, `{"title":"Again"}`)),
 		reply(ir.StopEndTurn, text("Told.")))
@@ -147,6 +147,7 @@ func TestNotifyIsOneLineOnceATurn(t *testing.T) {
 	for id, want := range map[string]string{
 		"toolu_1": "longer than " + strconv.Itoa(session.MaxNoticeTitle) + " characters",
 		"toolu_2": "title is one line",
+		"toolu_5": "title is one line",
 		"toolu_4": prompts.Text(prompts.NotifyAgain),
 	} {
 		if r := results[id]; r.Outcome != tools.OutcomeInvalidInput || !strings.Contains(r.Content[0].Text, want) || len(r.Meta) != 0 {
