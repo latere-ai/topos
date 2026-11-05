@@ -29,6 +29,31 @@ committed: the commit log already holds that.
   release it runs. The release smoke compares the served version with the
   tag.
 
+### Fixed
+
+- **A session id has one spelling.** Ids are read only in the uppercase
+  form topos mints, so a lowercase spelling of an id no longer reaches the
+  same session directory.
+
+- **One-line text fields refuse hidden characters.** A session title, app
+  name or metadata value with a bidirectional control character or invalid
+  UTF-8 is refused, and a long line the read tool cuts ends in an ellipsis.
+
+- **`Retry-After` is read and written safely.** A very large value from a
+  model provider no longer turns into a negative wait, and topos writes the
+  header in whole seconds, rounded up.
+
+- **Request ids are checked.** An `X-Request-Id` that is empty, longer than
+  128 bytes or not printable is replaced with a minted one before the
+  authorizer, the logs and the response see it.
+
+- **A list filtered by labels lists nothing.** When the authorizer's filter
+  names labels, a list returns no objects, since no object carries a label
+  to match.
+
+- **Postgres migrations take a clean URL.** A `pool_` parameter on the
+  database URL no longer reaches the migration connection.
+
 ## v0.69.0 - 2026-11-03
 
 ### Added
