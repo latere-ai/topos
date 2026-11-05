@@ -101,6 +101,7 @@ func TestTheReleaseImageSharesTheDevelopersRuntime(t *testing.T) {
 type workflow struct {
 	Jobs map[string]struct {
 		Needs       any               `yaml:"needs"`
+		If          string            `yaml:"if"`
 		Uses        string            `yaml:"uses"`
 		With        map[string]string `yaml:"with"`
 		Permissions map[string]string `yaml:"permissions"`
@@ -149,7 +150,10 @@ const stagePrefix = "latere-ai/ci/.github/workflows/"
 // pushed the tag, lowered, and checks it reports the tag's version; no
 // input names a namespace, so a fork's tag publishes under the fork. The
 // publish stage then tags those digests and publishes the release, and
-// the verify stage checks the published release. All three come from one
+// the verify stage checks the published release. The deploy stage sits
+// between the build and the publish stage and is skipped wherever
+// TOPOS_RELEASE_DEPLOY is unset, so the publish and verify jobs name the
+// results they wait on (TestDeployJobDeploysWhatProdRuns). All three come from one
 // ref of ci, signing and tagging happen in the stages alone, and only the
 // build and publish jobs hold a write permission.
 func TestReleasePublishesUnderTheOwnersNamespace(t *testing.T) {
@@ -169,8 +173,8 @@ func TestReleasePublishesUnderTheOwnersNamespace(t *testing.T) {
 			t.Errorf("the stages come from different refs of ci: %s and %s", ref, at)
 		}
 	}
-	if len(needs(build.Needs)) != 0 || !slices.Equal(needs(publish.Needs), []string{"build"}) || !slices.Equal(needs(verify.Needs), []string{"publish"}) {
-		t.Fatalf("the order is build after %v, publish after %v, verify after %v; want build first, then publish, then verify", build.Needs, publish.Needs, verify.Needs)
+	if len(needs(build.Needs)) != 0 || !slices.Equal(needs(publish.Needs), []string{"build", "deploy"}) || !slices.Equal(needs(verify.Needs), []string{"publish"}) {
+		t.Fatalf("the order is build after %v, publish after %v, verify after %v; want build first, then deploy beside it, then publish, then verify", build.Needs, publish.Needs, verify.Needs)
 	}
 	if v := build.With["verify_workflow"]; v != "" && v != "verify.yml" {
 		t.Errorf("the build stage waits for %s, want the per-push verify.yml", v)

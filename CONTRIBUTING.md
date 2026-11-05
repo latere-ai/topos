@@ -36,7 +36,7 @@ the plan, and `go tool lateregate <gate>` runs one.
 | `cmd/topos` | the scripting and test client |
 | `internal/config` | typed configuration from `TOPOS_*` variables |
 | `internal/arch` | the structural invariants of spec 001, as tests |
-| `deploy/` | the base manifests, the bootstrap, and examples |
+| `deploy/` | the base manifests, the bootstrap, and examples; `prod/` and `prod-bootstrap/` are the maintainer's own installation, which a release applies when `TOPOS_RELEASE_DEPLOY` is set |
 | `specs/` | the design |
 | `docs/history/` | the v0.7.0 runtime's specs, as a record |
 
@@ -51,4 +51,5 @@ changed`. A change a release reader would notice gets a line under
 `Unreleased` in [CHANGELOG.md](CHANGELOG.md). A maintainer cuts a release
 with `go tool lateregate release vX.Y.Z`.
 After a rollout, `tools/smoke/release.sh` is the live check, run with
-`BASE_URL` set to the API root of the installation.
+`BASE_URL` set to the API root of the installation; the release's `deploy`
+job runs it after rolling the maintainer's own.

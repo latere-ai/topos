@@ -12,6 +12,16 @@ committed: the commit log already holds that.
 
 ### Added
 
+- **A release can deploy itself.** The release workflow has a `deploy` job
+  between the build and the publish stage, which applies `deploy/prod` with
+  the image pinned by digest, waits for the rollout and runs
+  `tools/smoke/release.sh` against the live origin. It runs only where the
+  repository variable `TOPOS_RELEASE_DEPLOY` is set, so a fork publishes
+  every artifact and deploys nothing. `deploy/prod` holds the maintainer's
+  production manifests and `deploy/prod-bootstrap` the identity the job
+  deploys with. Neither is part of an installation: the base and the
+  bootstrap are still what to install from.
+
 - **`GET {base}/version` is public.** With `TOPOS_BASE_PATH` set, the
   build's `version`, `commit` and `build_time` are also answered under
   the base path with no token, for example `/v1/agents/version`, so a

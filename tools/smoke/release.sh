@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Latere AI
 # SPDX-License-Identifier: Apache-2.0
 #
-# Post-deploy live check of a running Topos. The release pipeline of the
-# platform runs it after the rollout and appends its Markdown evidence to
-# the release; an operator runs it by hand after an upgrade.
+# Post-deploy live check of a running Topos. The release workflow's deploy
+# job runs it after rolling the maintainer's own installation and appends
+# its Markdown evidence to the release; an operator runs it by hand after an
+# upgrade.
 #
 # It is unauthenticated, read-only and safe to run any number of times. It
 # does not wait: it fails at once and the caller runs it again.
