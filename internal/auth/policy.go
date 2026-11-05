@@ -37,23 +37,11 @@ type OwnerPolicy struct {
 // Authorize answers one request: the policy's own decision intersected
 // with the grants the caller's token carries, so a narrowed key is
 // narrowed without an authorizer too. The intersection turns an allow
-// into a deny and never the reverse.
+// into a deny and never the reverse. A credential whose reach cannot be
+// read is denied, not an outage: there is no authorizer that failed to
+// answer.
 func (p *OwnerPolicy) Authorize(_ context.Context, req authz.Request) (authz.Decision, error) {
-	return restrict(p.decide(req), req), nil
-}
-
-// restrict narrows an allow by the caller's grants. A credential whose
-// reach cannot be read is denied, not an outage: there is no authorizer
-// that failed to answer.
-func restrict(d authz.Decision, req authz.Request) authz.Decision {
-	if !d.Allow {
-		return d
-	}
-	grants, err := authz.ParseGrants(req.Claims)
-	if err != nil {
-		return authz.Decision{Reason: authz.ReasonGrant}
-	}
-	return authz.Restrict(authorizer.Core, d, req, grants)
+	return authz.RestrictByClaims(authorizer.Core, p.decide(req), req), nil
 }
 
 // Decide is Authorize under the name latere.ai/x/pkg/authz/server calls

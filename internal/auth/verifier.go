@@ -131,7 +131,7 @@ func NewVerifier(ctx context.Context, o Options) (*Verifier, error) {
 		MaxTokenAge:     jwt.DefaultMaxTokenAge,
 		RequireIssuedAt: true,
 		// A narrowed key's grants ride on its token, and the guard
-		// applies them: the owner policy through authz.Restrict, an
+		// applies them: the owner policy through authz.RestrictByClaims, an
 		// installation's endpoint on authz/server by the same function.
 		ReadsGrants: true,
 		Now:         o.Now,

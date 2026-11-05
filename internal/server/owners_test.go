@@ -283,6 +283,18 @@ func TestListsHoldTheirContext(t *testing.T) {
 	if got := f.names("carol@acme"); !slices.Equal(got, []string{"reviewer@" + ours.Status.ID}) {
 		t.Fatalf("a list naming carol beside acme %v", got)
 	}
+	// A filter that names a label admits none of them, since no object
+	// carries a label to the authorizer; the owners it names do not
+	// bring them back.
+	f.mu.Lock()
+	f.filter = &authz.Filter{Owners: []string{acme, issuer + "|carol", issuer + "|dave"}, Labels: map[string]string{"team": "blue"}}
+	f.mu.Unlock()
+	if got := f.names("carol@acme"); len(got) != 0 {
+		t.Fatalf("an agent list under a label filter %v", got)
+	}
+	if got := f.sessions("dave@acme", ""); len(got) != 0 {
+		t.Fatalf("a session list under a label filter %v", got)
+	}
 	// A context that holds no agent lists no session.
 	if got := f.sessions("erin@empty", ""); len(got) != 0 {
 		t.Fatalf("an empty context lists %v", got)
@@ -345,5 +357,37 @@ func TestASessionRecordsTheOrganizationOfItsAgent(t *testing.T) {
 	}
 	if solo := f.create("carol", "solo"); solo.Org != "" {
 		t.Fatalf("a person's agent's session records org %q", solo.Org)
+	}
+}
+
+// TestALabelFilterListsNoTrigger: the triggers an organization's member
+// lists carry no label, so a filter naming one lists none of them, and
+// the same filter without it lists them.
+func TestALabelFilterListsNoTrigger(t *testing.T) {
+	f := newOrgFixture(t)
+	f.apply("carol@acme", "reviewer", "Review.")
+	put := f.do(http.MethodPut, "/v1/triggers/hourly", "carol@acme", triggerOf("reviewer", "hourly", "schedule: '@hourly', session: {message: x}"))
+	if put.status != http.StatusCreated {
+		t.Fatalf("apply trigger: %d %s", put.status, put.body)
+	}
+	count := func() int {
+		a := f.do(http.MethodGet, "/v1/triggers", "carol@acme", "")
+		if a.status != http.StatusOK {
+			t.Fatalf("list triggers: %d %s", a.status, a.body)
+		}
+		var page struct {
+			Items []v1.Trigger `json:"items"`
+		}
+		a.decode(t, &page)
+		return len(page.Items)
+	}
+	if got := count(); got != 1 {
+		t.Fatalf("triggers with no filter: %d", got)
+	}
+	f.mu.Lock()
+	f.filter = &authz.Filter{Labels: map[string]string{"team": "blue"}}
+	f.mu.Unlock()
+	if got := count(); got != 0 {
+		t.Fatalf("triggers under a label filter: %d", got)
 	}
 }

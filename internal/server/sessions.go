@@ -989,6 +989,9 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 	if err != nil {
 		return o, false, err
 	}
+	if namesLabels(d.Filter) {
+		return o, true, nil
+	}
 	if d.Filter != nil {
 		o.Owners = d.Filter.Owners
 	}

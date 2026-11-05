@@ -101,7 +101,7 @@ func (r reach) scope(ctx context.Context, s *Server, list bool) (o session.ListO
 		if err != nil {
 			return o, false, listRefusal(err)
 		}
-		if d.Filter != nil && len(d.Filter.Owners) > 0 && !slices.Contains(d.Filter.Owners, initiator) {
+		if !d.Filter.Admits(initiator, nil) {
 			return o, true, nil
 		}
 	}

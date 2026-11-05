@@ -466,6 +466,8 @@ func (c *call) triggerPage(limit int, cursor string) ([]store.Trigger, string, e
 		return nil, "", nil
 	case named != "":
 		o.Owners = []string{named}
+	case namesLabels(d.Filter):
+		return nil, "", nil
 	case d.Filter != nil:
 		o.Owners = d.Filter.Owners
 	}

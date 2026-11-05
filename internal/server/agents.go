@@ -332,10 +332,17 @@ func listFields(named string) map[string]any {
 
 // admits reports whether an allow of a list admits owner's objects: an
 // allow with no filter admits every owner, one with a filter the owners
-// it names.
+// it names. The objects a list holds carry no labels to the authorizer,
+// so a filter that names labels admits none of them.
 func admits(d authz.Decision, owner string) bool {
-	return d.Filter == nil || slices.Contains(d.Filter.Owners, owner)
+	return d.Filter == nil || (slices.Contains(d.Filter.Owners, owner) && d.Filter.Admits(owner, nil))
 }
+
+// namesLabels reports whether a list's filter narrows by label. Nothing
+// the lists hold carries a label to match, so such a filter leaves the
+// list empty; filtering a page after the store cut it would break its
+// cursor.
+func namesLabels(f *authz.Filter) bool { return f != nil && len(f.Labels) > 0 }
 
 // archiveBody is the body of POST /agents/{ref}/archive.
 type archiveBody struct {
