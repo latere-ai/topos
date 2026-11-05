@@ -167,10 +167,11 @@ const transport = "latere.ai/x/pkg/otel"
 // clients are the packages of spec 001 that dial one base URL their
 // caller hands them, each with the network clients it may reach besides
 // the transport: a Cella sandbox through Cella's client, a model through
-// llmdialect's codecs, toposd through nothing but the transport.
+// llmdialect's codecs and the Retry-After header's reader, which opens
+// no connection, toposd through nothing but the transport.
 var clients = map[string][]string{
 	"machine/cella":  {"latere.ai/x/cella/client"},
-	"models/dialect": {"latere.ai/x/pkg/llmdialect"},
+	"models/dialect": {"latere.ai/x/pkg/llmdialect", "latere.ai/x/pkg/retryafter"},
 	"client":         {},
 }
 
