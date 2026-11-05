@@ -15,11 +15,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"latere.ai/x/pkg/otel"
+	"latere.ai/x/pkg/retryafter"
 
 	"latere.ai/x/topos/harness/search"
 )
@@ -138,8 +138,8 @@ func refusal(resp *http.Response, raw []byte) *search.Refused {
 		return nil
 	}
 	ref := &search.Refused{Status: resp.StatusCode, Code: env.Error.Code, Message: strings.TrimSpace(env.Error.Message)}
-	if s, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && s > 0 {
-		ref.RetryAfter = time.Duration(s) * time.Second
+	if d, ok := retryafter.Parse(resp.Header.Get(retryafter.Header), time.Now()); ok {
+		ref.RetryAfter = d
 	}
 	return ref
 }

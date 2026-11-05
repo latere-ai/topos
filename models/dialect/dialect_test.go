@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -263,10 +264,14 @@ func TestErrorsAreClassifiedForRetry(t *testing.T) {
 	})
 	t.Run("retry-after as a date", func(t *testing.T) {
 		now := time.Date(2026, 9, 27, 10, 0, 0, 0, time.UTC)
-		if got := retryAfter(now.Add(90*time.Second).Format(http.TimeFormat), now); got != 90*time.Second {
+		hdr := func(v string) http.Header { return http.Header{"Retry-After": {v}} }
+		if got := retryAfter(hdr(now.Add(90*time.Second).Format(http.TimeFormat)), now); got != 90*time.Second {
 			t.Fatalf("date retry-after %s", got)
 		}
-		if retryAfter("soon", now) != 0 || retryAfter("", now) != 0 {
+		if got := retryAfter(hdr("99999999999999999"), now); got != time.Duration(math.MaxInt64) {
+			t.Fatalf("a huge retry-after is %s, want it saturated", got)
+		}
+		if retryAfter(hdr("soon"), now) != 0 || retryAfter(hdr(""), now) != 0 || retryAfter(hdr("-5"), now) != 0 {
 			t.Fatal("an unreadable retry-after was honored")
 		}
 	})

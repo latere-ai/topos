@@ -19,7 +19,6 @@ import (
 	"io"
 	"net/http"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/openaichat"
 	"latere.ai/x/pkg/llmdialect/openairesp"
 	"latere.ai/x/pkg/otel"
+	"latere.ai/x/pkg/retryafter"
 
 	"latere.ai/x/topos/models"
 )
@@ -240,7 +240,7 @@ func detail(h string) string {
 func httpError(resp *http.Response, now time.Time) error {
 	b, rerr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	cerr := resp.Body.Close()
-	e := &models.HTTPError{Status: resp.StatusCode, Body: b, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), now), Detail: detail(resp.Header.Get(models.HeaderErrorDetail))}
+	e := &models.HTTPError{Status: resp.StatusCode, Body: b, RetryAfter: retryAfter(resp.Header, now), Detail: detail(resp.Header.Get(models.HeaderErrorDetail))}
 	var body struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
@@ -262,19 +262,14 @@ func httpError(resp *http.Response, now time.Time) error {
 	return errors.Join(e, rerr, cerr)
 }
 
-// retryAfter reads a Retry-After header: seconds, or an HTTP date.
-func retryAfter(v string, now time.Time) time.Duration {
-	v = strings.TrimSpace(v)
-	if v == "" {
+// retryAfter is the wait a response's Retry-After header asks for, zero
+// when it has none or none that reads.
+func retryAfter(h http.Header, now time.Time) time.Duration {
+	d, ok := retryafter.Parse(h.Get(retryafter.Header), now)
+	if !ok {
 		return 0
 	}
-	if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-		return time.Duration(secs) * time.Second
-	}
-	if t, err := http.ParseTime(v); err == nil && t.After(now) {
-		return t.Sub(now)
-	}
-	return 0
+	return d
 }
 
 // recordingReader keeps every byte read, and the first read error that

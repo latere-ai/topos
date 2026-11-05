@@ -576,6 +576,11 @@ func TestClassify(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("an unknown code answered %d", w.Code)
 	}
+	w = httptest.NewRecorder()
+	writeError(w, nil, &apiError{code: CodeRateLimited, retryAfter: 1200 * time.Millisecond})
+	if got := w.Header().Get("Retry-After"); got != "2" {
+		t.Fatalf("a wait of 1.2s answered Retry-After %q, want whole seconds rounded up", got)
+	}
 	if (&apiError{code: "x", detail: "d", err: errors.New("e")}).Error() != "x: d: e" || (&apiError{code: "x", detail: "d"}).Error() != "x: d" {
 		t.Fatal("apiError.Error")
 	}

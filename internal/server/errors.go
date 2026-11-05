@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/httpjson"
+	"latere.ai/x/pkg/retryafter"
 
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
@@ -174,7 +175,7 @@ func writeError(w http.ResponseWriter, log *slog.Logger, err error) {
 		details["detail"] = e.detail
 	}
 	if e.retryAfter > 0 {
-		w.Header().Set("Retry-After", strconv.Itoa(int(e.retryAfter.Round(time.Second).Seconds())))
+		w.Header().Set(retryafter.Header, retryafter.Format(e.retryAfter))
 	}
 	httpjson.WriteError(w, row.status, httpjson.Error{Code: e.code, Message: row.message, Details: details})
 }

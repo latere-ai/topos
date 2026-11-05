@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -105,16 +106,17 @@ func TestTheClient(t *testing.T) {
 		failed       bool
 		noCost, none bool
 	}{
-		"a refusal":                 {status: 403, body: `{"error":{"code":"search_needs_credit","message":"Searching needs credit.","details":{"detail":"x"}}}`, code: "search_needs_credit", msg: "Searching needs credit."},
-		"a rate with Retry-After":   {status: 429, retry: "7", body: `{"error":{"code":"rate_limited","message":"Too many."}}`, code: "rate_limited", msg: "Too many.", retryAfter: 7 * time.Second},
-		"a 4xx without an envelope": {status: 404, body: `404 page not found`, failed: true},
-		"a 4xx with no message":     {status: 400, body: `{"error":{"code":"x"}}`, failed: true},
-		"a 5xx":                     {status: 503, body: `{"error":{"code":"unavailable","message":"Down."}}`, failed: true},
-		"a body that does not read": {status: 200, body: `{"results":`, failed: true},
-		"no results member":         {status: 200, body: `{}`, failed: true},
-		"a negative cost":           {status: 200, body: `{"results":[],"cost_usd_micro":-1}`, failed: true},
-		"no results and no cost":    {status: 200, body: `{"results":[]}`, noCost: true, none: true},
-		"a body past the bound":     {status: 200, body: `{"results":[],"pad":"` + strings.Repeat("x", search.MaxResponseBody) + `"}`, failed: true},
+		"a refusal":                     {status: 403, body: `{"error":{"code":"search_needs_credit","message":"Searching needs credit.","details":{"detail":"x"}}}`, code: "search_needs_credit", msg: "Searching needs credit."},
+		"a rate with Retry-After":       {status: 429, retry: "7", body: `{"error":{"code":"rate_limited","message":"Too many."}}`, code: "rate_limited", msg: "Too many.", retryAfter: 7 * time.Second},
+		"a Retry-After past a duration": {status: 429, retry: "99999999999999999", body: `{"error":{"code":"rate_limited","message":"Too many."}}`, code: "rate_limited", msg: "Too many.", retryAfter: time.Duration(math.MaxInt64)},
+		"a 4xx without an envelope":     {status: 404, body: `404 page not found`, failed: true},
+		"a 4xx with no message":         {status: 400, body: `{"error":{"code":"x"}}`, failed: true},
+		"a 5xx":                         {status: 503, body: `{"error":{"code":"unavailable","message":"Down."}}`, failed: true},
+		"a body that does not read":     {status: 200, body: `{"results":`, failed: true},
+		"no results member":             {status: 200, body: `{}`, failed: true},
+		"a negative cost":               {status: 200, body: `{"results":[],"cost_usd_micro":-1}`, failed: true},
+		"no results and no cost":        {status: 200, body: `{"results":[]}`, noCost: true, none: true},
+		"a body past the bound":         {status: 200, body: `{"results":[],"pad":"` + strings.Repeat("x", search.MaxResponseBody) + `"}`, failed: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := &service{status: tc.status, retry: tc.retry, body: tc.body}
