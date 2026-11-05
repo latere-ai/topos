@@ -23,6 +23,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
+	"latere.ai/x/pkg/pgxmigrate"
 
 	"latere.ai/x/topos/internal/store"
 	objstoretest "latere.ai/x/topos/internal/store/storetest"
@@ -446,13 +447,18 @@ func TestACorruptBlobIsRefused(t *testing.T) {
 
 func TestMigrationDSN(t *testing.T) {
 	for in, want := range map[string]string{
-		"postgres://u:p@h/db":   "pgx5://u:p@h/db",
-		"postgresql://u:p@h/db": "pgx5://u:p@h/db",
-		"pgx5://u@h/db":         "pgx5://u@h/db",
+		"postgres://u:p@h/db":                                  "pgx5://u:p@h/db",
+		"postgresql://u:p@h/db":                                "pgx5://u:p@h/db",
+		"postgres://u:p@h/db?pool_max_conns=4":                 "pgx5://u:p@h/db",
+		"postgres://u:p@h/db?sslmode=disable&pool_min_conns=1": "pgx5://u:p@h/db?sslmode=disable",
 	} {
-		if got := migrationDSN(in); got != want {
-			t.Fatalf("migrationDSN(%q) = %q", in, got)
+		got, err := pgxmigrate.DriverURL(in)
+		if err != nil || got != want {
+			t.Fatalf("DriverURL(%q) = %q, %v", in, got, err)
 		}
+	}
+	if _, err := pgxmigrate.DriverURL("mysql://u:secret@h/db"); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("a non-postgres scheme: %v", err)
 	}
 }
 

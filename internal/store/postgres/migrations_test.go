@@ -52,7 +52,11 @@ func migrateTo(t *testing.T, dsn, last string) {
 	if len(upTo) == len(entries) {
 		t.Fatalf("migration %s is the latest, so nothing is left to apply after it", last)
 	}
-	if err := pgxmigrate.Up(migrationDSN(dsn), upTo, "migrations"); err != nil {
+	driverDSN, err := pgxmigrate.DriverURL(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pgxmigrate.Up(driverDSN, upTo, "migrations"); err != nil {
 		t.Fatal(err)
 	}
 }

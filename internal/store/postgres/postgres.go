@@ -21,7 +21,6 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -133,7 +132,11 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	}
 	// A DSN that does not parse fails above at once; the migration is the
 	// first step that dials.
-	if err := pgxmigrate.Up(migrationDSN(dsn), migrations, "migrations"); err != nil {
+	driverDSN, err := pgxmigrate.DriverURL(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: the migration DSN: %w", err)
+	}
+	if err := pgxmigrate.Up(driverDSN, migrations, "migrations"); err != nil {
 		return nil, fmt.Errorf("postgres: migrate: %w", err)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -183,16 +186,6 @@ func (s *Store) Close() {
 // Ping reports whether the serving pool reaches the database; toposd's
 // readiness asks it.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
-
-// migrationDSN names the pgx migration driver for a postgres:// DSN.
-func migrationDSN(dsn string) string {
-	for _, p := range []string{"postgresql://", "postgres://"} {
-		if rest, ok := strings.CutPrefix(dsn, p); ok {
-			return "pgx5://" + rest
-		}
-	}
-	return dsn
-}
 
 func encode(v any) (string, error) {
 	b, err := session.Marshal(v)
