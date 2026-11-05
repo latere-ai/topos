@@ -42,16 +42,24 @@ func TestNewIDIsMonotonicWithinAMillisecond(t *testing.T) {
 	}
 }
 
-func TestEncodeULIDIsCrockford(t *testing.T) {
-	var zero, ones [16]byte
-	for i := range ones {
-		ones[i] = 0xff
+func TestIDsAreMintedUppercaseAndReadInEitherCase(t *testing.T) {
+	id := NewID(PrefixSession)
+	if rest := strings.TrimPrefix(id, PrefixSession); len(rest) != 26 || rest != strings.ToUpper(rest) {
+		t.Fatalf("NewID = %q, want 26 uppercase characters after the prefix", id)
 	}
-	if got := encodeULID(zero); got != strings.Repeat("0", 26) {
-		t.Fatalf("zero = %s", got)
+	lower := PrefixSession + strings.ToLower(strings.TrimPrefix(id, PrefixSession))
+	if err := CheckID(PrefixSession, lower); err != nil {
+		t.Fatalf("CheckID(%q) = %v, want an id in lowercase to read", lower, err)
 	}
-	if got := encodeULID(ones); got != "7"+strings.Repeat("Z", 25) {
-		t.Fatalf("all ones = %s", got)
+	want, err := MintedAt(PrefixSession, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := MintedAt(PrefixSession, lower); err != nil || !got.Equal(want) {
+		t.Fatalf("MintedAt(%q) = %v, %v, want %v", lower, got, err, want)
+	}
+	if err := CheckID(PrefixSession, "ses_01j9z3q4w8kx6t0m2v5n7r1b3u"); !errors.Is(err, ErrBadID) {
+		t.Fatalf("a lowercase u: %v", err)
 	}
 }
 
