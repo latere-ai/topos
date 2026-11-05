@@ -13,7 +13,7 @@
 #
 # Environment:
 #   BASE_URL   the API root of the installation, with its base path, for
-#              example https://api.latere.ai/v1/agents; required
+#              example https://api.example.com/v1/agents; required
 #   TAG        the release being proved; see the gap below
 #   COMMIT     the release commit, for the evidence
 #   DEPLOY_URL the run that deployed it, for the evidence
