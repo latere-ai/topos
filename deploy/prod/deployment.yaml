@@ -1,0 +1,160 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# What the base's Deployment gains at Latere.
+#
+# replicas: two. A replica holds one direct connection to the database for
+# LISTEN, outside the pool, and the cluster's budget holds two such
+# connections for the core (the cluster's connection budget for this database). With one
+# replica, any eviction of its Pod, such as a node drain, stopped the API
+# until the replacement was ready, about forty seconds on 2026-10-13. The
+# runners of both replicas claim sessions through the store's lease, so a
+# session is driven by one of them at a time, and a replica that goes away
+# leaves its sessions to the other within a lease's sixty seconds.
+#
+# strategy: a rollout stops one replica before it starts the next
+# (maxSurge 0, maxUnavailable 1), so the other replica serves throughout and
+# a rollout never runs three. The new Pod holds one direct connection at a
+# time, its migration and then its LISTEN, and that is the slot the budget
+# reserves for a starting Pod's migration; beside the serving replica's
+# LISTEN and the stopping one's, which it keeps until its drain ends, the
+# rollout peaks at three direct connections: the budget's two and its
+# reserve. The new Pod's runners claim the sessions the stopped one drove.
+#
+# topologySpreadConstraints: the two replicas prefer different nodes, so
+# losing one node leaves the other serving; where only one node has room
+# they share it rather than wait.
+#
+# progressDeadlineSeconds: fifteen minutes. The new Pod may wait for the
+# cluster autoscaler to add a node, which has taken about five, before it
+# pulls the image, migrates and turns ready, and a Pod that waits makes no
+# progress. Kubernetes' default of ten minutes would mark such a rollout
+# failed, and `rollout status` would fail the release with it, though the
+# old Pod serves throughout and the new one would come up. The release's
+# deploy job waits for the Deployment as long as this (rollout_timeout in
+# .github/workflows/release.yml).
+#
+# The base's disruption budget, one Pod unavailable, lets a node drain evict
+# one replica at a time while the other serves; the evicted Pod's
+# replacement starts on another node within the same three direct
+# connections.
+#
+# preStop: the Pod keeps serving for five seconds after Kubernetes decides to
+# stop it, the time the ingress and the Service endpoints take to drop its
+# address; the core's own drain (readiness 503, three seconds, then sixty for
+# open streams) follows inside the base's grace period of ninety.
+#
+# TOPOS_OIDC_AUDIENCE: `topos` is the core's primary audience, which the
+# console's actor tokens name; `api.latere.ai` is the platform origin's,
+# which a platform key's token names. An env entry wins over the ConfigMap,
+# and the base sets this one on the container.
+#
+# The database: TOPOS_DB_URL is the direct endpoint of topos_core, which
+# carries the migrations and the one LISTEN connection. TOPOS_DB_POOL_URL is
+# its transaction-mode pool, whose two server connections are the core's line
+# in the cluster's budget; pool_max_conns bounds the client connections each
+# replica opens to the pooler, so a burst queues in the replica rather than at
+# the pooler. The URL already carries a query string, so the
+# parameter is appended with `&`. DATABASE_POOL_URL is only the source of that
+# expansion; the core reads no variable of that name.
+#
+# SSL_CERT_DIR appends platformd's internal CA to the system roots, so the
+# decider and the session key routes on platformd's internal TLS listener
+# verify; the volume carries ca.crt alone, never the CA's key.
+#
+# envFrom is replaced whole, because a list with no merge key is: the
+# ConfigMap as the base names it, and the Secret toposd, required here where
+# the base leaves it optional, so a Pod without its bearers does not start.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toposd
+spec:
+  replicas: 2
+  progressDeadlineSeconds: 900
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: toposd
+      containers:
+        - name: toposd
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          env:
+            - name: TOPOS_OIDC_AUDIENCE
+              value: topos,api.latere.ai
+            - name: SSL_CERT_DIR
+              value: "/etc/ssl/certs:/var/run/toposd-trust"
+            - name: TOPOS_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: topos-core-db
+                  key: DATABASE_URL
+            - name: DATABASE_POOL_URL
+              valueFrom:
+                secretKeyRef:
+                  name: topos-core-db
+                  key: DATABASE_POOL_URL
+            - name: TOPOS_DB_POOL_URL
+              value: "$(DATABASE_POOL_URL)&pool_max_conns=4"
+          envFrom:
+            - configMapRef:
+                name: toposd
+            - secretRef:
+                name: toposd
+          # Sessions drive the harness in this process, so the base's limits
+          # are raised for the runners it holds.
+          # The data directory spools a file a message brings while it is
+          # copied into the conversation, so the disk it takes is asked for.
+          # The CPU request is what the pods use at rest; rollouts burst
+          # above it up to the limit. The memory request is what a pod
+          # uses, about 125 MiB; the limit holds the peak.
+          resources:
+            requests:
+              cpu: 25m
+              memory: 192Mi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/topos
+            - name: identity
+              mountPath: /var/run/toposd-identity
+              readOnly: true
+            - name: internal-ca
+              mountPath: /var/run/toposd-trust
+              readOnly: true
+      volumes:
+        # Above the 2 GiB the core spools at once, so a full spool is refused
+        # by the core as busy before the volume's bound evicts the Pod.
+        - name: data
+          emptyDir:
+            sizeLimit: 4Gi
+        # The host client's secret, read by the core at each fetch of its own
+        # token, so a rotated value is picked up without a restart.
+        - name: identity
+          secret:
+            secretName: toposd-identity
+            items:
+              - key: client-secret
+                path: client-secret
+        - name: internal-ca
+          secret:
+            secretName: platformd-internal-ca
+            items:
+              - key: ca.crt
+                path: platformd-internal-ca.crt

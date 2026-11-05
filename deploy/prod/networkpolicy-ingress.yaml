@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# The base admits both ports from anywhere in the cluster and leaves the
+# narrowing to the installation. Here the public port admits two callers:
+# the ingress controller, which carries every caller of the origin's
+# /v1/agents, and platformd's Pods, whose console proxy dials the toposd
+# Service in the cluster under the same path. The listener is plain HTTP
+# behind the ingress, so this rule bounds who reaches it unencrypted.
+#
+# The internal port admits nobody: its probes are the kubelet's, which no
+# NetworkPolicy governs, and the runner protocol it carries has no caller
+# while the runners run in the serve role. The ingress list is replaced
+# whole, since a list with no merge key is.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: toposd
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: platformd
+      ports:
+        - port: 8080
+          protocol: TCP

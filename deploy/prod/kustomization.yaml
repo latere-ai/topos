@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# The Topos core as Latere runs it: the production target of the release
+# pipeline, which applies it on every release with
+#
+#   kubectl apply -k deploy/prod
+#
+# after pinning the image to the digest the release built. ../base is the
+# core's own base; this overlay adds what is Latere's. Everything here is safe
+# to apply again. What is not (the rollout identity) is in
+# deploy/prod-bootstrap and is applied by an operator, never by the pipeline.
+#
+# The tree holds only objects the rollout identity may write. A policy that
+# selects another service's Pods belongs to that service's tree, so the one
+# that admits the core to platformd's internal listener, toposd-platformd-tls,
+# and toposd-cellad, which admits it to cellad's, are not here.
+#
+# The Secrets toposd, toposd-identity, topos-core-db and
+# platformd-internal-ca are created outside the tree and keep their names.
+#
+# The Deployment runs the image `toposd`, the placeholder the base names. The
+# images entry below resolves it to the published image and the release this
+# target runs. `lateregate release` rewrites the version in the same commit as
+# the changelog section, under the release.stamp entry in .lateregate.yaml, so
+# this line never lags a tag. The release's deploy job replaces the tag with
+# the digest it built.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: latere
+resources:
+  - ../base
+  - ingress.yaml
+  - networkpolicy-egress.yaml
+images:
+  - name: toposd
+    newName: ghcr.io/latere-ai/topos
+    newTag: v0.69.0
+configMapGenerator:
+  - name: toposd
+    envs:
+      - toposd.env
+patches:
+  - path: deployment.yaml
+  - path: serviceaccount.yaml
+  - path: networkpolicy-ingress.yaml

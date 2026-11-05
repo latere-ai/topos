@@ -2,6 +2,14 @@
 # latere.ai/x/ci-gate, pinned in go.mod; only repository-specific values are
 # here.
 
+# The files that name the release. `lateregate release` rewrites each
+# pattern's version to the tag it cuts, in the same commit as the changelog,
+# so the image tag of the production tree never lags the newest release.
+release:
+  stamp:
+    - file: deploy/prod/kustomization.yaml
+      pattern: 'newTag: v\d+\.\d+\.\d+'
+
 cover:
   trim_prefix: latere.ai/x/topos/
   exempt:
@@ -175,7 +183,14 @@ identity:
   api_group: topos.latere.ai
   reached_by: self-hosted
   roles_only: true
-  skip: [docs/history]
+  # deploy/prod is Latere's own overlay inside the core's tree, and
+  # deploy/prod-bootstrap the identity an operator applies beside it; they
+  # name the installation they serve, so the no-latere-value rule reads the
+  # addresses they set and does not refuse them.
+  skip: [docs/history, deploy/prod, deploy/prod-bootstrap]
+  overlays:
+    - deploy/prod
+    - deploy/prod-bootstrap
   # A manifest's permission is a grant of the agent's key, {action,
   # resource} in the grammar of specs 003 and 018, and not the
   # authorizer's question, which toposd asks through latere.ai/x/pkg/authz.

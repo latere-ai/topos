@@ -1,0 +1,131 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# What the core reaches, and only that. The base names no egress, so this
+# policy is the first to select the Pods for Egress, and every destination
+# it does not name is a dropped connection.
+#
+# The database is DigitalOcean's managed Postgres, which listens on 25060
+# for the direct connection (migrations and LISTEN) and 25061 for the pool.
+#
+# auth at https://auth.latere.ai (discovery, the key set, the host client's
+# token, the hosted-agent identities and their tokens) is a public name this
+# cluster serves. Its address inside the cluster is the load balancer's,
+# which Cilium translates to the ingress controller's Pods before policy is
+# evaluated, so the controller's Pods on their https port are admitted and
+# no address is.
+#
+# The Lux core is its Service, pod port 8080, which its own policy opens to
+# the cluster: the discovery document, each model door and its model list.
+#
+# The decider and the session key routes are platformd's internal TLS
+# listener, pod port 8443 behind the Service's 443; platformd's side admits
+# the core in toposd-platformd-tls, which platformd's own tree holds. The Cella core is the cellad Service,
+# pod port 8080; cellad's side admits the core in toposd-cellad, which
+# latere-ai/cella holds.
+#
+# The decision service is the limend Service, pod port 7720; limend's own
+# policy admits the core in deploy/prod/networkpolicy.yaml of latere-ai/limen.
+#
+# The collector the namespace's monitoring injects is dialed at the node's
+# address on host port 40318, which Cilium translates to the collector's Pod
+# on container port 4318 before policy, so the Pods on 4318 are admitted.
+#
+# The object store, DigitalOcean Spaces in fra1, on 443: Storage answers a
+# read of a conversation's file with a redirect to a presigned address of
+# its bucket, latere-storage under fra1.digitaloceanspaces.com, and a large
+# upload's parts go there directly. Storage's own API is the origin, through
+# the controller above. The store's addresses are a public name's and
+# change, so no address is written here, as in Storage's own policy; the
+# rule is every public address on 443, the private and link-local ranges
+# left out, so the cluster's network, the database's private address and
+# the metadata service stay closed. Under Cilium an ipBlock never matches a
+# Pod, so it opens nothing inside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: toposd-egress
+  labels:
+    app.kubernetes.io/name: toposd
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: toposd
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        - port: 25060
+          protocol: TCP
+        - port: 25061
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: luxd
+      ports:
+        - port: 8080
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: platformd
+      ports:
+        - port: 8443
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cellad
+      ports:
+        - port: 8080
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: limend
+      ports:
+        - port: 7720
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dash0-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - port: 4318
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
