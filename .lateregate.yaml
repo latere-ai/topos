@@ -6,9 +6,9 @@ cover:
   trim_prefix: latere.ai/x/topos/
   exempt:
     internal/store/postgres: >-
-      measured by the postgres tier (go test -tags postgres), which runs the
-      store conformance suite against a real Postgres from DATABASE_URL or a
-      container it starts; the hermetic suite has neither.
+      measured by the postgres-store e2e suite (go test -tags postgres),
+      which runs the store conformance suite against a real Postgres from
+      DATABASE_URL or a container it starts; the hermetic suite has neither.
     cmd/topos: >-
       main hands the process's streams, environment and working directory to
       internal/toposcli, where the command and its tests live; the wiring is
@@ -205,3 +205,13 @@ image:
       version_args: [-version]
       version_expect: "toposd "
       skip_start: serving needs a writable data directory or Postgres, a model gateway URL and an identity key, none of which a read-only container start brings up
+
+# The Postgres store's tests need a real server, which the hermetic suite
+# has none of. lateregate starts the service and hands the suite its URL;
+# the tests create a database per test on it.
+e2e:
+  - name: postgres-store
+    why: the Postgres session and object stores keep the contract the in-memory stores keep, and replicas on one database agree
+    test: {tags: [postgres], packages: [./internal/store/postgres/...], race: true}
+    services: [postgres]
+    env: {DATABASE_URL: "${postgres.url}"}

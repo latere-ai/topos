@@ -1,0 +1,82 @@
+# The device session end to end (spec 080). The shared gate does not yet
+# install a sandbox runtime or relax the AppArmor user-namespace rule, so
+# this job stays beside it with the triggers verify.yml had.
+name: device
+
+# A push or pull request that changes only specs or markdown outside the
+# exceptions starts no run, because no build or test reads them. The exceptions
+# are prompts/, which the binary embeds; the four docs that tests hold to the
+# code (configuration, publishing, searching sessions and web search); the two
+# specs the configuration and authorizer tests read; manifest/testdata/ and
+# test/tasks/, which tests load. `lateregate release` runs the whole bar, the
+# spec tree included, before every tag. A tag is never filtered by paths.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - "**"
+      - "!specs/**"
+      - "!**.md"
+      - "prompts/**"
+      - "docs/configuration.md"
+      - "docs/publishing.md"
+      - "docs/searching-sessions.md"
+      - "docs/web-search.md"
+      - "specs/**/002-scaffold-and-configuration.md"
+      - "specs/**/006-identity.md"
+      - "manifest/testdata/**"
+      - "test/tasks/**"
+  pull_request:
+    paths:
+      - "**"
+      - "!specs/**"
+      - "!**.md"
+      - "prompts/**"
+      - "docs/configuration.md"
+      - "docs/publishing.md"
+      - "docs/searching-sessions.md"
+      - "docs/web-search.md"
+      - "specs/**/002-scaffold-and-configuration.md"
+      - "specs/**/006-identity.md"
+      - "manifest/testdata/**"
+      - "test/tasks/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes this run: its commit carries every
+# change this one would verify, and the runner is better spent on it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  # Every job runs on GitHub's hosted runners. The repository is public,
+  # so they cost nothing, and a hosted runner is a fresh machine per job.
+  # A device session end to end (spec 080): toposd, a real Cella control
+  # plane and a worker on Cella's local driver, which confines the
+  # computer's processes with srt over bubblewrap. cellad is the one of
+  # the Cella this module pins. Ubuntu's AppArmor blocks the unprivileged
+  # user namespaces bubblewrap needs until they are allowed.
+  device:
+    name: a device session end to end
+    if: "!startsWith(github.ref, 'refs/tags/')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: The sandbox runtime and what it uses
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          npm install -g @anthropic-ai/sandbox-runtime
+          srt echo ok
+      - name: cellad of the pinned Cella
+        run: go install "latere.ai/x/cella/cmd/cellad@$(go list -m -f '{{.Version}}' latere.ai/x/cella)"
+      - name: The device session
+        run: CELLAD="$(go env GOPATH)/bin/cellad" go test -count=1 -v -run '^TestADeviceSessionEndToEnd$' ./cmd/toposd/
