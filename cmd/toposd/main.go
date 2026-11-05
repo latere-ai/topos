@@ -232,6 +232,12 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	for _, p := range []string{"/livez", "/readyz", "/version"} {
 		public.Handle("GET "+p, probes)
 	}
+	if cfg.BasePath != "" {
+		// The build identity is also public below the base path, the one
+		// prefix the ingress forwards, so a release check reads it from
+		// outside. It takes no token and is the body /version serves.
+		public.Handle("GET "+cfg.BasePath+"/version", versionAt(probes))
+	}
 	public.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, version.String("toposd"))
@@ -278,8 +284,8 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		go routes.Reap(runCtx, reapInterval)
 	}
 	servers := []*http.Server{
-		{Handler: traced(public), ReadHeaderTimeout: 10 * time.Second},
-		{Handler: traced(internal), ReadHeaderTimeout: 10 * time.Second},
+		{Handler: traced(public, cfg.BasePath), ReadHeaderTimeout: 10 * time.Second},
+		{Handler: traced(internal, ""), ReadHeaderTimeout: 10 * time.Second},
 	}
 	errc := make(chan error, len(servers))
 	for i, ln := range []net.Listener{publicLn, internalLn} {
@@ -335,14 +341,27 @@ func telemetry(ctx context.Context, stderr io.Writer) (*slog.Logger, func()) {
 	}
 }
 
+// versionAt serves the answer of the probes' /version at the path it is
+// mounted on, so the build identity below the base path is the very body
+// the root serves.
+func versionAt(probes http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rooted := r.Clone(r.Context())
+		rooted.URL.Path, rooted.URL.RawPath = "/version", ""
+		probes.ServeHTTP(w, rooted)
+	})
+}
+
 // probePaths are the probes of spec 002, which a load balancer and the
 // kubelet ask every few seconds; they would outnumber every other span.
 var probePaths = map[string]bool{"/livez": true, "/readyz": true, "/version": true}
 
 // traced records a span and the request metrics for every request h
 // serves but the probes, named by the route its mux matched.
-func traced(h http.Handler) http.Handler {
-	return otel.Handler(h, "toposd", otel.WithSkip(func(r *http.Request) bool { return probePaths[r.URL.Path] }))
+func traced(h http.Handler, base string) http.Handler {
+	return otel.Handler(h, "toposd", otel.WithSkip(func(r *http.Request) bool {
+		return probePaths[r.URL.Path] || (base != "" && r.URL.Path == base+"/version")
+	}))
 }
 
 // every runs pass every interval until ctx ends, logging what it could

@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **`GET {base}/version` is public.** With `TOPOS_BASE_PATH` set, the
+  build's `version`, `commit` and `build_time` are also answered under
+  the base path with no token, for example `/v1/agents/version`, so a
+  deployment behind an ingress that forwards only that prefix shows which
+  release it runs. The release smoke compares the served version with the
+  tag.
+
 ## v0.69.0 - 2026-11-03
 
 ### Added

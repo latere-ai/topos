@@ -14,17 +14,22 @@
 # Environment:
 #   BASE_URL   the API root of the installation, with its base path, for
 #              example https://api.example.com/v1/agents; required
-#   TAG        the release being proved; see the gap below
+#   TAG        the release being proved; when set the served version must
+#              equal it
 #   COMMIT     the release commit, for the evidence
 #   DEPLOY_URL the run that deployed it, for the evidence
 #   OUTPUT_MD  where to write the Markdown evidence; nowhere when unset
 #
-# What is public: GET ${BASE_URL}/openapi.yaml answers without a token, so
-# that is the check that the route reaches toposd. Probes /livez, /readyz
-# and /version are served by toposd at the origin root only; the ingress
-# claims the base path alone, so no health route and no version route is
-# public. The served version therefore cannot be compared with TAG, and
-# the evidence says so. The missing route is ${BASE_URL}/version.
+# What is public: the ingress claims the base path alone. toposd serves
+# /livez and /readyz at the origin root only, so there is no public health
+# route. GET ${BASE_URL}/openapi.yaml answers without a token, so that is the
+# check that the route reaches toposd, and GET ${BASE_URL}/version serves the
+# build's version.
+#
+# Checks, in order, stopping at the first failure:
+#   1. GET ${BASE_URL}/openapi.yaml answers 200 with an OpenAPI description.
+#   2. GET ${BASE_URL}/version serves a version, and when TAG is set it
+#      equals TAG.
 
 set -euo pipefail
 
@@ -52,8 +57,18 @@ code=$(curl -sS -o "$tmp/openapi" -w '%{http_code}' "${BASE_URL}/openapi.yaml") 
 grep -q '^openapi: ' "$tmp/openapi" || fail "GET /openapi.yaml: the body is not an OpenAPI description"
 pass "GET /openapi.yaml ($code)"
 
+code=$(curl -sS --max-time 15 -o "$tmp/version" -w '%{http_code}' "${BASE_URL}/version") \
+  || fail "GET /version: curl failed"
+[ "$code" = "200" ] || fail "GET /version: expected 200, got $code (body: $(head -c 200 "$tmp/version" 2>/dev/null || true))"
+pass "GET /version ($code)"
+# `|| true`: grep exits 1 on no match, and the message below should be said.
+served=$(grep -o '"version":"[^"]*"' "$tmp/version" | head -1 | cut -d'"' -f4 || true)
+[ -n "$served" ] || fail "GET /version: no version in $(head -c 200 "$tmp/version")"
 if [ -n "$TAG" ]; then
-  pass "served version not publicly readable; $TAG not compared"
+  [ "$served" = "$TAG" ] || fail "version mismatch: served $served, expected $TAG"
+  pass "served version matches the tag ($served)"
+else
+  pass "served version recorded ($served)"
 fi
 
 if [ -n "$OUTPUT_MD" ]; then
@@ -67,7 +82,7 @@ if [ -n "$OUTPUT_MD" ]; then
     [ -n "$DEPLOY_URL" ] && echo "- Deploy: ${DEPLOY_URL}"
     echo "- Origin: ${BASE_URL}"
     echo "- Smoke: \`/openapi.yaml\` answered 200 with an OpenAPI description"
-    echo "- Served version: not publicly readable, so not compared with the tag"
+    echo "- Served version: \`${served}\`${TAG:+, equal to the tag}"
   } > "$OUTPUT_MD"
 fi
 

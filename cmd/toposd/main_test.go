@@ -34,6 +34,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/version"
 	cellamachine "latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
@@ -271,6 +272,30 @@ func TestServeAnswersTheProbesOnBothListenersAndStopsCleanly(t *testing.T) {
 		t.Errorf("GET / = %d %q", code, body)
 	}
 
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// With a base path the build identity is also public below it, with no
+// token and the body the root serves; the internal listener keeps its own.
+func TestServeAnswersTheVersionUnderTheBasePath(t *testing.T) {
+	oldV, oldC, oldD := version.Version, version.Commit, version.Date
+	t.Cleanup(func() { version.Version, version.Commit, version.Date = oldV, oldC, oldD })
+	version.Version, version.Commit, version.Date = "v1.2.3", "abc1234", "2026-11-05T00:00:00Z"
+	publicURL, internalURL, stop := startServe(t, map[string]string{
+		"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/v1/agents", "TOPOS_BASE_PATH": "/v1/agents", "TOPOS_LOCAL_ISSUER_KEY": localKey(t),
+	})
+	want := `{"version":"v1.2.3","commit":"abc1234","build_time":"2026-11-05T00:00:00Z"}`
+	if code, body := get(t, publicURL+"/v1/agents/version"); code != 200 || strings.TrimSpace(body) != want {
+		t.Errorf("GET /v1/agents/version = %d %q", code, body)
+	}
+	if _, root := get(t, publicURL+"/version"); strings.TrimSpace(root) != want {
+		t.Errorf("GET /version = %q", root)
+	}
+	if code, _ := get(t, internalURL+"/version"); code != 200 {
+		t.Errorf("GET %s/version = %d", internalURL, code)
+	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit %d", code)
 	}

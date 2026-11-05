@@ -55,7 +55,7 @@ names every problem. This page lists the variables read today; the
 
 | Command | Today |
 |---|---|
-| `toposd` or `toposd serve` | serves the API under `/v1`, or `TOPOS_BASE_PATH`, on the public listener, `/livez`, `/readyz` and `/version` on both listeners, the build identity at `/`, and the local issuer's key set when there is one; drives up to `TOPOS_RUNNER_CAPACITY` hosted sessions itself, ends expired sessions and fires triggers, and with `TOPOS_RUNNER_TOKEN` hands sessions to runners on the internal listener |
+| `toposd` or `toposd serve` | serves the API under `/v1`, or `TOPOS_BASE_PATH`, on the public listener, `/livez`, `/readyz` and `/version` on both listeners, `/version` also under `TOPOS_BASE_PATH`, the build identity at `/`, and the local issuer's key set when there is one; drives up to `TOPOS_RUNNER_CAPACITY` hosted sessions itself, ends expired sessions and fires triggers, and with `TOPOS_RUNNER_TOKEN` hands sessions to runners on the internal listener |
 | `toposd runner` | claims hosted sessions from `TOPOS_INTERNAL_URL` with the first of `TOPOS_RUNNER_TOKEN` and drives up to `TOPOS_RUNNER_CAPACITY` of them at once; reads the model and machine variables, keeps nothing of its own, and serves only `/livez`, `/readyz` and `/version` on `TOPOS_INTERNAL_ADDR` |
 | `toposd check` | exits 1: spec 028 builds it |
 | `toposd token` | signs a token with `TOPOS_LOCAL_ISSUER_KEY` and prints it: `--subject` (`admin`), `--ttl` (`1h`, at most `24h`), `--audience` (the first of `TOPOS_OIDC_AUDIENCE`); opens no store |

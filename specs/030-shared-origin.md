@@ -56,7 +56,9 @@ path of `TOPOS_PUBLIC_URL`; with no base path, the public URL has no
 path. Either mismatch is a start-up failure. A request outside the base
 path, or under it on no route, is `not_found`. The probes stay at the
 listener's root (`/livez`, `/readyz`, `/version`) beside the build
-identity at `/`, and the local issuer's key set is at
+identity at `/`. `GET <base path>/version` answers the same body as
+`/version`, with no token, so the build that serves a deployment is
+readable through the one prefix its ingress forwards. The local issuer's key set is at
 `<TOPOS_PUBLIC_URL>/.well-known/jwks.json` ([[006-identity]]).
 
 ### URLs toposd writes
