@@ -16,6 +16,7 @@ import (
 	"latere.ai/x/pkg/authz/conformance"
 	"latere.ai/x/pkg/authz/server"
 	"latere.ai/x/pkg/authz/stub"
+	"latere.ai/x/pkg/requestid"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
@@ -387,6 +388,10 @@ func TestEnvelope(t *testing.T) {
 	e := auth.Envelope(c, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", nil), r)
 	if e.Subject != alice || e.Sub != "alice" || e.Claims["sub"] != "alice" || e.Request != (authz.Caller{ID: "req_1", IP: "203.0.113.4", UserAgent: "topos/1"}) {
 		t.Fatalf("Envelope = %+v", e)
+	}
+	r.Header.Set("X-Request-Id", "req 1\r\nx")
+	if e := auth.Envelope(c, authorizer.ActionSessionCreate, authz.Resource{}, r); !requestid.Valid(e.Request.ID) || e.Request.ID == "req 1\r\nx" {
+		t.Fatalf("an unusable request id reached the authorizer: %q", e.Request.ID)
 	}
 	r.RemoteAddr = "pipe"
 	if e := auth.Envelope(c, authorizer.ActionSessionCreate, authz.Resource{}, r); e.Request.IP != "pipe" {

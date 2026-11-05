@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/requestid"
 
 	"latere.ai/x/topos/authorizer"
 )
@@ -52,7 +53,7 @@ func Envelope(c Caller, action string, res authz.Resource, r *http.Request) auth
 		if err != nil {
 			host = r.RemoteAddr
 		}
-		req.Request = authz.Caller{ID: r.Header.Get("X-Request-Id"), IP: host, UserAgent: r.UserAgent()}
+		req.Request = authz.Caller{ID: requestid.FromRequest(r), IP: host, UserAgent: r.UserAgent()}
 	}
 	return req
 }

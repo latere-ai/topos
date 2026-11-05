@@ -20,6 +20,7 @@ import (
 
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/bearer"
+	"latere.ai/x/pkg/requestid"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
@@ -603,5 +604,11 @@ func TestRequestIDIsKeptOrMinted(t *testing.T) {
 	}
 	if a := f.do(http.MethodGet, "/v1/agents", "alice", ""); !strings.HasPrefix(a.header.Get("X-Request-Id"), "req_") {
 		t.Fatalf("minted %q", a.header.Get("X-Request-Id"))
+	}
+	for name, bad := range map[string]string{"a space": "req mine", "too long": strings.Repeat("a", requestid.MaxLen+1)} {
+		got := f.do(http.MethodGet, "/v1/agents", "alice", "", "X-Request-Id", bad).header.Get("X-Request-Id")
+		if got == bad || !requestid.Valid(got) || !strings.HasPrefix(got, "req_") {
+			t.Fatalf("an id with %s came back as %q", name, got)
+		}
 	}
 }

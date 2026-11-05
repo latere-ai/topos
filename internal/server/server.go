@@ -10,7 +10,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -27,6 +26,7 @@ import (
 
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/ratelimit"
+	"latere.ai/x/pkg/requestid"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/harness"
@@ -318,10 +318,12 @@ type call struct {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request, rt *route) {
-	if r.Header.Get("X-Request-Id") == "" {
-		r.Header.Set("X-Request-Id", "req_"+rand.Text())
-	}
-	w.Header().Set("X-Request-Id", r.Header.Get("X-Request-Id"))
+	// A client's id is kept when it is a short printable token; any other
+	// is replaced, so it never reaches a log line, the authorizer or the
+	// response header.
+	id := requestid.FromRequest(r)
+	r.Header.Set(requestid.Header, id)
+	w.Header().Set(requestid.Header, id)
 	c := &call{s: s, w: w, r: r, rt: rt}
 	if !rt.public {
 		caller, err := s.o.Verifier.Authenticate(r)
