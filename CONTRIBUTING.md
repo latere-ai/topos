@@ -48,4 +48,5 @@ specs that build them.
 
 One logical change per commit, with a message of the form `scope: what
 changed`. A change a release reader would notice gets a line under
-`Unreleased` in [CHANGELOG.md](CHANGELOG.md).
+`Unreleased` in [CHANGELOG.md](CHANGELOG.md). A maintainer cuts a release
+with `go tool lateregate release vX.Y.Z`.
