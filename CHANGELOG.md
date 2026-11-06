@@ -10,6 +10,31 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **The documentation has a page for each reader.** `docs/README.md`
+  indexes every page by who asks; `docs/local.md` runs the server on one
+  machine with everything it needs; `docs/install.md` covers the image
+  and its signature, the database, keys, probes, the manifests and
+  upgrading; `docs/api.md` covers the concepts, the flows a client
+  follows and the errors to branch on; `docs/authorizer.md` is the
+  contract an authorizer answers; and `docs/security.md` says what Topos
+  sees and keeps and what an operator keeps safe.
+
+### Changed
+
+- **`SECURITY.md` names the test that holds each commitment.** It lists
+  what Topos protects against a caller, a steered model, the code a
+  session runs and a runner, and what it does not defend. Report a
+  vulnerability through GitHub's private vulnerability reporting or by
+  email; the organization's policy sets the response times.
+
+### Fixed
+
+- **`make token` prints the token alone.** The build's output goes to
+  standard error, so `TOKEN=$(make token)` holds a token a server
+  accepts.
+
 ## v0.70.0 - 2026-11-05
 
 ### Added
@@ -806,6 +831,18 @@ committed: the commit log already holds that.
   removed; results recorded by earlier releases may still carry the
   code.
 
+- **Roll this release after any client that shows a waiting `publish`
+  call with `access` as a change of who can open the app and nothing
+  else.** Such a call may now also name `path` or `release`, and a client
+  that asks it as a change of access alone would have the person
+  approve less than what runs. A client tells it by `access` beside
+  `path` or `release` in the input of its `agent.tool_use`, or by the
+  reason above, and its result carries the publish's `status`.
+
+- **A client that shows a `session.error` by its code meets a new one,
+  `repeated_call`.** Show its `message`; the person's next message starts
+  a new turn as after any error.
+
 ### Fixed
 
 - **A turn no longer loops on a call that keeps failing the same way.**
@@ -823,19 +860,6 @@ committed: the commit log already holds that.
   and its turn ends on its own. A call that succeeds, or whose input or
   error changes, is never counted, so polling a job's log or running a
   command again after a change works as before.
-
-### Upgrading
-
-- Roll this release after any client that shows a waiting `publish`
-  call with `access` as a change of who can open the app and nothing
-  else. Such a call may now also name `path` or `release`, and a client
-  that asks it as a change of access alone would have the person
-  approve less than what runs. A client tells it by `access` beside
-  `path` or `release` in the input of its `agent.tool_use`, or by the
-  reason above, and its result carries the publish's `status`.
-- A client that shows a `session.error` by its code meets a new one,
-  `repeated_call`. Show its `message`; the person's next message starts
-  a new turn as after any error.
 
 ## v0.35.0 - 2026-10-13
 
@@ -882,16 +906,17 @@ committed: the commit log already holds that.
   A session whose allow names no folder, and every session of an
   installation that configures none, keeps its files as before.
 
-### Upgrading
+### Changed
 
-- Set `TOPOS_FILES_AUDIENCE` to the audience your identity provider
+- **Set `TOPOS_FILES_AUDIENCE` to the audience your identity provider
   mints tokens for the files service under, on the server and on every
-  runner, before your authorizer names a folder. It needs
+  runner, before your authorizer names a folder.** It needs
   `TOPOS_IDENTITY_URL`, and the identity provider must let toposd's own
   client ask a token for that audience. A server without it refuses an
   allow that names a folder as `authorizer_unavailable`, and a runner
   without it fails the turn of such a session with `files_unavailable`.
-- The files of sessions that exist stay where they are. A redaction no
+
+- **The files of sessions that exist stay where they are.** A redaction no
   longer answers a file of a folder by its digest, and the file stays in
   the folder until the installation removes the folder.
 
@@ -930,6 +955,36 @@ committed: the commit log already holds that.
   caller's sessions. A value that is not a trigger's id is
   `invalid_request`. The search route does not take it.
 
+### Changed
+
+- **A client that shows a conversation's app reads `meta.publish.app_id`
+  beside `app`, and keeps an app across results by `app_id` where one
+  is recorded, since `app` changes when the app's owner renames it.**
+
+- **Finding an app by its id needs an app host that takes an app's id in
+  the slug's place on every app route, answering an id it does not know
+  `404`.** An older host answers every id `404`, and the tool then reads
+  the app by its slug once, as before, at the cost of one more request
+  a call; a rename there still loses the app. The two roll in either
+  order; a rename is survived once both run.
+
+- **An authorizer may name an attached app's id in its allow as
+  `repositories[].app.id`: at most 64 ASCII letters, digits, hyphens
+  and underscores, starting with a letter or a digit.** An allow whose id
+  breaks that is refused as an allow toposd cannot read. An earlier
+  release ignores the member, so an authorizer may send it before this
+  release rolls.
+
+- **`runner.Options.Apps`, the reader of the commits an app is served at,
+  is given the attached app, `session.ResourceApp`, in place of its
+  slug, so a reader finds the app by its id.**
+
+- **The Postgres store adds the column `sessions.trigger_id`, filled from
+  each session's body, and an index on it (migration `0010`).** While an
+  earlier release runs beside this one, a session it creates enters a
+  list by trigger once a batch of its log saves its header, which its
+  first turn does.
+
 ### Fixed
 
 - **A conversation keeps publishing to its app after the app is
@@ -956,32 +1011,6 @@ committed: the commit log already holds that.
   and folder was dated 1 January 1970, and a tool that refuses such a
   date failed on them, as Python's `zipfile` does on one before 1980.
   Each now carries the time the rebuild wrote it.
-
-### Upgrading
-
-- A client that shows a conversation's app reads `meta.publish.app_id`
-  beside `app`, and keeps an app across results by `app_id` where one
-  is recorded, since `app` changes when the app's owner renames it.
-- Finding an app by its id needs an app host that takes an app's id in
-  the slug's place on every app route, answering an id it does not know
-  `404`. An older host answers every id `404`, and the tool then reads
-  the app by its slug once, as before, at the cost of one more request
-  a call; a rename there still loses the app. The two roll in either
-  order; a rename is survived once both run.
-- An authorizer may name an attached app's id in its allow as
-  `repositories[].app.id`: at most 64 ASCII letters, digits, hyphens
-  and underscores, starting with a letter or a digit. An allow whose id
-  breaks that is refused as an allow toposd cannot read. An earlier
-  release ignores the member, so an authorizer may send it before this
-  release rolls.
-- `runner.Options.Apps`, the reader of the commits an app is served at,
-  is given the attached app, `session.ResourceApp`, in place of its
-  slug, so a reader finds the app by its id.
-- The Postgres store adds the column `sessions.trigger_id`, filled from
-  each session's body, and an index on it (migration `0010`). While an
-  earlier release runs beside this one, a session it creates enters a
-  list by trigger once a batch of its log saves its header, which its
-  first turn does.
 
 ## v0.33.0 - 2026-10-12
 
@@ -1032,29 +1061,30 @@ committed: the commit log already holds that.
   The tool's description is `tools/publish-v5`; `tools/publish-v4`
   stays as it was.
 
-### Upgrading
-
-- Nothing has to change for an agent to name its sites. An agent
+- **Nothing has to change for an agent to name its sites.** An agent
   definition names `publish` in `spec.tools` and pins no version of the
   tool's description, so every agent that holds the tool reads
   `tools/publish-v5` and is offered `name` and `address` from this
   release on. An agent whose own instructions tell it how to name what
   it publishes keeps working either way.
-- An app host takes `slug` beside `name` in `POST {root}/apps`, gives
+
+- **An app host takes `slug` beside `name` in `POST {root}/apps`, gives
   the app that slug, and refuses one it cannot give with one of the
-  five codes above. A host that makes every address itself may ignore
+  five codes above.** A host that makes every address itself may ignore
   the member. A host that refuses a body with a member it does not
   know, with another code, fails the first publish of every call that
   asks for an address: roll such a host's reading of `slug` before this
   release. An app that exists keeps its name and its address.
-- An installation whose authorizer decides an app's create by what the
+
+- **An installation whose authorizer decides an app's create by what the
   create names is asked about a create with a slug by its app host as
-  that host asks it. Where it refuses a session such a create, the
+  that host asks it.** Where it refuses a session such a create, the
   call's error result carries the refusal and no app is created, so
   check the rule before this release.
-- A client that puts a waiting `publish` call to the person in words of
+
+- **A client that puts a waiting `publish` call to the person in words of
   its own may show `name` and `address`, which the call that creates
-  the app carries in its input. One that does not shows what it showed
+  the app carries in its input.** One that does not shows what it showed
   before.
 
 ## v0.32.0 - 2026-10-12
@@ -1113,34 +1143,95 @@ committed: the commit log already holds that.
   versions stay as they were. An app host that keeps no visibility is
   unaffected until a call asks it to change one.
 
-### Upgrading
-
-- Roll this release after any client that frames a published site has
-  learned to show a private one another way. A session's new app now
+- **Roll this release after any client that frames a published site has
+  learned to show a private one another way.** A session's new app now
   follows the app host's default, and where that is private, a frame of
   the app ends at the host's sign-in page instead of the site. A client
   reads `visibility` in `meta.publish` to tell. An app host whose
   default is open, and the app host's own release order, need no care:
   the create asks for nothing either way.
-- Roll this release after any client that asks a waiting `publish` call
-  in words of its own has learned to read the call's input. A call with
+
+- **Roll this release after any client that asks a waiting `publish` call
+  in words of its own has learned to read the call's input.** A call with
   `access` waits like a preview or a release and is neither: a client
   that asks it as putting a folder online would have the person approve
   something else than what runs. The call has `access` in the input of
   its `agent.tool_use` and neither `path` nor `release`, and its result
   has `meta.publish` with no `status`.
-- An installation whose authorizer decides a session's requests at the
+
+- **An installation whose authorizer decides a session's requests at the
   app host rolls the rule that lets a session change who can open an
   app before this release, and gives the agents that should do it the
-  permission the rule reads. In another order nothing is opened: the
+  permission the rule reads.** In another order nothing is opened: the
   host refuses the call, and the model tells the person to change it
   from the app's sharing.
-- An app host answers `PATCH {root}/apps/{slug}` with
+
+- **An app host answers `PATCH {root}/apps/{slug}` with
   `{"visibility": "unlisted"}` or `{"visibility": "private"}` with the
-  app and its `visibility` after the change. A host that does not is
+  app and its `visibility` after the change.** A host that does not is
   answered as a failed change, and nothing else of the tool changes.
 
 ## v0.31.0 - 2026-10-12
+
+### Added
+
+- A working directory is rebuilt from the session's log. A session with
+  no repository has no checkpoint, so its files lived in its sandbox
+  alone: a sandbox the core could not start again, one whose lifetime
+  ended, and a fork all left the person with the conversation and none
+  of the files. When a machine's open made it new for a session that
+  had one, or for a fork whose fork point kept no checkpoint, the runner
+  now replays the log into it before the turn's first tool runs: each
+  successful `write`, each `edit` applied in order, each file a
+  `files.kept` stored, and each file a `read` returned in full, which is
+  how a file a command made and the agent then read comes back. Each
+  file is held to the last hash the log recorded for it. A file a
+  command changed after the log last held it is put back and counted as
+  possibly out of date; a file whose edit no longer applies, and a file
+  the log shows only in part, is left out and named; a redacted event
+  gives nothing. Files that only a command made, generated data,
+  downloads, installed packages and build output, are not in the log
+  and do not come back. A rebuild holds at most 2,000 files
+  (`tools.MaxRebuiltFiles`) of 64 MiB together
+  (`tools.MaxRebuiltBytes`), written into the machine as one archive.
+  The machine is recorded as `session.machine` with reason `restored`
+  and the new member `restore {source: "log", files, bytes, unverified,
+  omitted, commands, paths, unverified_paths, omitted_files}`, with no
+  `machine_lost`, and the model reads there which files are back, which
+  may be out of date, which are missing, and that nothing a command made
+  is back. A fork whose checkpoint the runner can reach is restored from
+  it as before. A machine that does not say it is new, such as a
+  directory on a person's host, is never written over.
+- `session.machine` has the reason `restarted`: the machine the session
+  had stopped on a failure and runs again, with the files of its working
+  directory kept and every process that ran on it gone. The record
+  restates the machine's context, instruction files and skills, and
+  carries the new member `cause`, `out_of_memory` when the machine is
+  known to have stopped for memory and absent otherwise. It is appended
+  beside the call that met the restart, and the model reads there that
+  the machine restarted with its files.
+
+### Changed
+
+- **Starting a failed sandbox needs a Cella core after v0.12.0.** Against an
+  older core this release behaves as before, a failed sandbox is
+  replaced at the next turn, except that the loss is now recorded and
+  said.
+
+- **A client that draws the log tells the cases apart by `reason`:
+  `restarted` keeps the files, `restored` with `restore` put back the
+  ones the log holds and names the rest, and `replaced` lost them all
+  and comes with `machine_lost`.** A client that lists the reasons it
+  knows should read `restarted` as a machine that is still the
+  session's. A fork whose checkpoint was missing now records
+  `checkpoint_missing` with a second sentence when its directory was
+  rebuilt from the log instead.
+
+- **For a program that embeds the machines: `machine.Recovering` is what a
+  machine reports its open and its restarts through, `machine.ExecResult`
+  has `Stopped` for a command whose machine stopped under it,
+  `cella.ErrLost` is `machine.ErrLost`, and a `cella.Machine` no longer
+  deletes a failed sandbox unless Cella refuses to start it.**
 
 ### Fixed
 
@@ -1181,64 +1272,6 @@ committed: the commit log already holds that.
   `network_unavailable` ("The connections the command made could not be
   read."): a machine that is lost, or not running, has no connections to
   read.
-
-### Added
-
-- A working directory is rebuilt from the session's log. A session with
-  no repository has no checkpoint, so its files lived in its sandbox
-  alone: a sandbox the core could not start again, one whose lifetime
-  ended, and a fork all left the person with the conversation and none
-  of the files. When a machine's open made it new for a session that
-  had one, or for a fork whose fork point kept no checkpoint, the runner
-  now replays the log into it before the turn's first tool runs: each
-  successful `write`, each `edit` applied in order, each file a
-  `files.kept` stored, and each file a `read` returned in full, which is
-  how a file a command made and the agent then read comes back. Each
-  file is held to the last hash the log recorded for it. A file a
-  command changed after the log last held it is put back and counted as
-  possibly out of date; a file whose edit no longer applies, and a file
-  the log shows only in part, is left out and named; a redacted event
-  gives nothing. Files that only a command made, generated data,
-  downloads, installed packages and build output, are not in the log
-  and do not come back. A rebuild holds at most 2,000 files
-  (`tools.MaxRebuiltFiles`) of 64 MiB together
-  (`tools.MaxRebuiltBytes`), written into the machine as one archive.
-  The machine is recorded as `session.machine` with reason `restored`
-  and the new member `restore {source: "log", files, bytes, unverified,
-  omitted, commands, paths, unverified_paths, omitted_files}`, with no
-  `machine_lost`, and the model reads there which files are back, which
-  may be out of date, which are missing, and that nothing a command made
-  is back. A fork whose checkpoint the runner can reach is restored from
-  it as before. A machine that does not say it is new, such as a
-  directory on a person's host, is never written over.
-- `session.machine` has the reason `restarted`: the machine the session
-  had stopped on a failure and runs again, with the files of its working
-  directory kept and every process that ran on it gone. The record
-  restates the machine's context, instruction files and skills, and
-  carries the new member `cause`, `out_of_memory` when the machine is
-  known to have stopped for memory and absent otherwise. It is appended
-  beside the call that met the restart, and the model reads there that
-  the machine restarted with its files.
-
-### Upgrading
-
-- Starting a failed sandbox needs a Cella core after v0.12.0. Against an
-  older core this release behaves as before, a failed sandbox is
-  replaced at the next turn, except that the loss is now recorded and
-  said.
-- A client that draws the log tells the cases apart by `reason`:
-  `restarted` keeps the files, `restored` with `restore` put back the
-  ones the log holds and names the rest, and `replaced` lost them all
-  and comes with `machine_lost`. A client that lists the reasons it
-  knows should read `restarted` as a machine that is still the
-  session's. A fork whose checkpoint was missing now records
-  `checkpoint_missing` with a second sentence when its directory was
-  rebuilt from the log instead.
-- For a program that embeds the machines: `machine.Recovering` is what a
-  machine reports its open and its restarts through, `machine.ExecResult`
-  has `Stopped` for a command whose machine stopped under it,
-  `cella.ErrLost` is `machine.ErrLost`, and a `cella.Machine` no longer
-  deletes a failed sandbox unless Cella refuses to start it.
 
 ## v0.30.0 - 2026-10-11
 
@@ -1289,6 +1322,28 @@ committed: the commit log already holds that.
   answers by; a harness given none types every linked file
   `application/octet-stream`.
 
+- **The date part adds no event and no member, so a client changes
+  nothing for it.** A program that replays a recorded session with
+  `models.Replay` reads `mismatch` for the requests an earlier release
+  recorded, which carried no date part; requests recorded from this
+  release on are built again to their hash.
+
+- **A client that draws an answer's images from `files.kept` needs no
+  change: an entry it matches to no image is skipped.** To offer a linked
+  file, match a link's destination to an entry's `path` and fetch its
+  `blob`; an image's entry has a positive `width`, a linked file's 0.
+
+- **No store takes a blob as a stream.** A process that keeps a linked file
+  holds about twice its size while it stores it, and a fork reads every
+  blob its copied events name before it writes them. Four sessions that
+  each keep a file of the most bytes in the same moment hold about
+  128 MiB in the server that drives them. The bounds are sized for a
+  store that keeps blobs in Postgres rows, where an answer's linked
+  files add up to 32 MiB to the database.
+
+- **Every runner has known `files.kept` since v0.23.0, so this release
+  rolls in any order.** The store and the authorizer need no change.
+
 ### Fixed
 
 - A model knows today's date on every turn. The date reached a model
@@ -1317,27 +1372,6 @@ committed: the commit log already holds that.
   attached, not today. The harness prompt is unchanged, and
   `prompt_version` stays `harness/1`.
 
-### Upgrading
-
-- The date part adds no event and no member, so a client changes
-  nothing for it. A program that replays a recorded session with
-  `models.Replay` reads `mismatch` for the requests an earlier release
-  recorded, which carried no date part; requests recorded from this
-  release on are built again to their hash.
-- A client that draws an answer's images from `files.kept` needs no
-  change: an entry it matches to no image is skipped. To offer a linked
-  file, match a link's destination to an entry's `path` and fetch its
-  `blob`; an image's entry has a positive `width`, a linked file's 0.
-- No store takes a blob as a stream. A process that keeps a linked file
-  holds about twice its size while it stores it, and a fork reads every
-  blob its copied events name before it writes them. Four sessions that
-  each keep a file of the most bytes in the same moment hold about
-  128 MiB in the server that drives them. The bounds are sized for a
-  store that keeps blobs in Postgres rows, where an answer's linked
-  files add up to 32 MiB to the database.
-- Every runner has known `files.kept` since v0.23.0, so this release
-  rolls in any order. The store and the authorizer need no change.
-
 ## v0.29.0 - 2026-10-10
 
 ### Changed
@@ -1358,33 +1392,6 @@ committed: the commit log already holds that.
   it registered nine.
 
 ## v0.28.0 - 2026-10-09
-
-### Fixed
-
-- A response that writes a tool call into its text instead of calling
-  the tool no longer reaches the person as raw markup. Some models, small
-  open models among them, sometimes answer with the call written out,
-  such as `<question><header>...</header>...</question>` or
-  `<tool_call>{"name": "question", ...}</tool_call>`, and no `tool_use`;
-  the turn ended and the person read the tags instead of a question card.
-  When a response calls no tool and, outside code blocks and code spans,
-  holds an element named after a tool its request offered or a call
-  wrapper naming one, the step does not keep it: its `model.request` is
-  recorded with the new `outcome` `tool_as_text` and no `agent.message`,
-  the stream is reset, and the same request goes once more with a short
-  reminder to call the tool, `reminders/tool-as-text-v1`. A tool named in
-  prose, markup named after no offered tool such as `<plan>`, and markup
-  in code are answers as before.
-- A routed turn whose model writes the call as text again after the
-  reminder can move to another model, once a turn. The turn asks the
-  authorizer the `session.update` of a failover with the new
-  `failed_reason: tool_as_text` and the tool in `failed_detail`; an allow
-  that names another model moves the turn there, recorded as
-  `session.model_changed` with the new `reason` `tool_as_text` ("The
-  model could not use its tools, so another one answered."). Otherwise,
-  the reminded response is the answer, as an answer was before.
-  Nothing loops: a step sends at most two requests on each of two models
-  for this.
 
 ### Added
 
@@ -1415,21 +1422,48 @@ committed: the commit log already holds that.
   that carries either as `invalid_request`, so a client sends them only
   to a server that documents them.
 
-### Security
+### Changed
 
-- Built with Go 1.27.2 and golang.org/x/net v0.60.0, which fix GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
-
-### Upgrading
-
-- An authorizer that refuses a `failed_reason` it does not know keeps
+- **An authorizer that refuses a `failed_reason` it does not know keeps
   every such turn on its model, and the reminded response is the answer;
-  the reminder works with no authorizer change. An authorizer that reads
+  the reminder works with no authorizer change.** An authorizer that reads
   `failed_model` but ignores `failed_reason` would read the question as
   one about a model that cannot serve, so an installation that wants
   these turns to move rolls an authorizer that reads `tool_as_text`
   first, then toposd and every runner. The runner protocol's failover
   request accepts `reason` `tool_as_text`; a server before it refuses
   the request as `invalid_request`, and the turn keeps its answer.
+
+### Fixed
+
+- A response that writes a tool call into its text instead of calling
+  the tool no longer reaches the person as raw markup. Some models, small
+  open models among them, sometimes answer with the call written out,
+  such as `<question><header>...</header>...</question>` or
+  `<tool_call>{"name": "question", ...}</tool_call>`, and no `tool_use`;
+  the turn ended and the person read the tags instead of a question card.
+  When a response calls no tool and, outside code blocks and code spans,
+  holds an element named after a tool its request offered or a call
+  wrapper naming one, the step does not keep it: its `model.request` is
+  recorded with the new `outcome` `tool_as_text` and no `agent.message`,
+  the stream is reset, and the same request goes once more with a short
+  reminder to call the tool, `reminders/tool-as-text-v1`. A tool named in
+  prose, markup named after no offered tool such as `<plan>`, and markup
+  in code are answers as before.
+- A routed turn whose model writes the call as text again after the
+  reminder can move to another model, once a turn. The turn asks the
+  authorizer the `session.update` of a failover with the new
+  `failed_reason: tool_as_text` and the tool in `failed_detail`; an allow
+  that names another model moves the turn there, recorded as
+  `session.model_changed` with the new `reason` `tool_as_text` ("The
+  model could not use its tools, so another one answered."). Otherwise,
+  the reminded response is the answer, as an answer was before.
+  Nothing loops: a step sends at most two requests on each of two models
+  for this.
+
+### Security
+
+- Built with Go 1.27.2 and golang.org/x/net v0.60.0, which fix GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
 
 ## v0.27.0 - 2026-10-08
 
@@ -1454,6 +1488,12 @@ committed: the commit log already holds that.
   fork, `current_model_route` on an update.
 
 ## v0.26.0 - 2026-10-08
+
+### Added
+
+- `meta.publish.folder` names the folder a publish result published,
+  relative to the working directory when it is inside it: an attached
+  app's checkout, or the folder of the session's own app.
 
 ### Changed
 
@@ -1484,26 +1524,20 @@ committed: the commit log already holds that.
   thread's state before the step, so a call after another of the same
   tool in its step is left to run and is refused there.
 
-### Added
-
-- `meta.publish.folder` names the folder a publish result published,
-  relative to the working directory when it is inside it: an attached
-  app's checkout, or the folder of the session's own app.
-
-### Upgrading
-
-- A `publish` call refused before it is decided has a `tool.result`
+- **A `publish` call refused before it is decided has a `tool.result`
   and no `agent.tool_use`, as a call whose input fails its schema has
-  none. A client that pairs each result with its `agent.tool_use` shows
+  none.** A client that pairs each result with its `agent.tool_use` shows
   it as it shows such a call. A release's result may carry its build's
   `failed`, `canceled` or `building` status with no `release`: nothing
   was released.
-- Agent instructions that tell the model to publish a preview and then
+
+- **Agent instructions that tell the model to publish a preview and then
   release keep working, at two approvals per change; they can say
-  instead that one call with `release: true` puts a change live.
-- A result recorded before this release names no `folder`: a release of
+  instead that one call with `release: true` puts a change live.**
+
+- **A result recorded before this release names no `folder`: a release of
   the session's own app that names no `path` then releases its standing
-  preview as before.
+  preview as before.**
 
 ## v0.25.0 - 2026-10-07
 
@@ -1558,21 +1592,23 @@ committed: the commit log already holds that.
   `attached` for an attached app, and the thread keeps a standing
   preview per app.
 
-### Upgrading
+### Changed
 
-- Roll the authorizer first when clients will change a session's
+- **Roll the authorizer first when clients will change a session's
   metadata: an authorizer that decides `session.update` by the fields it
   knows answers a change that names `metadata` alone with a deny, so the
   change is `forbidden` until it accepts `metadata` and
-  `current_metadata`. An authorizer that ignores unknown fields reads the
+  `current_metadata`.** An authorizer that ignores unknown fields reads the
   create and fork questions as before.
-- Start filing and listing by a key once every replica runs this
+
+- **Start filing and listing by a key once every replica runs this
   release: a session a replica of an earlier release creates writes no
   `session_metadata` rows, and a filtered list on Postgres misses it
-  until its metadata changes.
-- Have the authorizer send `repositories` and `context` only once every
+  until its metadata changes.**
+
+- **Have the authorizer send `repositories` and `context` only once every
   replica and runner runs this release; an earlier one ignores them and
-  the session starts without them. This release does not read `files`.
+  the session starts without them.** This release does not read `files`.
   An app's checkout starts at the commit the app host serves once the
   host answers `commit_sha` on `current_deploy` and `latest_preview`,
   and at the default branch until then; until then, too, `publish` reads
@@ -1596,15 +1632,16 @@ committed: the commit log already holds that.
   keep an image, and skips its references `no_machine`; a step that
   waits on a person keeps its images when its calls are answered.
 
-### Upgrading
+### Changed
 
-- Roll this release only once every runner, the external ones included,
+- **Roll this release only once every runner, the external ones included,
   runs v0.23.0 or later: a runner before v0.23.0 does not know
   `files.kept` and stops a session whose log holds one with
-  `schema_too_new`. The authorizer and the store need no change.
-- Roll clients that draw an answer's images after it: a client reads
+  `schema_too_new`.** The authorizer and the store need no change.
+
+- **Roll clients that draw an answer's images after it: a client reads
   `files.kept` and falls back to `GET /v1/sessions/{id}/files` where
-  none was kept, and a client that does not know the type skips it.
+  none was kept, and a client that does not know the type skips it.**
 
 ## v0.23.0 - 2026-10-07
 
@@ -1674,24 +1711,24 @@ committed: the commit log already holds that.
   `Cache-Control: private, max-age=31536000, immutable` and its digest
   as `ETag`. An attachment's bytes are unchanged.
 
-### Upgrading
-
-- Roll toposd and every runner together; the authorizer needs no change.
+- **Roll toposd and every runner together; the authorizer needs no change.**
   Migration 0008 runs at start, in one transaction. A replica of the
   earlier release that rewrites a fork's header during the roll drops
   `root` and `carried_cost_usd_micro`: a read fills `root` from its
   column, and that fork's budget counts its whole log, as before. A fork
   such a replica creates during the roll gets its `root` from the next
   release's migration.
-- Roll every runner, the external ones included, onto this release
-  before any runner onto the release that keeps images. A runner that
+
+- **Roll every runner, the external ones included, onto this release
+  before any runner onto the release that keeps images.** A runner that
   does not know `files.kept` stops a session whose log holds one with
   `schema_too_new`, and leases move sessions between runners during a
   rolling update.
-- Roll clients that edit messages or read trees after the server: an
+
+- **Roll clients that edit messages or read trees after the server: an
   earlier server refuses `before_seq`, `message` and `title` in a fork
   body as unknown members and ignores the list's `root`, `parent` and
-  `group`.
+  `group`.**
 
 ## v0.22.0 - 2026-10-07
 
@@ -1766,10 +1803,8 @@ committed: the commit log already holds that.
   `spec.machine.egress` is blocked where it was asked. A session on the
   host machine decides a fetch as before.
 
-### Upgrading
-
-- Roll the authorizer that answers `network` and `instructions` first: a
-  server before this release ignores both members. Then roll toposd and
+- **Roll the authorizer that answers `network` and `instructions` first: a
+  server before this release ignores both members.** Then roll toposd and
   every runner together, since a runner that reads a log must know
   `session.network_changed`, `approval.requested` and `approval.decided`
   before any is appended. Until a client answers by `approval_id`, a
@@ -1892,16 +1927,15 @@ committed: the commit log already holds that.
   moment." in `message`, where it ended with `model_error` and the
   gateway's words.
 
-### Upgrading
-
-- The release carries a Postgres migration, which adds a column and two
-  indexes to `events`. A server indexes the messages written before it
+- **The release carries a Postgres migration, which adds a column and two
+  indexes to `events`.** A server indexes the messages written before it
   in the background after it starts, and again every ten minutes for
   those a replica of an earlier release writes during the rollout, so a
   search finds an older session a short while after the first replica
   of this release starts. The directory store needs no migration: a
   search reads each session's log.
-- Roll the authorizer that reads `failed_model` before this release. An
+
+- **Roll the authorizer that reads `failed_model` before this release.** An
   authorizer that does not read it keeps the session on its model, and
   such a turn ends at once with `model_busy`.
 
@@ -1946,14 +1980,13 @@ committed: the commit log already holds that.
   `effort` and `reasoning`, so an authorizer that reads either name
   decides it.
 
-### Upgrading
-
-- Move a client that reads a session's, an agent's or an event's level
+- **Move a client that reads a session's, an agent's or an event's level
   to `reasoning` before rolling this release: from it, no answer names
-  `effort`. A client that writes `effort` keeps working through v0.x.
-- Roll an authorizer that answers `limits.reasoning` before or after
+  `effort`.** A client that writes `effort` keeps working through v0.x.
+
+- **Roll an authorizer that answers `limits.reasoning` before or after
   this release: an earlier server ignores the member, and this one keeps
-  every level when the member is absent.
+  every level when the member is absent.**
 
 ## v0.17.0 - 2026-10-05
 
@@ -2102,10 +2135,8 @@ committed: the commit log already holds that.
   sandbox, its Secrets and a checkpoint ref at the git host to the
   installation, which the API reference now says.
 
-### Upgrading
-
-- Roll this release after the installation's authorizer answers
-  `approval_mode` on `session.update`. An authorizer that requires a model
+- **Roll this release after the installation's authorizer answers
+  `approval_mode` on `session.update`.** An authorizer that requires a model
   or an effort refuses a change of the mode alone, which is safe, and one
   that reads only the model would allow a mode changed beside a model on
   the model's rules alone.
@@ -3191,3 +3222,235 @@ Tagged but never released; v0.9.7 ships these changes.
   including delegated agents. Traces show the concrete tools offered.
 - Native critics have no tools by default. Explicit grants enable selected
   tools; persisted empty grants remain empty after a JSON round-trip.
+
+## v0.4.0 - 2026-08-07
+
+### Changed
+
+- **`Lineage` is renamed `Trace`, with no alias.** `res.Lineage` is now
+  `res.Trace`, `topos.Lineage` is `topos.Trace`, `topos.LineageNode` is
+  `topos.TraceNode` and `topos.LineageEdge` is `topos.TraceEdge`. The rename
+  reaches `Runner.Run` and `Runner.RunGraph`, which both return `RunResult`.
+  Replace `Lineage` with `Trace` at every call site. Node ids, edge kinds,
+  statuses, grants, sandbox labels and ordering are identical, and no JSON or
+  YAML tag ever carried the word, so stored sessions and wire formats are
+  unaffected. Go cannot alias a struct field, so no alias is kept.
+
+- **`Options.Brain` is replaced by `ModelOptions.Client`.** The model client
+  an embedder supplies moved from `Options.Brain`, renamed
+  `Options.ModelClient` on the way, to `ModelOptions.Client`. Set the client
+  there.
+
+## v0.3.0 - 2026-08-04
+
+### Added
+
+- **The first public release of the embeddable Go agent runtime.** A Go
+  application can define agents, compose them into regions and graphs, run
+  them in isolated sandboxes and inspect deterministic lineage without running
+  a separate control plane. Install it with `go get latere.ai/x/topos@v0.3.0`;
+  it requires Go 1.26 or later.
+
+- **Run one region or compose several.** `Runner.Run` runs one region and
+  `Runner.RunGraph` composes several. Choose deterministic `Pinned` chains or
+  model-directed `Dynamic` delegation, in an orchestrator-worker or mesh
+  topology, with bounded recursive handoffs and attenuated tools and scopes
+  for every child agent.
+
+- **Resume interactive sessions with `Runner.Turn`.** It streams text events
+  and returns canonical transcripts and partial state after an interruption.
+  Authored graphs are validated and persisted through
+  `latere.ai/x/topos/graph`, and a run reports stable lineage nodes,
+  delegation edges, tool events, token usage and terminal status.
+
+- **Connect to models through Lux or directly.** Reach Lux, call supported
+  providers directly through the Lux dialect, inject a custom model, or use
+  the deterministic fake model in tests.
+
+- **Choose where tools run.** Start locally with the zero-configuration
+  sandbox provider, or inject a Cella provider for hosted Kubernetes
+  sandboxes. A sandbox can confine file access, require per-command consent,
+  or be carried over RPC for a separate execution boundary. Cella credentials
+  arrive through per-request bearer sources and vault-backed secret mounts,
+  without secret values on command arguments.
+
+- **One shared USD spend cap covers every agent in a region.** A run stops
+  with an explicit budget-stop error, and the lineage records the state.
+
+- **`latere.ai/x/topos/adversarial` runs bounded proposer-and-critic reviews
+  across independent forks.** It records attack history, termination reasons,
+  token limits and a durable summary, and stays separate from the core
+  runtime.
+
+- **The module is Apache-2.0 licensed with runnable examples and Go package
+  documentation.** The root `topos` package is the supported integration
+  surface. This is a pre-1.0 release, so advanced engine subpackages may still
+  change.
+
+## v0.2.3 - 2026-07-23
+
+### Added
+
+- **A region has one spend cap.** The loop enforces the region's spend cap
+  with one shared meter, and a budget stop is surfaced to the caller. Turn
+  usage is priced behind a `CostSource`, and any negative reported cost is
+  treated as unknown.
+
+### Changed
+
+- **A zero `CostCap` in an adversarial review means unbounded.** `MaxRounds`
+  has a default.
+
+### Fixed
+
+- **The local sandbox confines every path argument to the sandbox directory.**
+
+- **A parse error in the adversarial critic's stream is wrapped with `%w`.**
+
+## v0.2.2 - 2026-07-18
+
+### Added
+
+- **`ValidateGraph` is exported** for structural checks before a run.
+
+- **A canonical authored agent-graph type** is added to
+  `latere.ai/x/topos/graph`. An agent in it is written inline or as a
+  reference, and a `Resolve` seam turns references into agents. The
+  `authoredgraph` example shows the reference and resolve flow.
+
+## v0.2.1 - 2026-07-18
+
+### Changed
+
+- **`ModelLux` takes the gateway origin.** It no longer strips an `/anthropic`
+  suffix from it.
+
+## v0.2.0 - 2026-07-18
+
+### Changed
+
+- **`ModelLux` runs on `luxsdk`** through a Lux-native adapter, and direct
+  provider access rides `luxsdk` too. The `Role` vocabulary is typed, and the
+  default model is `claude-opus-4-8`.
+
+### Removed
+
+- **The hand-rolled provider adapters are deleted**, along with the OpenAI and
+  Gemini placeholder stubs.
+
+## v0.1.0 - 2026-07-07
+
+### Added
+
+- **Adversarial review joins topos.** The engine core, the Claude, critic and
+  input backends, and a `Review` capability surface with documentation are
+  ported into `latere.ai/x/topos/adversarial`.
+
+- **A sandbox provider can be carried over RPC.** The release adds the
+  provider-over-RPC codec and a confined provider, and exec output streams
+  over the wire.
+
+- **A per-call exec consent wrapper** for sandboxes asks before each command
+  runs.
+
+## v0.0.11 - 2026-07-06
+
+### Added
+
+- **Tool calls can run in a separate sandbox.** The loop routes tool dispatch
+  to a hand sandbox, which isolates the model side from the side that executes
+  tools.
+
+## v0.0.10 - 2026-07-05
+
+### Added
+
+- **A multi-region graph composes regions into one run.** The README, the
+  package documentation and a graph example cover it.
+
+### Changed
+
+- **Region runners take an explicit session namespace.**
+
+## v0.0.9 - 2026-07-01
+
+### Added
+
+- **A sandbox can run in a host directory.** `Options.Workdir` and
+  `local.NewAt` set it.
+
+## v0.0.8 - 2026-06-30
+
+### Added
+
+- **`grep` and `glob` builtins.** They prefer ripgrep and fall back to POSIX
+  tools.
+
+## v0.0.7 - 2026-06-30
+
+### Added
+
+- **`read_file`, `write_file` and `edit_file` builtins.** `Builtins()`
+  includes the file tools, so every agent gets them.
+
+## v0.0.6 - 2026-06-29
+
+### Added
+
+- **`Runner.Turn` is a stable, resumable entry point for interactive turns.**
+
+- **Token deltas stream while a turn runs.** The hooks gain `EventTextDelta`
+  with ephemeral dispatch, and the loop emits a per-turn `Usage` event for a
+  live cost and usage display.
+
+### Changed
+
+- **A canceled turn returns its partial transcript and `ErrInterrupted`.**
+
+### Fixed
+
+- **A model receive that returns a context error counts as an interrupt.**
+
+## v0.0.5 - 2026-06-28
+
+### Added
+
+- **Run events are exposed to embedders** through `Options.Observer`.
+
+## v0.0.4 - 2026-06-28
+
+### Added
+
+- **The first tagged release of the embeddable Go SDK, module
+  `latere.ai/x/topos`.** It has an in-process loop runner, mesh discovery
+  through a directory injected into the system prompt, a per-region topology
+  selector with bounded recursive delegation, and per-child sandboxes for
+  delegated peers.
+
+- **`Options.Brain` injects a custom model and `Options.Sandbox` injects a
+  sandbox backend.** Model adapters cover Anthropic, including OAuth access
+  tokens and `WithBearerSource` for per-call bearer tokens, and Ollama for
+  free local inference. A chat-only fallback applies when the model lacks tool
+  support.
+
+- **A Cella sandbox provider** with an HTTP client, token sources including
+  `TokenFunc` for refresh-aware tokens, streaming exec, tar-based file
+  operations, readiness waiting and vault credential delivery into sandboxes.
+  A local exec provider needs no infrastructure.
+
+- **Godoc examples and runnable example programs**, including one for
+  delegation.
+
+### Changed
+
+- **Topos is the embeddable SDK only.** The control plane moved out, and the
+  SDK boundary is complete.
+
+### Fixed
+
+- **Sandbox streams report cancellation and transport errors.** The local
+  provider reports the killed phase and keeps accumulated `Stdout`, and the
+  Cella provider surfaces context cancellation and `Recv` transport errors,
+  and `Close` cancels its pump goroutine.
+
+- **Streamed usage no longer counts output tokens twice.**
