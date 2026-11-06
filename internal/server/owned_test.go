@@ -136,6 +136,63 @@ func TestTheListsNameAnOwner(t *testing.T) {
 	}
 }
 
+// TestAFilterThatNamesNoOwnerNarrowsNoList: an allow whose filter names
+// no owner, empty or absent, lists on every route what an allow with no
+// filter lists, as authz.Filter reads a filter: the agents and triggers
+// of a named owner, every trigger, and the context's sessions. The agent
+// list and a named owner's trigger list used to read it as excluding
+// every owner, while the session list and an unnamed trigger list read it
+// as narrowing nothing.
+func TestAFilterThatNamesNoOwnerNarrowsNoList(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	f.apply("bob", "helper", "Help.")
+	f.create("alice", "reviewer")
+	for token, agent := range map[string]string{"alice": "reviewer", "bob": "helper"} {
+		if a := f.do(http.MethodPut, "/v1/triggers/nightly", token, triggerOf(agent, "nightly", "schedule: '@daily', session: {message: x}")); a.status != http.StatusCreated {
+			t.Fatalf("%s's trigger: %d %s", token, a.status, a.body)
+		}
+	}
+	var mu sync.Mutex
+	var filter *authz.Filter
+	policy := f.authz.next
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if authz.IsList(req.Action) && req.Subject == service {
+			mu.Lock()
+			defer mu.Unlock()
+			return authz.Decision{Allow: true, Filter: filter}, nil
+		}
+		return policy.Authorize(context.Background(), req)
+	}
+	paths := []string{"/v1/agents?owner=" + url.QueryEscape(bob), "/v1/agents", "/v1/triggers", "/v1/triggers?owner=" + url.QueryEscape(alice), "/v1/sessions"}
+	list := func(with *authz.Filter) [][]string {
+		mu.Lock()
+		filter = with
+		mu.Unlock()
+		var out [][]string
+		for _, p := range paths {
+			a := f.do(http.MethodGet, p, "svc", "")
+			if a.status != http.StatusOK {
+				t.Fatalf("%s: %d %s", p, a.status, a.body)
+			}
+			out = append(out, pageOf(t, a))
+		}
+		return out
+	}
+	none := list(nil)
+	if len(none[0]) != 1 || len(none[2]) != 2 || len(none[3]) != 1 {
+		t.Fatalf("the lists with no filter: %v", none)
+	}
+	for name, with := range map[string]*authz.Filter{"an empty filter": {}, "an empty owners list": {Owners: []string{}}} {
+		got := list(with)
+		for i, p := range paths {
+			if !slices.Equal(got[i], none[i]) {
+				t.Errorf("%s: %s listed %v, with no filter %v", name, p, got[i], none[i])
+			}
+		}
+	}
+}
+
 // TestDeleteAnAgent is spec 074's third criterion: the delete asks
 // agent.delete of the agent with its name and owner, removes it and every
 // version, answers 204 and then not_found, frees the name for a new

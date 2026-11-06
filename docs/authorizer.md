@@ -362,14 +362,11 @@ On a list action the allow may carry `filter`. It narrows what `toposd`
 would list and never widens it.
 
 - `owners` admits only the objects owned by one of the subjects named. For
-  `session.list` the owner is the session's initiator.
+  `session.list` the owner is the session's initiator. An empty or absent
+  `owners`, as in `{}`, does not narrow by owner, on every list.
 - `labels` admits only objects that carry every named label. The objects
   `toposd` lists carry no labels to the authorizer, so a filter that names
   labels admits nothing.
-- A filter with no `owners`, such as `{}`, is read differently by two
-  lists: `agent.list` and a named owner's `trigger.list` list nothing,
-  while `session.list` and an unnamed `trigger.list` apply no owner
-  narrowing. Name `owners` whenever a filter is sent.
 
 An allow of a list with no filter admits everything in the caller's
 context. A list the owner policy answers for a non-admin carries

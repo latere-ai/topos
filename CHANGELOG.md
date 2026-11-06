@@ -42,6 +42,13 @@ committed: the commit log already holds that.
   that acts on the machine answers `machine_unavailable` as the call's
   result; the turn goes on. An agent that names more of a `host` machine
   than its kind is still refused at create.
+- **A list filter that names no owner narrows no list.** An allow whose
+  `filter` has no `owners`, such as `{}`, listed nothing for `agent.list`
+  and for a `trigger.list` that names an owner, while `session.list` and
+  an unnamed `trigger.list` read it as no narrowing. Every list now reads
+  it as the shared authorizer contract does: an empty `owners` does not
+  narrow by owner. An authorizer that sent `{}` to hide every agent must
+  deny the list instead.
 
 ### Security
 

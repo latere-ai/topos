@@ -9,7 +9,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -330,12 +329,14 @@ func listFields(named string) map[string]any {
 	return map[string]any{"owner": named}
 }
 
-// admits reports whether an allow of a list admits owner's objects: an
-// allow with no filter admits every owner, one with a filter the owners
-// it names. The objects a list holds carry no labels to the authorizer,
-// so a filter that names labels admits none of them.
+// admits reports whether an allow of a list admits owner's objects, as
+// authz.Filter reads a filter on every list route: an allow with no
+// filter, or with a filter whose owners are empty, admits every owner,
+// and one that names owners admits those. The objects a list holds carry
+// no labels to the authorizer, so a filter that names labels admits none
+// of them.
 func admits(d authz.Decision, owner string) bool {
-	return d.Filter == nil || (slices.Contains(d.Filter.Owners, owner) && d.Filter.Admits(owner, nil))
+	return d.Filter.Admits(owner, nil)
 }
 
 // namesLabels reports whether a list's filter narrows by label. Nothing

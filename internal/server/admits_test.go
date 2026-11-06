@@ -10,7 +10,8 @@ import (
 )
 
 // TestAdmitsReadsALabelFilterAsExcludingEveryObject: an allow with no
-// filter admits every owner, owners admit by name, and a filter naming a
+// filter, or a filter that names no owner, admits every owner, as
+// authz.Filter reads one; owners admit by name, and a filter naming a
 // label admits nothing because no list object carries one.
 func TestAdmitsReadsALabelFilterAsExcludingEveryObject(t *testing.T) {
 	for name, tc := range map[string]struct {
@@ -21,7 +22,8 @@ func TestAdmitsReadsALabelFilterAsExcludingEveryObject(t *testing.T) {
 		"owner named":         {&authz.Filter{Owners: []string{"alice"}}, true},
 		"another owner":       {&authz.Filter{Owners: []string{"bob"}}, false},
 		"owner and label":     {&authz.Filter{Owners: []string{"alice"}, Labels: map[string]string{"a": "b"}}, false},
-		"empty filter":        {&authz.Filter{}, false},
+		"empty filter":        {&authz.Filter{}, true},
+		"empty owners":        {&authz.Filter{Owners: []string{}}, true},
 		"label without owner": {&authz.Filter{Labels: map[string]string{"a": "b"}}, false},
 	} {
 		if got := admits(authz.Decision{Allow: true, Filter: tc.filter}, "alice"); got != tc.want {
