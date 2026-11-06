@@ -87,13 +87,12 @@ Beside the secrets:
 
 - Keep the internal listener, `TOPOS_INTERNAL_ADDR`, off the public
   network: it serves the routes runners claim sessions from.
-- `TOPOS_CELLA_INSECURE` and `TOPOS_OIDC_INSECURE_ISSUERS` send a bearer
-  or accept keys over plain `http`; set them only for a network you
-  trust.
-- `TOPOS_AUTHORIZER_URL` is accepted over plain `http` on any host,
-  with no setting to consent to it, and its bearer and every question
-  then travel in the clear. Give it an `https` URL unless the network
-  between `toposd` and the authorizer is one you trust.
+- `TOPOS_AUTHORIZER_INSECURE`, `TOPOS_CELLA_INSECURE` and
+  `TOPOS_OIDC_INSECURE_ISSUERS` send a bearer or accept keys over plain
+  `http` on a host other than loopback; without them, such a URL stops
+  the start. Set them only for a network you trust: through
+  `TOPOS_AUTHORIZER_INSECURE`, the authorizer's bearer and every
+  question, with the caller's claims, travel in the clear.
 - `TOPOS_ADMIN_SUBJECTS` names who the owner policy lets act on every
   object; keep it to the people who run the installation.
 - [docs/install.md](install.md) has the image's signature, the probes and

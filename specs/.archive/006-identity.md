@@ -46,7 +46,7 @@ shapes.
 | issuers | `TOPOS_OIDC_ISSUERS`, each read at start through its discovery document; an issuer that does not answer at start stops the start ([[002-scaffold-and-configuration]]) |
 | audience | a token must carry one of `TOPOS_OIDC_AUDIENCE`, default `topos` |
 | age | a token older than authkit's `MaxTokenAge` by its `iat`, or with no `iat`, is refused whatever its `exp` |
-| transport | `https` issuers only, except those in `TOPOS_OIDC_INSECURE_ISSUERS` and loopback |
+| transport | `https` issuers only, except those in `TOPOS_OIDC_INSECURE_ISSUERS` and loopback; the authorizer at `https`, or `http` on loopback, or on any host with `TOPOS_AUTHORIZER_INSECURE=true`, since its bearer and every question with the caller's claims travel to it |
 | grants | the validator reads grants (`ReadsGrants` true): a narrowed key's grants restrict the authorizer's answer through `authz.Restrict` |
 | subject | `authz.Subject(iss, sub)`: the issuer, a vertical bar, and the `sub` claim; the one form every event, owner and sender carries |
 
@@ -217,6 +217,7 @@ authorizer.
 | `session.create` carries the permissions of the agent version the session pins, an older pinned version its own and an agent with none an empty list | `internal/server.TestSessionCreateCarriesTheAgentsPermissions` | built |
 | The limits' `always_confirm`, `always_allow` and `thresholds` merge with the agent's approvals into the Session's `policy` at create, and a turn is decided by that policy rather than the agent's own | `internal/server.TestLimitListsReachThePolicy`, `harness.TestPolicyMergeNeverLoosens`, `harness.TestTheSessionsPolicyDecides` | built |
 | `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `cmd/toposd.TestTokenRoleRoundTrip` | built |
+| An `http` authorizer URL on a host other than loopback stops the start naming `TOPOS_AUTHORIZER_INSECURE`, and starts with it set to `true`; loopback needs no consent | `internal/config.TestAnHTTPAuthorizerNeedsConsent` | built |
 | The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `internal/auth.TestOwnerPolicyRows` | built |
 
 ## Outcome

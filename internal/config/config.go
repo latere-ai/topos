@@ -76,6 +76,11 @@ type Config struct {
 	// authorizer; an empty URL selects the owner policy.
 	AuthorizerURL   string
 	AuthorizerToken string
+	// AuthorizerInsecure is TOPOS_AUTHORIZER_INSECURE: the explicit
+	// consent for AuthorizerURL to be http:// on a host other than
+	// loopback, which sends AuthorizerToken and every question, with the
+	// caller's claims, in the clear. false refuses such a URL at start.
+	AuthorizerInsecure bool
 	// AuthorizerMessageText is TOPOS_AUTHORIZER_MESSAGE_TEXT, the ceiling on
 	// a message's words reaching the authorizer (spec 063): true, a
 	// question about a person's message on a session whose model asks for
@@ -294,6 +299,14 @@ func Load(role string, getenv Getenv) (Config, error) {
 	c.OIDCInsecureIssuers = list(strings.TrimSpace(getenv("TOPOS_OIDC_INSECURE_ISSUERS")), true)
 	c.AuthorizerURL = strings.TrimSpace(getenv("TOPOS_AUTHORIZER_URL"))
 	c.AuthorizerToken = strings.TrimSpace(getenv("TOPOS_AUTHORIZER_TOKEN"))
+	if v := strings.TrimSpace(getenv("TOPOS_AUTHORIZER_INSECURE")); v != "" {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			problems = append(problems, "TOPOS_AUTHORIZER_INSECURE is "+strconv.Quote(v)+", either true or false")
+		} else {
+			c.AuthorizerInsecure = on
+		}
+	}
 	c.AdminSubjects = authz.ParseSubjects(strings.TrimSpace(getenv("TOPOS_ADMIN_SUBJECTS")))
 	if err := checkAddr(c.PublicAddr); err != nil {
 		problems = append(problems, "TOPOS_PUBLIC_ADDR "+err.Error())
@@ -787,6 +800,8 @@ func (c Config) checkIdentity() []string {
 	if c.AuthorizerURL != "" {
 		if err := checkURL(c.AuthorizerURL); err != nil {
 			problems = append(problems, "TOPOS_AUTHORIZER_URL "+err.Error())
+		} else if u, _ := url.Parse(c.AuthorizerURL); u.Scheme == "http" && !loopback(u.Hostname()) && !c.AuthorizerInsecure {
+			problems = append(problems, "TOPOS_AUTHORIZER_URL is "+c.AuthorizerURL+", http on a host other than loopback, which sends its bearer and every question in the clear; TOPOS_AUTHORIZER_INSECURE=true is the explicit consent")
 		}
 		if c.AuthorizerToken == "" {
 			problems = append(problems, "TOPOS_AUTHORIZER_URL needs TOPOS_AUTHORIZER_TOKEN, the bearer the authorizer requires")

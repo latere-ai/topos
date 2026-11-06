@@ -43,6 +43,19 @@ committed: the commit log already holds that.
   result; the turn goes on. An agent that names more of a `host` machine
   than its kind is still refused at create.
 
+### Security
+
+- **An authorizer over plain `http` on another host needs the
+  operator's consent.** `TOPOS_AUTHORIZER_URL` with `http://` on a host
+  other than loopback now stops the start naming
+  `TOPOS_AUTHORIZER_INSECURE`, as `TOPOS_CELLA_URL` does with
+  `TOPOS_CELLA_INSECURE`, because the authorizer's bearer and every
+  question with the caller's claims would travel in the clear. An
+  installation that uses such a URL must, before it upgrades, either move
+  the authorizer to `https`, or set `TOPOS_AUTHORIZER_INSECURE=true` for
+  an authorizer reached over a network it trusts. A loopback URL, such as
+  `http://127.0.0.1:9000/authorize`, needs nothing.
+
 ## v0.70.0 - 2026-11-05
 
 ### Added

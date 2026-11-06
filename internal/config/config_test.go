@@ -183,6 +183,33 @@ func TestTheIdentityProblems(t *testing.T) {
 	}
 }
 
+// TestAnHTTPAuthorizerNeedsConsent: TOPOS_AUTHORIZER_URL over plain http
+// on a host other than loopback sends the authorizer's bearer and every
+// question in the clear, so it stops the start, naming the consent,
+// unless TOPOS_AUTHORIZER_INSECURE=true; loopback needs no consent, and
+// a consent that is not a boolean stops the start, as for Cella.
+func TestAnHTTPAuthorizerNeedsConsent(t *testing.T) {
+	for _, role := range []string{RoleServe, RoleCheck} {
+		_, err := Load(role, serve(map[string]string{"TOPOS_AUTHORIZER_URL": "http://authz.internal:8080/authorize", "TOPOS_AUTHORIZER_TOKEN": "t"}))
+		if err == nil || !strings.Contains(err.Error(), "TOPOS_AUTHORIZER_URL is http://authz.internal:8080/authorize, http on a host other than loopback") || !strings.Contains(err.Error(), "TOPOS_AUTHORIZER_INSECURE=true") {
+			t.Fatalf("%s: a plain http authorizer without the consent: %v", role, err)
+		}
+	}
+	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_AUTHORIZER_URL": "http://authz.internal:8080/authorize", "TOPOS_AUTHORIZER_TOKEN": "t", "TOPOS_AUTHORIZER_INSECURE": " true "}))
+	if err != nil || !c.AuthorizerInsecure || c.AuthorizerURL != "http://authz.internal:8080/authorize" {
+		t.Fatalf("with the consent: %+v, %v", c, err)
+	}
+	for _, u := range []string{"http://127.0.0.1:9000/authorize", "http://localhost:9000/authorize", "http://[::1]:9000/authorize", "https://authz.internal/authorize"} {
+		if c, err := Load(RoleServe, serve(map[string]string{"TOPOS_AUTHORIZER_URL": u, "TOPOS_AUTHORIZER_TOKEN": "t"})); err != nil || c.AuthorizerInsecure {
+			t.Errorf("%s needs no consent: %+v, %v", u, c.AuthorizerInsecure, err)
+		}
+	}
+	if _, err := Load(RoleServe, serve(map[string]string{"TOPOS_AUTHORIZER_URL": "https://authz.internal/authorize", "TOPOS_AUTHORIZER_TOKEN": "t", "TOPOS_AUTHORIZER_INSECURE": "sure"})); err == nil ||
+		!strings.Contains(err.Error(), `TOPOS_AUTHORIZER_INSECURE is "sure", either true or false`) {
+		t.Fatalf("a consent that is not a boolean: %v", err)
+	}
+}
+
 func TestTheTokenRoleReadsItsThreeVariables(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

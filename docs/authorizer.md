@@ -138,16 +138,18 @@ alone, and a `request` object of empty strings.
 
 | Setting | What it does | Where it is defined |
 |---|---|---|
-| `TOPOS_AUTHORIZER_URL` | the endpoint, an absolute `http` or `https` URL with no query or fragment; the question is posted to it as written | [configuration.md](configuration.md) |
+| `TOPOS_AUTHORIZER_URL` | the endpoint, an absolute `http` or `https` URL with no query or fragment; the question is posted to it as written. `http` is accepted on loopback, and elsewhere only with `TOPOS_AUTHORIZER_INSECURE=true` | [configuration.md](configuration.md) |
+| `TOPOS_AUTHORIZER_INSECURE` | the consent to send the bearer and every question over plain `http` to a host other than loopback | [configuration.md](configuration.md) |
 | `TOPOS_AUTHORIZER_TOKEN` | the bearer the endpoint requires; required whenever the URL is set | [configuration.md](configuration.md) |
 | `TOPOS_AUTHORIZER_MESSAGE_TEXT` | whether a message's words may reach the endpoint | [configuration.md](configuration.md) |
 | `TOPOS_ADMIN_SUBJECTS` | the admins of the owner policy; read only when no URL is set | [configuration.md](configuration.md) |
 | `TOPOS_SESSION_KEYS_URL`, `TOPOS_SESSION_KEYS_TOKEN` | the endpoint's session key routes, a second URL | [Session keys](#session-keys) |
 | `TOPOS_IDENTITY_URL` | refused without `TOPOS_AUTHORIZER_URL`: only the installation's authorizer checks the sessions its agents' tokens name | [configuration.md](configuration.md) |
 
-A start with a URL and no token, or a URL that is not absolute `http` or
-`https`, exits 1. `toposd` accepts `http` for any host here, so a bearer
-sent to a plain `http` address travels in the clear.
+A start with a URL and no token, a URL that is not absolute `http` or
+`https`, or an `http` URL on a host other than loopback without
+`TOPOS_AUTHORIZER_INSECURE=true`, exits 1. With that consent the bearer
+and every question travel to the plain `http` address in the clear.
 
 ## The question
 
