@@ -181,7 +181,7 @@ against the server's own cursor-mode handler), not base64.
 The interface error contract is already specified; the client's response decoder
 implements it: `404 → ErrNotFound`, `409 → ErrConflict`, every other non-2xx →
 `*APIError{Status, Code, Message, RequestID}` populated from Cella's error
-envelope. Local failures (context cancelled, transport) surface as stdlib errors.
+envelope. Local failures (context canceled, transport) surface as stdlib errors.
 
 ### Injection into the runner
 
@@ -270,7 +270,7 @@ Sliced into small, independently testable commits (tests first):
   `tar -C /workspace -cf - <path>`, which exits non-zero *after* a 200 has begun
   streaming; against a live server this may instead surface as a tar-parse error.
   To be confirmed with a real sandbox; if so, ReadFile maps that to ErrNotFound.
-- Killing on cancel: a cancelled `Exec` stops polling and reports `killed`, but
+- Killing on cancel: a canceled `Exec` stops polling and reports `killed`, but
   does not yet `DELETE .../commands/{cid}` to stop the server-side process. The
   `autoStop` backstop bounds the cost; an explicit kill can be added later.
 

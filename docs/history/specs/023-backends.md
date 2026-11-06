@@ -54,7 +54,7 @@ Cella), and every fork is a distinct trace node. Secrets stay in the gateway and
 is centralized.
 
 `Config` carries `Model` (`xtopos.ModelOptions`: Lux, Direct, or Fake, or a
-`Client` the caller supplies outright — tests set a scripted model there),
+`Client` the caller supplies outright; tests set a scripted model there),
 `Sandbox` (nil uses the local sandbox), and `Tools`. Nil or empty `Tools` grants
 no tools; the critic reasons over the diff embedded in the assembled prompt.
 Explicit tools use the runtime's builtin names or families, and the runtime

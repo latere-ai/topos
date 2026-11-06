@@ -44,7 +44,7 @@ the autonomy mode:
 
 `Region.Topology` applies only to dynamic regions and decides who may delegate
 (see the topology spec); it defaults to orchestrator-worker. A region runs one
-autonomy mode at a time. Several regions — pinned and dynamic, mixed — compose into
+autonomy mode at a time. Several regions (pinned and dynamic, mixed) compose into
 one run through a graph wired by data-flow edges (see the region-graph spec).
 
 The host reads back the discoverable peers with `Region.Directory()`, which

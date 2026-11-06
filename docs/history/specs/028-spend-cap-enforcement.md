@@ -124,13 +124,13 @@ by passing only its own run's figure, and several callers add up.
 Which agent trips the cap is not part of the contract: whichever folds the
 crossing turn first does, and under any other interleaving of agents it would be
 a different one. That nondeterminism is inherent to a shared bound and is
-acceptable — the guarantee is on the region's total, not on any particular
+acceptable: the guarantee is on the region's total, not on any particular
 agent.
 
 A graph is metered per region, not per graph. `BudgetUSD` is defined as a region
 cap and a graph is a composition of regions, so `RunGraph` meters each region
 against the full budget independently: a two-region graph under a $10 cap may
-spend $20. The alternative — one budget for a whole graph — would make the
+spend $20. The alternative, one budget for a whole graph, would make the
 meaning of the option depend on which entry point a host called.
 
 ### Composition with child budgets
@@ -147,17 +147,17 @@ does not change authority attenuation.
 Three implementation units. Leg 3 delivers a working cap on its own; legs 1 and 2
 make it authoritative rather than estimated.
 
-**Leg 1 — `pkg`: carry cost on the wire.** Add `CostUSDMicro *int64` to `ir.Usage`,
+**Leg 1, `pkg`: carry cost on the wire.** Add `CostUSDMicro *int64` to `ir.Usage`,
 surface it through `luxsdk`. Additive, no signature breaks. Consumers that ignore
 it are unaffected.
 
-**Leg 2 — `lux`: report cost.** Emit the already-computed `tokens.CostUSDMicro`
+**Leg 2, `lux`: report cost.** Emit the already-computed `tokens.CostUSDMicro`
 (`internal/proxy/proxy.go:2140-2167`) in the response usage object. Note that Lux
 itself falls back to a code-pinned rate card that covers few OpenRouter models and
 records `-1` when it cannot price, so this leg does not remove the need for leg 3's
 fallback.
 
-**Leg 3 — `topos`: price, enforce, refuse.** `CostSource` interface, default
+**Leg 3, `topos`: price, enforce, refuse.** `CostSource` interface, default
 implementation, `Usage.CostUSDMicro`, enforcement at the loop's usage fold,
 `loop.Run` signature change, fail-closed construction.
 
@@ -205,7 +205,7 @@ defect is precisely a cap that never fires.
   `billing.ErrBudgetExceeded` on a breach. Pre-change they returned nil.
 - root: the budget-stopped agent's trace node is not `done`. Pre-change it was.
 - root: an unmetered region and an under-budget region are unaffected on every
-  path — every agent runs, the error is nil, and every node is `done`.
+  path: every agent runs, the error is nil, and every node is `done`.
 - `models`: nil `CostUSDMicro` and zero `CostUSDMicro` take different paths.
 - `billing`: rate card prices cache reads and writes at their own multiples.
 - root: `topos.NewRunner` errors when a budget is set for an unpriceable model.
@@ -321,6 +321,6 @@ that did not happen and `failed` would claim a fault that did not occur: the
 runtime enforced a limit on an agent that was working correctly.
 
 A delegated peer that trips the cap cannot end its parent from a tool result, so
-it records the stop in its tool result and its trace node, and the parent —
-sharing the same meter — finds the cap breached at the top of its next turn,
+it records the stop in its tool result and its trace node, and the parent,
+sharing the same meter, finds the cap breached at the top of its next turn,
 before spending again.

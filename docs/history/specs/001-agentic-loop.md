@@ -28,7 +28,7 @@ the rest of the runtime composes; a region run is one or more loops.
 
 The loop (`runtime/loop`) takes a model, a sandbox, a tool registry, a hook bus,
 and an initial prompt, then runs until the model ends its turn, the context is
-cancelled, or a turn cap is reached. Each iteration:
+canceled, or a turn cap is reached. Each iteration:
 
 1. Builds a request from the system prompt, the running transcript, and the
    registry's tool definitions.

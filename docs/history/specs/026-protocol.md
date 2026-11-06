@@ -115,7 +115,7 @@ A fork or run stops on the first of:
 - **cost-cap** - the soft token budget across forks is exceeded; the whole run
   stops.
 - **malformed-output** - two consecutive critic rounds are unparseable.
-- **interrupted** - the context is cancelled (SIGINT/SIGTERM). Finalize still
+- **interrupted** - the context is canceled (SIGINT/SIGTERM). Finalize still
   runs so completed rounds persist. Per-call deadlines live in a child context so
   a genuine model timeout is not misread as an interrupt.
 

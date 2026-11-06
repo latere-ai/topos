@@ -40,8 +40,8 @@ Ids are deterministic and derive from the run's session id. In a single-region r
 the entry node is `<session>/<name>` and a delegated child is
 `<session>/sub/<label>`, where the label is path-prefixed so the same peer reused at
 different points in the tree gets a unique id. In a graph run the region id
-namespaces every node — `<session>/<region>/<name>` for an entry and
-`<session>/<region>/sub/<label>` for a child — so agents sharing a name across
+namespaces every node (`<session>/<region>/<name>` for an entry and
+`<session>/<region>/sub/<label>` for a child), so agents sharing a name across
 regions never collide. Because ids are reconstructable from session, region, and
 label rather than a registry, a consumer can diff two runs node by node, and a live
 view can keep stable ids across reconnects.

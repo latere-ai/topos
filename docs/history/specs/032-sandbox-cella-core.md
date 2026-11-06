@@ -171,7 +171,7 @@ an instrumented one with no timeout, and deadlines come from the context.
 |---|---|---|
 | 1 | `Create` sends the manifest above, holds the create with `?wait=1`, and returns `running` | a fake core under `/v1/environments` that answers `201 Pending` without `wait` and `Running` with it |
 | 2 | A `Failed` create returns an error naming the id and reason and deletes the sandbox | fake core |
-| 3 | `Exec` sends the command, workdir, environment and timeout, and returns stdout then stderr with the exit code; a cancelled context is `killed` | fake core |
+| 3 | `Exec` sends the command, workdir, environment and timeout, and returns stdout then stderr with the exit code; a canceled context is `killed` | fake core |
 | 4 | `ReadFile`, `WriteFile`, `ListFiles`, `Destroy` and `HealthCheck` reach the one-file and object routes and map `404` and `409` | fake core |
 | 5 | `Policy`, `SecretMounts` and `SecretEnv` are refused before any request | fake core records no request |
 | 6 | Every request goes through the configured `http.Client` | a counting transport |

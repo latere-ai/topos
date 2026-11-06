@@ -22,9 +22,6 @@ describes what comes next.
 - [Inputs](025-inputs.md) - `adversarial/input`: locating the Claude transcript and computing the working-tree diff.
 - [Session format](027-session-format.md) - the on-disk `<StateDir>/sessions/<id>/` layout, artifacts, and schema versions.
 
-The [`.archive/`](.archive/) directory holds the migration specs that folded this
-capability into Topos, kept as historical record.
-
 ## Conventions
 
 Each spec opens with YAML frontmatter:

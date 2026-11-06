@@ -45,7 +45,7 @@ The lifecycle is three calls:
    Graph, task)` is the sibling call for a run that composes several regions; it
    runs each region through the same per-region unit and merges their traces
    (see the region-graph spec).
-3. The call returns a `RunResult`: `Final` (the entry agent's last text — for a
+3. The call returns a `RunResult`: `Final` (the entry agent's last text; for a
    graph, the last region's) and `Trace` (the deterministic run graph). Even on
    error, a partial `Trace` is returned so a caller can see how far the run got.
 

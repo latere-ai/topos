@@ -90,7 +90,7 @@ session keeps it as its `wake` meanwhile. One refused for good is spent:
 the session records `session.wake_cleared` with `refused`, and the
 refusal's reason as `refusal`. See `docs/allowances.md`.
 
-## Cancelling and ending
+## Canceling and ending
 
 A client cancels a wake as any trigger:
 

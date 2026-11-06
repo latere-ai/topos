@@ -23,21 +23,14 @@ debate whose only human-facing output is the set of unresolved disputes.
 
 ## The fork/debate model
 
-```
-                  the coding agent's session (the "root")
-                            |
-                            |  fork per critic (root transcript untouched)
-                 +----------+----------+
-                v          v           v
-            fork-1      fork-2  ...  fork-N
-          proposer <==> critic       ...
-            clone    rounds
-                |
-                v  round files + ledger written to disk
-     <StateDir>/sessions/<id>/forks/critic-i/rounds/r{1,2,...}-{critic,proposer}.md
-                            |
-                            v
-                     summary.md  (contention-scored headline + open leaves)
+```mermaid
+flowchart TD
+  root["the coding agent's session (the root)"]
+  root -->|"fork per critic, root transcript untouched"| f1["fork-1: proposer and critic rounds"]
+  root --> f2["fork-2"]
+  root --> fn["fork-N"]
+  f1 -->|"round files and ledger written to disk"| rounds["&lt;StateDir&gt;/sessions/&lt;id&gt;/forks/critic-i/rounds/r1, r2, ...: critic and proposer"]
+  rounds --> summary["summary.md: contention-scored headline and open leaves"]
 ```
 
 - Each critic runs in its own fork; the engine never writes into the root session.

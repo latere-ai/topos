@@ -21,7 +21,7 @@ dispatched_task_id: null
 A single region is one unit of work with one autonomy mode. Real work spans
 several: a dynamic planning region whose output feeds a pinned shipping chain, or
 one analysis region fanning into two independent follow-ups. Let a host compose
-several regions — pinned and dynamic, mixed freely — into one run, with the output
+several regions (pinned and dynamic, mixed freely) into one run, with the output
 of one region feeding the next.
 
 ## Design
@@ -38,19 +38,19 @@ A `Graph` holds named regions and the edges between them:
 `Runner.RunGraph(ctx, Graph, task)` executes the graph. Regions run in
 deterministic topological order (Kahn's algorithm, seeded and expanded in declared
 order), each in its own isolated sandbox through the same `runRegion` unit that
-`Run` uses — so region isolation and sandbox lifecycle are identical on both paths.
+`Run` uses, so region isolation and sandbox lifecycle are identical on both paths.
 Each region's trace merges into one graph, and a cross-region `next` edge links
 each source region's entry node to its target region's entry node.
 
 Composition is text-only: a region's observable output is its `Final` text, not a
 shared filesystem. This is deliberately different from a pinned region's internal
-chain, where every step receives the original task and outputs are not piped —
+chain, where every step receives the original task and outputs are not piped:
 regions compose by threading text; steps within a region do not.
 
 Execution is sequential, which keeps trace mutation single-threaded (no
 concurrent appends to the shared graph). Two shapes are supported: a linear chain
-and fan-out (one region feeding several). Fan-in — a region with more than one
-incoming edge — is rejected, because merging several upstream `Final`s into one
+and fan-out (one region feeding several). Fan-in (a region with more than one
+incoming edge) is rejected, because merging several upstream `Final`s into one
 task is an unspecified product decision. A cycle, an unknown edge endpoint, a
 duplicate or empty region id, and fan-in are all configuration errors reported
 before any region runs.
