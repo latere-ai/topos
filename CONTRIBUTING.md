@@ -10,7 +10,7 @@ starts as a change to a spec in [specs](specs): the deck is the design, and
 code follows the spec it builds. Report vulnerabilities through the private
 process in [SECURITY.md](SECURITY.md), not a public issue.
 
-## Local development
+## Getting set up
 
 Topos requires Go 1.27 or later.
 
@@ -44,7 +44,7 @@ The exported trees of spec 001 (`session`, `harness`, `models`, `machine`,
 `runner`, `memory`, `manifest`, `client`, `authorizer`) are created by the
 specs that build them.
 
-## Changes
+## Sending a change
 
 One logical change per commit, with a message of the form `scope: what
 changed`. A change a release reader would notice gets a line under
