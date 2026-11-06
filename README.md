@@ -73,8 +73,6 @@ metadata:
 spec:
   model:
     name: stub-anthropic
-    inputWindow: 200000
-    maxOutputTokens: 4096
   machine:
     kind: cella
 YAML
@@ -89,9 +87,8 @@ curl -sSL http://127.0.0.1:8080/v1/sessions/$SESSION/events \
 ```
 
 The last command prints the agent's reply,
-`stub:anthropic:stub-anthropic:2cf24dba`. The agent names its model's
-input window and output limit because the stand-in models list none,
-and `machine: kind: cella` because a server with no sandbox service
+`stub:anthropic:stub-anthropic:2cf24dba`. The agent names
+`machine: kind: cella` because a server with no sandbox service
 refuses an agent that names no machine. Lux and `toposd` keep running
 in the background; [docs/local.md](docs/local.md) says what each command
 did, how to use a real model, Postgres or a sandbox, and how to stop

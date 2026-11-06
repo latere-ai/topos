@@ -55,8 +55,6 @@ metadata:
 spec:
   model:
     name: stub-anthropic
-    inputWindow: 200000
-    maxOutputTokens: 4096
   machine:
     kind: cella
 YAML
@@ -87,7 +85,8 @@ calls read one field each.
    and its stand-in providers in the background, applies its example
    models, and prints three `export` lines: `LUX_URL`, `LUX_KEY` and
    `LUX_TOKEN`. The `eval` puts them in your shell. Its models are
-   `stub-openai` and `stub-anthropic`. [Running Lux
+   `stub-openai` and `stub-anthropic`, and its model list gives each the
+   input window and output limit Topos needs for every model. [Running Lux
    locally](https://github.com/latere-ai/lux/blob/main/docs/local.md)
    says what else it starts.
 2. **The model connection.** `TOPOS_MODELS_URL` is Lux's root, the
@@ -113,21 +112,13 @@ calls read one field each.
    [API guide](api.md#flows) covers the flows, and
    `GET /v1/openapi.yaml` is the reference.
 
-Two lines of the agent are there because of what the stand-ins and a
-server with no sandbox service do:
-
-- **`inputWindow` and `maxOutputTokens`.** Topos needs both for every
-  model. They come from its built-in catalog, from the figures a Lux
-  door lists for the model, or from the agent. Neither the catalog nor
-  Lux's list gives them for the stand-in models, so without the two lines a create fails with `model_unknown` and
-  `no source gives the input window and output limit of "stub-anthropic"`.
-  The same agent fails the same way under `topos run`.
-- **`machine: {kind: cella}`.** An agent that names no machine is
-  `kind: host`, which this server refuses at create with
-  `machine_unavailable` unless it runs sessions on its own host
-  (`TOPOS_HOST_SESSIONS`) or has a Cella to send them to. Naming
-  `cella` lets the create through; no sandbox is made until a tool
-  needs one ([A machine for tool calls](#a-machine-for-tool-calls)).
+The agent names `machine: {kind: cella}` because of what a server with
+no sandbox service does. An agent that names no machine is
+`kind: host`, which this server refuses at create with
+`machine_unavailable` unless it runs sessions on its own host
+(`TOPOS_HOST_SESSIONS`) or has a Cella to send them to. Naming `cella`
+lets the create through; no sandbox is made until a tool needs one
+([A machine for tool calls](#a-machine-for-tool-calls)).
 
 The reply sits in the log with the model request that made it. To read
 the whole log, drop the last `sed`; it is one JSON document, with
@@ -282,8 +273,6 @@ metadata:
 spec:
   model:
     name: stub-anthropic
-    inputWindow: 200000
-    maxOutputTokens: 4096
   instructions: Answer briefly.
 YAML
 TOPOS_DATA_DIR=$PWD/data ../topos run --agent agent.yaml "hello"
