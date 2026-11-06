@@ -583,7 +583,8 @@ Without `WithPageActions()`, the suite also accepts a page of the
 endpoint's own shape from a list action. `toposd` reads a decision only, so
 an endpoint for it answers every list with one, and the empty
 `WithPageActions()` above makes the suite hold it to that. The repository's
-own run leaves the option out.
+own runs pass it too, and a test holds that an endpoint answering
+`agent.list` with a page fails them.
 
 The suite proves the shape of the answers, not the policy behind them and
 not the limits' contents. To hold your own answers to what `toposd`

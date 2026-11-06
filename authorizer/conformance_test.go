@@ -7,8 +7,13 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"latere.ai/x/pkg/authz"
@@ -26,13 +31,75 @@ const (
 	bearer = "conformance-bearer"
 )
 
+// conform runs the conformance suite as toposd reads an authorizer:
+// driven from Topos's table, and with every action, each list included,
+// answering a decision, since toposd reads a list's allow and its filter
+// and has no page of its own shape (WithPageActions with no action).
+func conform(t testing.TB, url, token string) {
+	t.Helper()
+	conformance.Run(t, url, token,
+		conformance.WithVocabulary(authorizer.Vocabulary()),
+		conformance.WithSubjects(alice, bob),
+		conformance.WithPageActions())
+}
+
 // TestAuthorizerConformanceStub: the shared stub told Topos's table
 // passes the conformance suite driven from that same table.
 func TestAuthorizerConformanceStub(t *testing.T) {
 	s := stub.New(t, stub.WithVocabulary(authorizer.Vocabulary()))
-	conformance.Run(t, s.URL(), s.Token(),
-		conformance.WithVocabulary(authorizer.Vocabulary()),
-		conformance.WithSubjects(alice, bob))
+	conform(t, s.URL(), s.Token())
+}
+
+// TestAListAnsweredWithAPageFailsConformance: an endpoint that answers
+// agent.list with a page of its own and no allow fails the suite as Topos
+// runs it, since toposd reads no decision in such an answer and refuses
+// the list authorizer_unavailable. Run without WithPageActions, the suite
+// takes such an answer for a core's page and passes it.
+func TestAListAnsweredWithAPageFailsConformance(t *testing.T) {
+	s := stub.New(t, stub.WithVocabulary(authorizer.Vocabulary()),
+		stub.WithAction(authorizer.ActionAgentList, func(authz.Request) any { return map[string]any{"items": []any{}} }))
+	r := &recorder{TB: t}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conform(r, s.URL(), s.Token())
+	}()
+	<-done
+	if !slices.ContainsFunc(r.failures(), func(f string) bool { return strings.Contains(f, authorizer.ActionAgentList) }) {
+		t.Fatalf("a page for %s passed the suite; failures %q", authorizer.ActionAgentList, r.failures())
+	}
+}
+
+// recorder is a testing.TB that records the suite's failures instead of
+// failing the test, so a test can hold a run that must fail. Fatalf ends
+// the goroutine the run is on, as testing's own does.
+type recorder struct {
+	testing.TB
+	mu     sync.Mutex
+	failed []string
+}
+
+func (r *recorder) Helper() {}
+
+func (r *recorder) Errorf(format string, args ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failed = append(r.failed, fmt.Sprintf(format, args...))
+}
+
+func (r *recorder) Error(args ...any) { r.Errorf("%s", fmt.Sprint(args...)) }
+
+func (r *recorder) Fatalf(format string, args ...any) {
+	r.Errorf(format, args...)
+	runtime.Goexit()
+}
+
+func (r *recorder) Fatal(args ...any) { r.Fatalf("%s", fmt.Sprint(args...)) }
+
+func (r *recorder) failures() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.failed...)
 }
 
 // TestScaffoldSpeaksTheVocabulary: an endpoint written on
@@ -43,9 +110,7 @@ func TestScaffoldSpeaksTheVocabulary(t *testing.T) {
 	h := server.New(server.Options{Bearer: bearer, Vocabulary: authorizer.Vocabulary(), Decider: owners{}})
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	conformance.Run(t, s.URL, bearer,
-		conformance.WithVocabulary(authorizer.Vocabulary()),
-		conformance.WithSubjects(alice, bob))
+	conform(t, s.URL, bearer)
 
 	c, err := authz.NewClient(authz.Options{URL: s.URL, Token: bearer, HTTP: &http.Client{}, Vocabulary: authorizer.Vocabulary()})
 	if err != nil {
@@ -72,9 +137,7 @@ func TestARoutingScaffoldSpeaksTheVocabulary(t *testing.T) {
 	h := server.New(server.Options{Bearer: bearer, Vocabulary: authorizer.Vocabulary(), Decider: owners{model: routed}})
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	conformance.Run(t, s.URL, bearer,
-		conformance.WithVocabulary(authorizer.Vocabulary()),
-		conformance.WithSubjects(alice, bob))
+	conform(t, s.URL, bearer)
 
 	c, err := authz.NewClient(authz.Options{URL: s.URL, Token: bearer, HTTP: &http.Client{}, Vocabulary: authorizer.Vocabulary()})
 	if err != nil {

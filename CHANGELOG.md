@@ -49,6 +49,11 @@ committed: the commit log already holds that.
   it as the shared authorizer contract does: an empty `owners` does not
   narrow by owner. An authorizer that sent `{}` to hide every agent must
   deny the list instead.
+- **The repository's conformance runs hold every list to a decision.**
+  They now pass `conformance.WithPageActions()`, as `docs/authorizer.md`
+  tells an authorizer's author to, so an endpoint that answers a list
+  with a page of its own and no `allow`, which `toposd` cannot read,
+  fails them.
 
 ### Security
 

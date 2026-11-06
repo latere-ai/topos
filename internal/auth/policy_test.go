@@ -159,7 +159,7 @@ func TestAuthorizerConformanceOwnerPolicy(t *testing.T) {
 	const bearer = "conformance-bearer"
 	s := httptest.NewServer(server.New(server.Options{Bearer: bearer, Vocabulary: authorizer.Vocabulary(), Decider: &auth.OwnerPolicy{}}))
 	t.Cleanup(s.Close)
-	conformance.Run(t, s.URL, bearer, conformance.WithVocabulary(authorizer.Vocabulary()), conformance.WithSubjects(alice, bob))
+	conformance.Run(t, s.URL, bearer, conformance.WithVocabulary(authorizer.Vocabulary()), conformance.WithSubjects(alice, bob), conformance.WithPageActions())
 }
 
 func TestNewAuthorizer(t *testing.T) {
