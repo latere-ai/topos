@@ -55,8 +55,6 @@ metadata:
 spec:
   model:
     name: stub-anthropic
-  machine:
-    kind: cella
 YAML
 SESSION=$(curl -sS -X POST http://127.0.0.1:8080/v1/sessions \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -112,13 +110,10 @@ calls read one field each.
    [API guide](api.md#flows) covers the flows, and
    `GET /v1/openapi.yaml` is the reference.
 
-The agent names `machine: {kind: cella}` because of what a server with
-no sandbox service does. An agent that names no machine is
-`kind: host`, which this server refuses at create with
-`machine_unavailable` unless it runs sessions on its own host
-(`TOPOS_HOST_SESSIONS`) or has a Cella to send them to. Naming `cella`
-lets the create through; no sandbox is made until a tool needs one
-([A machine for tool calls](#a-machine-for-tool-calls)).
+The agent names no machine. The server has no sandbox service, and
+the session needs none: a sandbox is made only when a tool needs one
+([A machine for tool calls](#a-machine-for-tool-calls)), and the
+stand-ins never ask for a tool.
 
 The reply sits in the log with the model request that made it. To read
 the whole log, drop the last `sed`; it is one JSON document, with
@@ -244,8 +239,8 @@ get it:
 
 With none of them, a session still runs as long as the model asks for no
 tool; the Lux stand-ins never ask for one. When a model asks for a
-`bash` call on an agent with `machine: {kind: cella}` and no
-`TOPOS_CELLA_URL`, the call does not run. The session logs a
+`bash` call on a server with no `TOPOS_CELLA_URL` and
+`TOPOS_HOST_SESSIONS` off, the call does not run. The session logs a
 `session.error` with the code `machine_unavailable`, then a `tool.result`
 marked as an error:
 

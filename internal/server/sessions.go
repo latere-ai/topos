@@ -696,14 +696,17 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 // sessionMachine is the machine a hosted session of the agent named
 // agent runs on (spec 015), from the agent's spec.machine m. An agent
 // whose machine asks for nothing beyond the default runs on a Cella
-// sandbox of Cella's default image on a server whose runners have Cella
-// and run no session on its own host, since the manifest's host default
-// is for a local run; any other agent runs on the machine it names. A
-// host machine needs TOPOS_HOST_SESSIONS=on, and its roots and read
-// paths name paths of the host itself, which a session on a server never
-// reaches. A device the create names, asked, is the session's machine
-// whatever the agent's is, and needs Cella, through which the computer is
-// reached (spec 080).
+// sandbox of Cella's default image on a server that runs no session on
+// its own host, since the manifest's host default is for a local run;
+// any other agent runs on the machine it names. A server without Cella
+// creates such a session too: its sandbox opens at the first call of a
+// tool that acts on it (spec 048), which answers machine_unavailable
+// there, so a session that only talks runs. A host machine needs
+// TOPOS_HOST_SESSIONS=on, since it opens before the first turn, and its
+// roots and read paths name paths of the host itself, which a session on
+// a server never reaches. A device the create names, asked, is the
+// session's machine whatever the agent's is, and needs Cella, through
+// which the computer is reached (spec 080).
 func (s *Server) sessionMachine(agent string, m v1.Machine, asked *session.Machine) (session.Machine, error) {
 	if asked != nil {
 		if !s.o.Cella {
@@ -711,12 +714,12 @@ func (s *Server) sessionMachine(agent string, m v1.Machine, asked *session.Machi
 		}
 		return *asked, nil
 	}
-	if manifest.DefaultMachine(m) && s.o.Cella && !s.o.HostSessions {
+	if manifest.DefaultMachine(m) && !s.o.HostSessions {
 		return session.Machine{Kind: session.MachineCella, Image: manifest.DefaultImage}, nil
 	}
 	switch {
 	case m.Kind == session.MachineHost && !s.o.HostSessions:
-		return session.Machine{}, refuse(CodeMachineUnavailable, "agent %s runs on machine kind host, and this server runs sessions on its own host only with TOPOS_HOST_SESSIONS=on; an agent that names no machine runs on Cella where TOPOS_CELLA_URL is set", agent)
+		return session.Machine{}, refuse(CodeMachineUnavailable, "agent %s runs on machine kind host, and this server runs sessions on its own host only with TOPOS_HOST_SESSIONS=on; an agent that names no machine runs on Cella", agent)
 	case m.Kind == session.MachineHost && (len(m.Roots) > 0 || len(m.ReadPaths) > 0):
 		return session.Machine{}, refuse(CodeMachineUnavailable, "agent %s names machine.roots or machine.readPaths, paths of the server's own host, which a session on it never reaches", agent)
 	case m.Kind != session.MachineCella && m.Kind != session.MachineHost:

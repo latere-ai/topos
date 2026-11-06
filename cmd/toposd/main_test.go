@@ -855,8 +855,11 @@ func TestSigtermLeavesARunningSessionToTheNextClaim(t *testing.T) {
 }
 
 // TestServeRefusesAHostSessionWithoutTheSwitch: without
-// TOPOS_HOST_SESSIONS=on a session of an agent whose machine is the host
-// is refused machine_unavailable, and nothing runs on the server's host.
+// TOPOS_HOST_SESSIONS=on a session of an agent whose machine is the host,
+// one that names more of it than its kind, is refused
+// machine_unavailable, and nothing runs on the server's host. An agent
+// that names the host kind alone reads as one that names no machine,
+// which runs on Cella (TestAServerWithNoMachineRunsASessionThatNeedsNone).
 func TestServeRefusesAHostSessionWithoutTheSwitch(t *testing.T) {
 	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_RUNNER_CAPACITY": "0"}
 	publicURL, _, stop := startServe(t, vars)
@@ -882,12 +885,64 @@ func TestServeRefusesAHostSessionWithoutTheSwitch(t *testing.T) {
 		}
 		return resp.StatusCode, string(b)
 	}
-	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: local\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: host}\n"
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: local\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: host, egress: [proxy.golang.org]}\n"
 	if code, body := send(http.MethodPut, "/v1/agents/local", manifest); code != http.StatusCreated {
 		t.Fatalf("apply: %d %s", code, body)
 	}
 	if code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"local","message":"Hi."}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, `"machine_unavailable"`) {
 		t.Fatalf("a host session: %d %s", code, body)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestAServerWithNoMachineRunsASessionThatNeedsNone: on a server with no
+// TOPOS_CELLA_URL and host sessions off, a session of an agent that names
+// no machine is created, on Cella's kind, and its turn runs: the call of
+// a tool that acts on the machine answers machine_unavailable as its
+// result with a session.error, the model answers that, and the turn ends
+// idle (specs 009 and 048). The create used to be refused
+// machine_unavailable, so a session that only talked could not start.
+func TestAServerWithNoMachineRunsASessionThatNeedsNone(t *testing.T) {
+	lux := luxstub.New(t)
+	lux.Script("anthropic/claude-haiku-4.5", glob, luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "No machine."}}, StopReason: ir.StopEndTurn}})
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(),
+		"TOPOS_RUNNER_CAPACITY": "1", "TOPOS_MODELS_URL": lux.URL() + "/anthropic", "TOPOS_MODELS_KEY": "model-key"}
+	publicURL, _, stop := startServe(t, vars)
+	send := apiClient(t, publicURL, vars)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: bare\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/bare", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"bare","message":"Look."}`)
+	if code != http.StatusCreated || !strings.Contains(body, `"kind":"cella"`) {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var s struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		_, got := send(http.MethodGet, "/v1/sessions/"+s.ID, "")
+		if strings.Contains(got, `"status":"idle"`) && strings.Contains(got, `"stop_reason":"end_turn"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
+			t.Fatalf("the turn never ended: %s\nevents %s", got, events)
+		}
+	}
+	_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
+	for _, want := range []string{`"type":"session.error"`, `"code":"machine_unavailable"`, `The machine this tool acts on could not be started, so the call did not run: machine_unavailable: TOPOS_CELLA_URL is unset, so this server has no machines`, `"is_error":true`, `"text":"No machine."`} {
+		if !strings.Contains(events, want) {
+			t.Errorf("the log lacks %s: %s", want, events)
+		}
+	}
+	if strings.Contains(events, `"type":"session.machine"`) {
+		t.Errorf("a machine was recorded: %s", events)
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit %d", code)

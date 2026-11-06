@@ -34,6 +34,14 @@ committed: the commit log already holds that.
 - **`make token` prints the token alone.** The build's output goes to
   standard error, so `TOKEN=$(make token)` holds a token a server
   accepts.
+- **A server with no sandbox service creates a session of an agent that
+  names no machine.** With no `TOPOS_CELLA_URL` and `TOPOS_HOST_SESSIONS`
+  off, such a session was refused at create with `machine_unavailable`,
+  although a session that calls no tool needs no machine. It is now
+  created on Cella's kind, as with a Cella, and its first call of a tool
+  that acts on the machine answers `machine_unavailable` as the call's
+  result; the turn goes on. An agent that names more of a `host` machine
+  than its kind is still refused at create.
 
 ## v0.70.0 - 2026-11-05
 

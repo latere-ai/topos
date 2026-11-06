@@ -96,8 +96,10 @@ type Options struct {
 	// refused machine_unavailable.
 	HostSessions bool
 	// Cella is TOPOS_CELLA_URL set: the server's runners create Cella
-	// sandboxes, so a session of an agent that names no machine runs on
-	// one when host sessions are off.
+	// sandboxes, so a device machine is reached through one. A session of
+	// an agent that names no machine records a Cella sandbox when host
+	// sessions are off whether or not this is set; without it, the first
+	// tool call that acts on the sandbox answers machine_unavailable.
 	Cella bool
 	// MessageText is TOPOS_AUTHORIZER_MESSAGE_TEXT, the ceiling on a
 	// message's words reaching the authorizer (spec 063): set, a question

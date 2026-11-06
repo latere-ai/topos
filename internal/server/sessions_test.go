@@ -65,7 +65,9 @@ func TestCreateASession(t *testing.T) {
 			t.Errorf("%s: %d %s, want %s", body, got.status, got.body, code)
 		}
 	}
-	local := strings.Replace(agentYAML("local", "x"), "  machine: {kind: cella}\n", "", 1)
+	// An agent that names no machine runs on Cella; one that asks the host
+	// for more than its default is refused while host sessions are off.
+	local := strings.Replace(agentYAML("local", "x"), "  machine: {kind: cella}\n", "  machine: {kind: host, egress: [proxy.golang.org]}\n", 1)
 	if got := f.do(http.MethodPut, "/v1/agents/local", "alice", local); got.status != http.StatusCreated {
 		t.Fatalf("a host agent: %d %s", got.status, got.body)
 	}
@@ -1150,16 +1152,17 @@ func TestInputNotifiesTheRunners(t *testing.T) {
 	}
 }
 
-// TestHostSessionsBehindTheSwitch: a session of a host agent is refused
-// machine_unavailable unless host sessions are on; with them on it is
-// created on the host, still refused when its agent names roots or read
-// paths, and its deletion reaches the server's clean-up.
+// TestHostSessionsBehindTheSwitch: a session of a host agent that names
+// more of its machine than the kind is refused machine_unavailable unless
+// host sessions are on; with them on it is created on the host, still
+// refused when its agent names roots or read paths, and its deletion
+// reaches the server's clean-up.
 func TestHostSessionsBehindTheSwitch(t *testing.T) {
 	hostAgent := func(name, extra string) string {
 		return strings.Replace(agentYAML(name, "x"), "  machine: {kind: cella}\n", "  machine: {kind: host"+extra+"}\n", 1)
 	}
 	off := newFixture(t)
-	if got := off.do(http.MethodPut, "/v1/agents/local", "alice", hostAgent("local", "")); got.status != http.StatusCreated {
+	if got := off.do(http.MethodPut, "/v1/agents/local", "alice", hostAgent("local", ", egress: [proxy.golang.org]")); got.status != http.StatusCreated {
 		t.Fatalf("a host agent: %d %s", got.status, got.body)
 	}
 	if got := off.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"local"}`); got.code() != CodeMachineUnavailable || !strings.Contains(string(got.body), "machine_unavailable") {
@@ -1194,12 +1197,14 @@ func TestHostSessionsBehindTheSwitch(t *testing.T) {
 	}
 }
 
-// TestAnAgentWithoutAMachineRunsOnCella: on a server that has Cella and
-// runs no session on its own host, a session of an agent that names no
-// machine runs on a Cella sandbox of the default image, and the
-// authorizer is asked about that machine; an agent that names more of a
-// host machine than its kind is still refused. With host sessions on, or
-// without Cella, the manifest's host default stands.
+// TestAnAgentWithoutAMachineRunsOnCella: on a server that runs no
+// session on its own host, a session of an agent that names no machine
+// runs on a Cella sandbox of the default image, and the authorizer is
+// asked about that machine; an agent that names more of a host machine
+// than its kind is still refused. A server without Cella creates the
+// session too, whose first tool call that acts on the sandbox answers
+// machine_unavailable (spec 048). With host sessions on, the manifest's
+// host default stands.
 func TestAnAgentWithoutAMachineRunsOnCella(t *testing.T) {
 	bare := strings.Replace(agentYAML("bare", "x"), "  machine: {kind: cella}\n", "", 1)
 	egress := strings.Replace(agentYAML("egress", "x"), "  machine: {kind: cella}\n", "  machine: {egress: [proxy.golang.org]}\n", 1)
@@ -1214,7 +1219,7 @@ func TestAnAgentWithoutAMachineRunsOnCella(t *testing.T) {
 		"cella, host sessions off":    {true, false, session.MachineCella, manifest.DefaultImage},
 		"cella, host sessions on":     {true, true, session.MachineHost, ""},
 		"no cella, host sessions on":  {false, true, session.MachineHost, ""},
-		"no cella, host sessions off": {false, false, "", ""},
+		"no cella, host sessions off": {false, false, session.MachineCella, manifest.DefaultImage},
 	} {
 		var asked string
 		f := newFixture(t, func(o *Options) { o.Cella, o.HostSessions = c.cella, c.host })
@@ -1230,12 +1235,6 @@ func TestAnAgentWithoutAMachineRunsOnCella(t *testing.T) {
 			}
 		}
 		got := create(f, "bare")
-		if c.kind == "" {
-			if got.code() != CodeMachineUnavailable {
-				t.Fatalf("%s: %d %s", name, got.status, got.body)
-			}
-			continue
-		}
 		var s session.Session
 		got.decode(t, &s)
 		if got.status != http.StatusCreated || s.Machine.Kind != c.kind || s.Machine.Image != c.image || asked != c.kind {
