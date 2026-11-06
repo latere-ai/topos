@@ -5,7 +5,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 
 	"latere.ai/x/topos/machine"
@@ -21,7 +22,7 @@ func walk(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io
 		return fail(stderr, "walk <root>")
 	}
 	var q machine.WalkRequest
-	if err := json.NewDecoder(stdin).Decode(&q); err != nil {
+	if err := json.UnmarshalDecode(jsontext.NewDecoder(stdin), &q); err != nil {
 		return answer(stdout, response{Error: &errorBody{Kind: kindOther, Message: "machine: the walk request: " + err.Error()}})
 	}
 	r, _, err := rooted(args[0], "")

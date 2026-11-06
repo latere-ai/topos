@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"strconv"
 	"strings"
 	"testing"
@@ -165,10 +166,10 @@ func TestNotifyIsOneLineOnceATurn(t *testing.T) {
 	if p.Effect != tools.EffectNone || p.Parallel {
 		t.Fatalf("the properties are %+v", p)
 	}
-	if r := (notifyTool{}).Check(tools.Call{Input: json.RawMessage(`{"title":"x","extra":1}`)}); r == nil || r.Outcome != tools.OutcomeInvalidInput {
+	if r := (notifyTool{}).Check(tools.Call{Input: jsontext.Value(`{"title":"x","extra":1}`)}); r == nil || r.Outcome != tools.OutcomeInvalidInput {
 		t.Fatalf("an unknown field passed: %+v", r)
 	}
-	if res, err := (notifyTool{t: &turn{sh: &shared{}}}).Run(ctx, tools.Call{Input: json.RawMessage(`{}`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
+	if res, err := (notifyTool{t: &turn{sh: &shared{}}}).Run(ctx, tools.Call{Input: jsontext.Value(`{}`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
 		t.Fatalf("a call with no title ran: %+v, %v", res, err)
 	}
 }

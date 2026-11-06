@@ -5,7 +5,7 @@ package hosted
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -551,7 +551,7 @@ func TestASandboxClonesThroughAConnection(t *testing.T) {
 
 // toolCall is a reply that calls a tool by its name with args.
 func toolCall(id, name, args string) luxstub.Reply {
-	return luxstub.Reply{Response: ir.Response{Model: haiku, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: json.RawMessage(args)}}}, StopReason: ir.StopToolUse}}
+	return luxstub.Reply{Response: ir.Response{Model: haiku, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: jsontext.Value(args)}}}, StopReason: ir.StopToolUse}}
 }
 
 // TestMCPConnectionsAreOffered: a session's mcp connection is listed at
@@ -565,13 +565,13 @@ func toolCall(id, name, args string) luxstub.Reply {
 // listing records it again and offers none of its tools (spec 069).
 func TestMCPConnectionsAreOffered(t *testing.T) {
 	stub := mcpstub.New(t, mcpstub.Options{Admit: func(b string) bool { return strings.HasPrefix(b, "tracker-core-session-") }, Tools: []mcpstub.Tool{
-		{Name: "list_issues", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: func(json.RawMessage) any {
+		{Name: "list_issues", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: func(jsontext.Value) any {
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": "#1 The build is broken"}}}
 		}},
-		{Name: "create_issue", Stream: true, InputSchema: json.RawMessage(`{"type":"object","properties":{"title":{"type":"string"}}}`), Answer: func(json.RawMessage) any {
+		{Name: "create_issue", Stream: true, InputSchema: jsontext.Value(`{"type":"object","properties":{"title":{"type":"string"}}}`), Answer: func(jsontext.Value) any {
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": "Opened #2"}}}
 		}},
-		{Name: "get_private", InputSchema: json.RawMessage(`{"type":"object"}`), NotConnected: "scope_insufficient"},
+		{Name: "get_private", InputSchema: jsontext.Value(`{"type":"object"}`), NotConnected: "scope_insufficient"},
 	}})
 	tracker := session.Connection{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "tracker-core", Address: stub.URL(), ReadOnly: []string{"list_*", "get_*"}}
 	c := newCloud(t, func(s *session.Session) { s.Connections = []session.Connection{tracker} })
@@ -583,7 +583,7 @@ func TestMCPConnectionsAreOffered(t *testing.T) {
 		t.Fatalf("the read tool answered %q", got)
 	}
 	reqs := c.lux.Requests()
-	if body := string(reqs[0].Body); !strings.Contains(body, "mcp__tracker__create_issue") || !strings.Contains(body, "mcp__tracker__\\u003ctool\\u003e") {
+	if body := string(reqs[0].Body); !strings.Contains(body, "mcp__tracker__create_issue") || !strings.Contains(body, "mcp__tracker__<tool>") {
 		t.Fatal("the request neither offers the server's tools nor names them in the block")
 	}
 	var use session.AgentToolUse
@@ -630,16 +630,16 @@ func TestMCPConnectionsAreOffered(t *testing.T) {
 // connection service, while the connection's other tools run (spec 069).
 func TestAHiddenToolIsNeverOffered(t *testing.T) {
 	var called sync.Map
-	answer := func(name string) func(json.RawMessage) any {
-		return func(json.RawMessage) any {
+	answer := func(name string) func(jsontext.Value) any {
+		return func(jsontext.Value) any {
 			called.Store(name, true)
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": name + " answered"}}}
 		}
 	}
 	stub := mcpstub.New(t, mcpstub.Options{Admit: func(b string) bool { return strings.HasPrefix(b, "tracker-core-session-") }, Tools: []mcpstub.Tool{
-		{Name: "list_issues", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: answer("list_issues")},
-		{Name: "list_secrets", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: answer("list_secrets")},
-		{Name: "delete_issue", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: answer("delete_issue")},
+		{Name: "list_issues", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: answer("list_issues")},
+		{Name: "list_secrets", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: answer("list_secrets")},
+		{Name: "delete_issue", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: answer("delete_issue")},
 	}})
 	tracker := session.Connection{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "tracker-core", Address: stub.URL(),
 		ReadOnly: []string{"list_*"}, Hidden: []string{"delete_*", "list_secrets"}}

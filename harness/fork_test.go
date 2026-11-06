@@ -6,7 +6,8 @@ package harness
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -177,9 +178,9 @@ func TestAForksPrefixIsItsParents(t *testing.T) {
 		t.Fatalf("%d requests, want the parent's two and the fork's one", len(reqs))
 	}
 	type wire struct {
-		System   json.RawMessage   `json:"system"`
-		Tools    json.RawMessage   `json:"tools"`
-		Messages []json.RawMessage `json:"messages"`
+		System   jsontext.Value   `json:"system"`
+		Tools    jsontext.Value   `json:"tools"`
+		Messages []jsontext.Value `json:"messages"`
 	}
 	var parent, fork wire
 	if err := json.Unmarshal(reqs[1].Body, &parent); err != nil {

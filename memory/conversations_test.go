@@ -4,7 +4,7 @@
 package memory
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +61,7 @@ func TestAConversationsFile(t *testing.T) {
 		}
 	}
 	redacted := event(t, session.TypeUserMessage, session.UserMessage{Content: said("a secret")}, started, "")
-	redacted.Payload = json.RawMessage(`{"tombstone":true}`)
+	redacted.Payload = jsontext.Value(`{"tombstone":true}`)
 	tool := lux.Block{Type: ir.BlockToolUse}
 	evs := []session.Event{
 		event(t, session.TypeUserMessage, session.UserMessage{Content: said("What time is **high tide** at Kiel?")}, started, ""),

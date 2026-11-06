@@ -60,7 +60,7 @@ type ObjectMeta struct {
 // provider has none.
 type Status struct {
 	ID        string    `json:"id,omitempty"`
-	Version   int       `json:"version,omitempty"`
+	Version   int       `json:"version,omitzero"`
 	Digest    string    `json:"digest,omitempty"`
 	CreatedAt time.Time `json:"createdAt,omitzero"`
 	Identity  string    `json:"identity,omitempty"`
@@ -68,7 +68,7 @@ type Status struct {
 	// the agent's identity was created: a person or an organization. It
 	// is empty on an installation with no identity provider, where the
 	// applier owns the agent.
-	Owner *Owner `json:"owner,omitempty"`
+	Owner *Owner `json:"owner,omitzero"`
 	// ArchivedAt is when the object was archived; a server writes it
 	// when it answers, and a stored version never carries it.
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
@@ -79,18 +79,18 @@ type Status struct {
 	LastFiredAt   *time.Time     `json:"lastFiredAt,omitempty"`
 	LastSessionID string         `json:"lastSessionId,omitempty"`
 	NextFireAt    *time.Time     `json:"nextFireAt,omitempty"`
-	Counts        *TriggerCounts `json:"counts,omitempty"`
+	Counts        *TriggerCounts `json:"counts,omitzero"`
 	// Origin is how a Trigger came to be when a session's call made it
 	// (spec 086), which the server writes and keeps across later applies;
 	// nil for a trigger a person or a program applied at the API.
-	Origin *TriggerOrigin `json:"origin,omitempty"`
+	Origin *TriggerOrigin `json:"origin,omitzero"`
 	// Paused is why and by whom a suspended Trigger was paused (spec 086),
 	// which the server writes when an apply suspends it, keeps while it
 	// stays suspended and clears when it resumes; nil while it runs.
-	Paused *TriggerPause `json:"paused,omitempty"`
+	Paused *TriggerPause `json:"paused,omitzero"`
 	// Spend is a Trigger's week as the server last counted it (spec 087),
 	// which it writes when it answers; nil before a firing counted it.
-	Spend *TriggerSpend `json:"spend,omitempty"`
+	Spend *TriggerSpend `json:"spend,omitzero"`
 }
 
 // TriggerPause is the pause of a suspended Trigger (spec 086).
@@ -165,16 +165,16 @@ type TriggerSpend struct {
 	// the last 7 days.
 	SpentUSDMicro int64 `json:"spentUsdMicro"`
 	// PerWeekUSDMicro is the trigger's allowance, nil for none.
-	PerWeekUSDMicro *int64 `json:"perWeekUsdMicro,omitempty"`
+	PerWeekUSDMicro *int64 `json:"perWeekUsdMicro,omitzero"`
 	// PerLookUSDMicro is the mean cost of the window's latest
 	// trigger.PaceLooks looks that ended; nil while none has.
-	PerLookUSDMicro *int64 `json:"perLookUsdMicro,omitempty"`
+	PerLookUSDMicro *int64 `json:"perLookUsdMicro,omitzero"`
 	// ExpectedLooks are the looks expected from the firing to the window's
 	// end, the firing's own included.
 	ExpectedLooks int `json:"expectedLooks"`
 	// ProjectedUSDMicro is SpentUSDMicro plus PerLookUSDMicro times
 	// ExpectedLooks; nil with PerLookUSDMicro.
-	ProjectedUSDMicro *int64 `json:"projectedUsdMicro,omitempty"`
+	ProjectedUSDMicro *int64 `json:"projectedUsdMicro,omitzero"`
 }
 
 // Owner is an agent's owner: Type is "user" or "organization".

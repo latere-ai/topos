@@ -23,7 +23,7 @@ func (r Resolved) Bundle() ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	write := func(a *v1.Agent) error {
-		b, err := session.Marshal(a)
+		b, err := session.MarshalDigested(a)
 		if err != nil {
 			return fmt.Errorf("manifest: render %s: %w", a.Metadata.Name, err)
 		}
@@ -69,7 +69,7 @@ func ReadBundle(b []byte) (Resolved, error) {
 		if len(problems) > 0 {
 			return Resolved{}, newError(CodeInvalidManifest, len(trees), problems)
 		}
-		spec, err := session.Marshal(ob.agent.Spec)
+		spec, err := session.MarshalDigested(ob.agent.Spec)
 		if err != nil {
 			return Resolved{}, fmt.Errorf("manifest: render bundle document %d: %w", i+1, err)
 		}

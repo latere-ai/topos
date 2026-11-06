@@ -5,7 +5,7 @@ package manifest
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -64,7 +64,7 @@ type Resolved struct {
 	Doc int
 	// Spec is the resolved spec in canonical JSON: fields in declaration
 	// order, fixed defaults written out, references pinned.
-	Spec json.RawMessage
+	Spec jsontext.Value
 	// Digest is the sha256 of Spec, as status.digest.
 	Digest string
 	// One of these is set, by Kind, with its status written.
@@ -336,7 +336,7 @@ func (r *resolver) object(ctx context.Context, ob *object) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, err
 	}
-	spec, err := session.Marshal(ob.spec())
+	spec, err := session.MarshalDigested(ob.spec())
 	if err != nil {
 		return Resolved{}, fmt.Errorf("manifest: render the spec of %s %s: %w", ob.kind, ob.name, err)
 	}

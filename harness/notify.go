@@ -4,9 +4,9 @@
 package harness
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,13 +15,14 @@ import (
 	"latere.ai/x/pkg/sanitize"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
 // notifySchema is the notify tool's input, its bound read from its
 // constant.
-var notifySchema = json.RawMessage(fmt.Sprintf(`{
+var notifySchema = jsontext.Value(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "title": {"type": "string", "maxLength": %d, "description": "One line the person reads: what you found."}
@@ -45,13 +46,11 @@ func (notifyTool) Properties() tools.Properties { return tools.Properties{Effect
 
 // noticeTitle reads a call's title and refuses one that is empty, past
 // MaxNoticeTitle or more than one line.
-func noticeTitle(raw json.RawMessage) (string, error) {
+func noticeTitle(raw jsontext.Value) (string, error) {
 	var in struct {
 		Title string `json:"title"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
+	if err := json.Unmarshal(raw, &in, models.FromProvider, json.RejectUnknownMembers(true)); err != nil {
 		return "", err
 	}
 	title := strings.TrimSpace(in.Title)

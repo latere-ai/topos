@@ -5,7 +5,8 @@ package main
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,12 +34,12 @@ var attachedPDF = regexp.MustCompile(`attachments/[A-Za-z0-9_]+/report\.pdf`)
 // path taken from the request it answers.
 func readsTheReport(id string) luxstub.Reply {
 	return luxstub.Reply{
-		Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "read", Args: json.RawMessage(`{}`)}}}, StopReason: ir.StopToolUse},
+		Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "read", Args: jsontext.Value(`{}`)}}}, StopReason: ir.StopToolUse},
 		Respond: func(r *ir.Request, resp *ir.Response) {
 			for _, m := range r.Messages {
 				for _, b := range m.Blocks {
 					if p := attachedPDF.FindString(b.Text); p != "" {
-						resp.Blocks[0].ToolUse.Args = json.RawMessage(fmt.Sprintf(`{"path":%q}`, p))
+						resp.Blocks[0].ToolUse.Args = jsontext.Value(fmt.Sprintf(`{"path":%q}`, p))
 					}
 				}
 			}
@@ -70,7 +71,7 @@ func TestAPDFIsReadThroughTheParsingService(t *testing.T) {
 					URL string `json:"url"`
 				} `json:"source"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			if err := json.UnmarshalRead(r.Body, &in); err != nil {
 				t.Errorf("a submit: %v", err)
 			}
 			resp, err := http.Get(in.Source.URL)
@@ -97,7 +98,7 @@ func TestAPDFIsReadThroughTheParsingService(t *testing.T) {
 			}
 			return
 		}
-		if err := json.NewEncoder(w).Encode(out); err != nil {
+		if err := json.MarshalWrite(w, out); err != nil {
 			t.Error(err)
 		}
 	}))

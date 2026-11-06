@@ -5,7 +5,7 @@ package authorizer
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -41,7 +41,7 @@ const MaxInitiatorInstructions = 8 << 10
 type Network struct {
 	Mode  string   `json:"mode"`
 	Hosts []string `json:"hosts,omitempty"`
-	Ask   bool     `json:"ask,omitempty"`
+	Ask   bool     `json:"ask,omitzero"`
 }
 
 // Thresholds are the progressive permission mode's score cut-offs
@@ -90,7 +90,7 @@ type Limits struct {
 	MaxAge      time.Duration
 	// Scope is the session's starting scope, one grant per entry in the
 	// grammar of an agent's permissions (spec 018).
-	Scope []json.RawMessage
+	Scope []jsontext.Value
 	// Retention is how long the session is kept after it ends; zero keeps
 	// it until it is deleted.
 	Retention time.Duration
@@ -174,7 +174,7 @@ type WireFolder struct {
 type WireRepository struct {
 	URL string               `json:"url"`
 	Ref string               `json:"ref,omitempty"`
-	App *session.ResourceApp `json:"app,omitempty"`
+	App *session.ResourceApp `json:"app,omitzero"`
 }
 
 // WireLimits is the limits object as an answer carries it, so an
@@ -183,26 +183,26 @@ type WireRepository struct {
 type WireLimits struct {
 	AlwaysConfirm  []string               `json:"always_confirm,omitempty"`
 	AlwaysAllow    []string               `json:"always_allow,omitempty"`
-	Thresholds     *Thresholds            `json:"thresholds,omitempty"`
-	BudgetUSDMicro *int64                 `json:"budget_usd_micro,omitempty"`
+	Thresholds     *Thresholds            `json:"thresholds,omitzero"`
+	BudgetUSDMicro *int64                 `json:"budget_usd_micro,omitzero"`
 	TurnTimeout    string                 `json:"turn_timeout,omitempty"`
 	MaxAge         string                 `json:"max_age,omitempty"`
-	Scope          []json.RawMessage      `json:"scope,omitempty"`
+	Scope          []jsontext.Value       `json:"scope,omitempty"`
 	Retention      string                 `json:"retention,omitempty"`
-	Owner          *Owner                 `json:"owner,omitempty"`
+	Owner          *Owner                 `json:"owner,omitzero"`
 	Model          string                 `json:"model,omitempty"`
-	Reasoning      *string                `json:"reasoning,omitempty"`
-	Network        *Network               `json:"network,omitempty"`
+	Reasoning      *string                `json:"reasoning,omitzero"`
+	Network        *Network               `json:"network,omitzero"`
 	Instructions   string                 `json:"instructions,omitempty"`
 	Repositories   []WireRepository       `json:"repositories,omitempty"`
 	Context        []session.ContextPart  `json:"context,omitempty"`
 	Route          string                 `json:"route,omitempty"`
-	MessageText    bool                   `json:"message_text,omitempty"`
+	MessageText    bool                   `json:"message_text,omitzero"`
 	Connections    []session.Connection   `json:"connections,omitempty"`
-	Folder         *WireFolder            `json:"folder,omitempty"`
+	Folder         *WireFolder            `json:"folder,omitzero"`
 	Memory         []session.MemoryFolder `json:"memory,omitempty"`
-	Boundary       *session.Boundary      `json:"boundary,omitempty"`
-	Denials        *WireDenials           `json:"denials,omitempty"`
+	Boundary       *session.Boundary      `json:"boundary,omitzero"`
+	Denials        *WireDenials           `json:"denials,omitzero"`
 }
 
 // WireDenials are an allow's limits of a session's refusals (spec 101):
@@ -210,8 +210,8 @@ type WireLimits struct {
 // left out keeps the installation's; an authorizer makes a limit stricter
 // and never turns one off.
 type WireDenials struct {
-	Consecutive *int `json:"consecutive,omitempty"`
-	Total       *int `json:"total,omitempty"`
+	Consecutive *int `json:"consecutive,omitzero"`
+	Total       *int `json:"total,omitzero"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -298,16 +298,16 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 	if len(w.Instructions) > MaxInitiatorInstructions {
 		return Limits{}, fmt.Errorf("limits.instructions is %d bytes, more than %d", len(w.Instructions), MaxInitiatorInstructions)
 	}
-	// encoding/json replaces invalid UTF-8 and a lone surrogate escape as
-	// it decodes, so the text is held to UTF-8 as the answer wrote it.
+	// A lenient decoder replaces invalid UTF-8 and a lone surrogate escape
+	// as it decodes, so the text is held to UTF-8 as the answer wrote it.
 	var raw struct {
-		Instructions json.RawMessage `json:"instructions"`
+		Instructions jsontext.Value `json:"instructions"`
 		Context      []struct {
-			Title json.RawMessage `json:"title"`
-			Text  json.RawMessage `json:"text"`
+			Title jsontext.Value `json:"title"`
+			Text  jsontext.Value `json:"text"`
 		} `json:"context"`
 		Connections []struct {
-			Title json.RawMessage `json:"title"`
+			Title jsontext.Value `json:"title"`
 		} `json:"connections"`
 	}
 	if err := d.DecodeLimits(&raw); err != nil {
@@ -434,7 +434,7 @@ func attachedRepositories(ws []WireRepository) ([]session.Resource, error) {
 // validString reports whether a JSON string member, as raw bytes, is
 // valid UTF-8 whose every \u escape is a character or a surrogate pair.
 // An absent or null member is valid.
-func validString(raw json.RawMessage) bool {
+func validString(raw jsontext.Value) bool {
 	if !utf8.Valid(raw) {
 		return false
 	}

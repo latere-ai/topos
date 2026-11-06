@@ -5,7 +5,8 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,7 +116,7 @@ func (f *fixture) systemText(n int) string {
 }
 
 func toolUse(id, name, args string) ir.Block {
-	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: json.RawMessage(args)}}
+	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: jsontext.Value(args)}}
 }
 
 // TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt: a turn of an

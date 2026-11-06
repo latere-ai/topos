@@ -4,7 +4,8 @@
 package server
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"go/ast"
 	"reflect"
@@ -242,7 +243,7 @@ var fieldNotes = map[reflect.Type]map[string]string{
 	},
 }
 
-// rawFields are the members a type holds as json.RawMessage, which its
+// rawFields are the members a type holds as jsontext.Value, which its
 // handler decodes on its own, each with the type it decodes the member
 // as, so the document describes the member by that type's schema.
 var rawFields = map[reflect.Type]map[string]reflect.Type{
@@ -359,7 +360,7 @@ var written = map[reflect.Type]yaml.MapSlice{
 
 var (
 	typeTime = typeOf[time.Time]()
-	typeRaw  = typeOf[json.RawMessage]()
+	typeRaw  = typeOf[jsontext.Value]()
 	typeJSON = typeOf[json.Marshaler]()
 )
 

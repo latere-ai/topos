@@ -5,7 +5,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -522,7 +523,7 @@ func TestContinueHoldsWhileAPersonIsAsked(t *testing.T) {
 	first := f.fired("alice", "triage", f.envelope("1", "issue.opened", "o/r#1", "Crash"), store.OutcomeStarted)
 	ask := func(id, call string) {
 		f.runnerAppends(id, f.status(session.StatusRunning, ""),
-			f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: call, Name: "bash", Input: json.RawMessage(`{"command":"rm -rf build"}`), Verdict: "ask"}),
+			f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: call, Name: "bash", Input: jsontext.Value(`{"command":"rm -rf build"}`), Verdict: "ask"}),
 			f.status(session.StatusIdle, session.StopToolConfirmation))
 	}
 	ask(first.SessionID, "t1")
@@ -560,7 +561,7 @@ func TestContinueHoldsWhileAPersonIsAsked(t *testing.T) {
 	// Asked again, and ended before the answer: the held firing starts
 	// the key's next session.
 	f.runnerAppends(first.SessionID,
-		f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "t2", Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"}),
+		f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "t2", Name: "bash", Input: jsontext.Value(`{}`), Verdict: "ask"}),
 		f.status(session.StatusIdle, session.StopToolConfirmation))
 	orphan := f.fired("alice", "triage", f.envelope("4", "issue.edited", "o/r#1", "After the end"), store.OutcomeHeld)
 	if a := f.do(http.MethodPost, "/v1/sessions/"+first.SessionID+"/end", "alice", `{"reason":"canceled"}`); a.status != http.StatusOK {
@@ -813,13 +814,13 @@ func TestAFiringNamesTheKeyThatFiredIt(t *testing.T) {
 		if !ok {
 			return ""
 		}
-		raw, err := json.Marshal(v)
+		raw, err := json.Marshal(v, json.Deterministic(true))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return string(raw)
 	}
-	key, err := json.Marshal(map[string]any{"token_use": authz.TokenUsePAT, "authorization_details": fireOnly})
+	key, err := json.Marshal(map[string]any{"token_use": authz.TokenUsePAT, "authorization_details": fireOnly}, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -832,7 +833,7 @@ func TestAFiringNamesTheKeyThatFiredIt(t *testing.T) {
 	}
 	ask := func(id, call string) {
 		f.runnerAppends(id, f.status(session.StatusRunning, ""),
-			f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: call, Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"}),
+			f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: call, Name: "bash", Input: jsontext.Value(`{}`), Verdict: "ask"}),
 			f.status(session.StatusIdle, session.StopToolConfirmation))
 	}
 	end := func(id string) {
@@ -1066,7 +1067,7 @@ func TestTheTriggerQuestionsNameTheTrigger(t *testing.T) {
 	f.get("alice", "triage")
 	f.applyTrigger("alice", "nightly", "schedule: '@daily', session: {message: x}")
 	on := func(r authz.Resource) string {
-		b, err := json.Marshal(r.Fields["on"])
+		b, err := json.Marshal(r.Fields["on"], json.Deterministic(true))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1144,9 +1145,9 @@ func TestTheActorStartsAndSendsAsTheRouteDoes(t *testing.T) {
 		errors.New("the disk is gone"):                             {CodeInternal, nil, true},
 		// A deny for a limit that resets names when (spec 087); limits that
 		// name no time, or do not read as one, name none.
-		&auth.Error{Code: auth.CodeForbidden, Reason: "share_spent", Limits: json.RawMessage(`{"resets_at":"2026-10-30T10:00:00+02:00"}`)}: {"share_spent", &resets, false},
-		&auth.Error{Code: auth.CodeForbidden, Reason: "capped", Limits: json.RawMessage(`{"max":3}`)}:                                      {"capped", nil, false},
-		&auth.Error{Code: auth.CodeForbidden, Reason: "odd", Limits: json.RawMessage(`{"resets_at":"soon"}`)}:                              {"odd", nil, false},
+		&auth.Error{Code: auth.CodeForbidden, Reason: "share_spent", Limits: jsontext.Value(`{"resets_at":"2026-10-30T10:00:00+02:00"}`)}: {"share_spent", &resets, false},
+		&auth.Error{Code: auth.CodeForbidden, Reason: "capped", Limits: jsontext.Value(`{"max":3}`)}:                                      {"capped", nil, false},
+		&auth.Error{Code: auth.CodeForbidden, Reason: "odd", Limits: jsontext.Value(`{"resets_at":"soon"}`)}:                              {"odd", nil, false},
 	} {
 		reason, until, transient := a.Refusal(err)
 		if reason != want.reason || transient != want.transient || (until == nil) != (want.until == nil) || until != nil && !until.Equal(*want.until) {

@@ -5,7 +5,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"net/http"
 	"os"
@@ -59,7 +59,7 @@ func newIdentityFixture(t *testing.T) *identityFixture {
 		if org, _ := req.Claims["org_id"].(string); org == "acme" {
 			d := authz.Decision{Allow: true}
 			if req.Action == authorizer.ActionAgentCreate {
-				d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+				d.Limits = jsontext.Value(`{"owner":{"type":"organization","id":"acme"}}`)
 			}
 			return d, nil
 		}
@@ -233,7 +233,7 @@ func TestAnAllowNamingAnotherOwnerRefuses(t *testing.T) {
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d := authz.Decision{Allow: true}
 		if req.Action == authorizer.ActionAgentCreate {
-			d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+			d.Limits = jsontext.Value(`{"owner":{"type":"organization","id":"acme"}}`)
 		}
 		return d, nil
 	}

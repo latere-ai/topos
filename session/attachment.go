@@ -34,7 +34,7 @@ type Attachment struct {
 	Path      string           `json:"path"`
 	Ref       string           `json:"ref,omitempty"`
 	Source    AttachmentSource `json:"source,omitzero"`
-	Inline    bool             `json:"inline,omitempty"`
+	Inline    bool             `json:"inline,omitzero"`
 }
 
 // OwnerMe is the owner segment of a source that names its sender's own
@@ -49,7 +49,7 @@ const OwnerMe = "me"
 type AttachmentSource struct {
 	Owner   string `json:"owner"`
 	Path    string `json:"path"`
-	Version int    `json:"version,omitempty"`
+	Version int    `json:"version,omitzero"`
 }
 
 // The bounds of the text a model reads of a person's message's files in

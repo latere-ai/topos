@@ -4,19 +4,17 @@
 package harness
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
-	"errors"
+	"encoding/json/v2"
 	"fmt"
-	"io"
 	"slices"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -92,7 +90,7 @@ func (r *repeats) answered(id string, res tools.Result) (madeCall, int, error) {
 		delete(r.errors, c.identity)
 		return c, 0, nil
 	}
-	content, err := json.Marshal(res.Content)
+	content, err := json.Marshal(res.Content, models.ToProvider)
 	if err != nil {
 		return c, 0, fmt.Errorf("harness: encode the answer of %s: %w", id, err)
 	}
@@ -113,16 +111,11 @@ func (r *repeats) answered(id string, res tools.Result) (madeCall, int, error) {
 // order is the same call. Input that is not one JSON value, as the text
 // of a call whose arguments broke off, is compared as it was sent.
 func canonicalInput(input []byte) []byte {
-	dec := json.NewDecoder(bytes.NewReader(input))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
+	v, err := tools.DecodeTree(input)
+	if err != nil {
 		return input
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return input
-	}
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, models.ToProvider)
 	if err != nil {
 		return input
 	}

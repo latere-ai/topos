@@ -5,7 +5,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"slices"
 	"strings"
@@ -60,7 +61,7 @@ func TestHistoryRefusesInvalidInput(t *testing.T) {
 	for _, input := range []string{
 		`{"from":0}`, `{"to":-3}`, `{"from":"1"}`, `{"from":1.5}`, `{"query":""}`, `{"tool_use_id":""}`, `{"depth":1}`,
 	} {
-		if _, r := reg.Validate(NameHistory, json.RawMessage(input)); r == nil || r.Outcome != OutcomeInvalidInput {
+		if _, r := reg.Validate(NameHistory, jsontext.Value(input)); r == nil || r.Outcome != OutcomeInvalidInput {
 			t.Errorf("the schema took %s", input)
 		}
 	}
@@ -75,10 +76,10 @@ func TestHistoryRefusesInvalidInput(t *testing.T) {
 		`{"from":-1}`:                           "/from: expected integer, got number -1",
 		`{"tool_use_id":["toolu_1","toolu_2"]}`: "/tool_use_id: expected string, got array",
 	} {
-		if _, r := reg.Validate(NameHistory, json.RawMessage(input)); r != nil && !strings.Contains(input, "-1") && !strings.Contains(input, "[") {
+		if _, r := reg.Validate(NameHistory, jsontext.Value(input)); r != nil && !strings.Contains(input, "-1") && !strings.Contains(input, "[") {
 			t.Errorf("the schema refused %s: %+v", input, r)
 		}
-		res, err := tool.Run(t.Context(), Call{ID: "toolu_h", Input: json.RawMessage(input)})
+		res, err := tool.Run(t.Context(), Call{ID: "toolu_h", Input: jsontext.Value(input)})
 		want := prompts.Render(prompts.RegistryInvalidInput, prompts.Data{"Tool": NameHistory, "Problems": problem})
 		if err != nil || res.Outcome != OutcomeInvalidInput || res.Content[0].Text != want {
 			t.Errorf("%s: %+v, %v; want %q", input, res, err, want)
@@ -104,7 +105,7 @@ func TestHistoryHandsTheReadToItsReader(t *testing.T) {
 		return long, nil
 	})
 	for _, input := range []string{``, `{}`, `{"from":3}`, `{"from":3,"to":3}`, `{"to":9}`, `{"tool_use_id":" toolu_1 "}`, `{"query":" ECONNREFUSED ","from":2}`} {
-		res, err := tool.Run(t.Context(), Call{ID: "toolu_h", Input: json.RawMessage(input)})
+		res, err := tool.Run(t.Context(), Call{ID: "toolu_h", Input: jsontext.Value(input)})
 		if err != nil || res.Outcome != OutcomeOK || res.Content[0].Text != long || res.Spill != nil {
 			t.Fatalf("%s: %v, %v", input, res.Outcome, err)
 		}
@@ -114,7 +115,7 @@ func TestHistoryHandsTheReadToItsReader(t *testing.T) {
 		t.Fatalf("reads %+v", got)
 	}
 	failing := History(func(context.Context, Call, HistoryRead) (string, error) { return "", errors.New("the log is gone") })
-	if _, err := failing.Run(t.Context(), Call{ID: "toolu_h", Input: json.RawMessage(`{}`)}); err == nil {
+	if _, err := failing.Run(t.Context(), Call{ID: "toolu_h", Input: jsontext.Value(`{}`)}); err == nil {
 		t.Fatal("a reader's failure became a result")
 	}
 	b, err := json.Marshal(HistoryRead{From: 181, To: 400})

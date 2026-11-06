@@ -13,7 +13,8 @@ package luxstub
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -313,7 +314,7 @@ func (s *Server) discovery(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	// A failed write means the client is gone; the stub has nothing left
 	// to answer.
-	if err := json.NewEncoder(w).Encode(map[string]any{"name": "lux", "doors": doors}); err != nil {
+	if err := json.MarshalWrite(w, map[string]any{"name": "lux", "doors": doors}, json.Deterministic(true)); err != nil {
 		return
 	}
 }
@@ -427,7 +428,7 @@ func native(w io.Writer, d ir.Dialect, resp ir.Response, ev ir.Event) (bool, err
 
 // writeFrame writes one SSE frame named by its type member.
 func writeFrame(w io.Writer, f map[string]any) error {
-	b, err := json.Marshal(f)
+	b, err := json.Marshal(f, json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("luxstub: encode a %s frame: %w", f["type"], err)
 	}
@@ -439,7 +440,7 @@ func writeFrame(w io.Writer, f map[string]any) error {
 // streams one: the item added with an empty summary, each summary part
 // as a delta, and the item done as raw holds it, its encrypted content
 // included.
-func writeReasoning(w io.Writer, index int, raw json.RawMessage) error {
+func writeReasoning(w io.Writer, index int, raw jsontext.Value) error {
 	var item struct {
 		ID      string `json:"id"`
 		Summary []struct {

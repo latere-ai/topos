@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -58,8 +59,8 @@ func TestTheAgentAndSendMessageTools(t *testing.T) {
 	ctx := t.Context()
 	inputs := func(d ir.Tool) ([]string, []string, error) {
 		var schema struct {
-			Properties map[string]json.RawMessage `json:"properties"`
-			Required   []string                   `json:"required"`
+			Properties map[string]jsontext.Value `json:"properties"`
+			Required   []string                  `json:"required"`
 		}
 		if err := json.Unmarshal(d.InputSchema, &schema); err != nil {
 			return nil, nil, err
@@ -200,7 +201,7 @@ func TestACallRecordedUnderAnOldNameResumes(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.send(ctx, "Go.")
-	input := json.RawMessage(`{"agent":"reviewer","task":"t"}`)
+	input := jsontext.Value(`{"agent":"reviewer","task":"t"}`)
 	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: ToolSpawn, Args: input}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
@@ -241,12 +242,12 @@ func TestAPatternOfAnOldNameMatchesTheRenamedTool(t *testing.T) {
 	props := tools.Properties{Parallel: true, Effect: tools.EffectNone}
 	for _, c := range []struct{ pattern, call string }{{ToolSpawn, ToolAgent}, {ToolMessage, ToolSendMessage}, {ToolAgent, ToolAgent}} {
 		p := Policy{Mode: ModeConfirm, AlwaysConfirm: []string{c.pattern}}
-		if d := p.Decide(c.call, props, json.RawMessage(`{}`), session.Risk{}, "", nil); d.Verdict != VerdictAsk {
+		if d := p.Decide(c.call, props, jsontext.Value(`{}`), session.Risk{}, "", nil); d.Verdict != VerdictAsk {
 			t.Errorf("always_confirm %s decided a call of %s %s, want ask", c.pattern, c.call, d.Verdict)
 		}
 	}
 	p := Policy{Mode: ModeConfirm, AlwaysConfirm: []string{ToolSpawn}}
-	if d := p.Decide(ToolSendMessage, props, json.RawMessage(`{}`), session.Risk{}, "", nil); d.Verdict != VerdictAllow {
+	if d := p.Decide(ToolSendMessage, props, jsontext.Value(`{}`), session.Risk{}, "", nil); d.Verdict != VerdictAllow {
 		t.Errorf("always_confirm spawn decided a call of send_message %s", d.Verdict)
 	}
 }

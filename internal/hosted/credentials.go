@@ -5,7 +5,7 @@ package hosted
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -289,7 +289,7 @@ func (s *sandboxSecret) apply(ctx context.Context, c *client.Client, cred runner
 			Inject: cellav1.SecretInject{Header: cellav1.DefaultInjectHeader, Scheme: cellav1.SchemeBearer},
 			Value:  cred.Value,
 		},
-	})
+	}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

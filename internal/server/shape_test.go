@@ -5,7 +5,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"os"
 	"slices"
@@ -116,7 +117,7 @@ func (f *fixture) toolTurn(id string, n int, thread string) {
 	}{
 		{session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}},
 		{session.TypeModelRequest, session.ModelRequest{Model: haiku, Outcome: "ok"}},
-		{session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_1", Name: "read", Input: json.RawMessage(`{}`), Verdict: "allow"}},
+		{session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_1", Name: "read", Input: jsontext.Value(`{}`), Verdict: "allow"}},
 		{session.TypeModelRequest, session.ModelRequest{Model: haiku, Outcome: "ok"}},
 		{session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopEndTurn}},
 	} {
@@ -154,7 +155,7 @@ func TestASendTellsTheShapeOfItsMessage(t *testing.T) {
 		t.Fatalf("send: %d %s", a.status, a.body)
 	}
 	asked := r.last(t, authorizer.ActionSessionSend)
-	got, _ := json.Marshal(shapeFields(t, asked))
+	got, _ := json.Marshal(shapeFields(t, asked), json.Deterministic(true))
 	chars := len([]rune(text)) + len([]rune("and https://x.y"))
 	if want := `{"attachments":3,"links":3,"message_chars":` + strconv.Itoa(chars) + `,"tools_last_turn":false}`; string(got) != want {
 		t.Fatalf("the send carried %s, want %s", got, want)
@@ -178,7 +179,7 @@ func TestEveryQuestionAboutAMessageCarriesItsShape(t *testing.T) {
 	f.apply("alice", "reviewer", "Review.")
 	r := f.routeBy(func(authz.Request) pick { return pick{} })
 	s := f.create("alice", "reviewer")
-	if got, _ := json.Marshal(shapeFields(t, r.last(t, authorizer.ActionSessionCreate))); string(got) != `{"attachments":0,"links":0,"message_chars":15,"tools_last_turn":false}` {
+	if got, _ := json.Marshal(shapeFields(t, r.last(t, authorizer.ActionSessionCreate)), json.Deterministic(true)); string(got) != `{"attachments":0,"links":0,"message_chars":15,"tools_last_turn":false}` {
 		t.Fatalf("a create with its first message carried %s", got)
 	}
 	if a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer"}`); a.status != http.StatusCreated {
@@ -189,7 +190,7 @@ func TestEveryQuestionAboutAMessageCarriesItsShape(t *testing.T) {
 	}
 	f.toolTurn(s.ID, 1, "thr_sub")
 	f.forked(s.ID, `{"message":{"content":[{"type":"text","text":"See https://a.b"}]}}`)
-	if got, _ := json.Marshal(shapeFields(t, r.last(t, authorizer.ActionSessionSend))); string(got) != `{"attachments":0,"links":1,"message_chars":15,"tools_last_turn":true}` {
+	if got, _ := json.Marshal(shapeFields(t, r.last(t, authorizer.ActionSessionSend)), json.Deterministic(true)); string(got) != `{"attachments":0,"links":1,"message_chars":15,"tools_last_turn":true}` {
 		t.Fatalf("a fork's message carried %s", got)
 	}
 }

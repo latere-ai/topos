@@ -6,7 +6,8 @@ package runner
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"os"
@@ -330,7 +331,7 @@ func TestARestoreFromTheCopyTakesWhatTheLogGives(t *testing.T) {
 	}})
 	covers := uint64(len(evs))
 	call("toolu_2", tools.NameEdit, map[string]any{"path": "edit.txt", "old_string": "x", "new_string": "y"}, "/workspace/edit.txt", sum("y\n"))
-	add(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_3", Name: tools.NameRead, Input: json.RawMessage(`{"path":"a.txt","limit":1}`), Verdict: "allow"})
+	add(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_3", Name: tools.NameRead, Input: jsontext.Value(`{"path":"a.txt","limit":1}`), Verdict: "allow"})
 	meta, err := json.Marshal(tools.Meta{Path: "/workspace/a.txt", SHA256: sum("changed by a command\n")})
 	if err != nil {
 		t.Fatal(err)

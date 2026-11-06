@@ -10,7 +10,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"net/http"
@@ -45,7 +45,7 @@ type Error struct {
 	Code    string
 	Message string
 	Reason  string
-	Limits  json.RawMessage
+	Limits  jsontext.Value
 	Err     error
 }
 

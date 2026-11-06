@@ -5,7 +5,8 @@ package toposcli
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"io/fs"
 	"net/http"
@@ -80,7 +81,7 @@ func reply(blocks ...ir.Block) luxstub.Reply {
 func text(s string) ir.Block { return ir.Block{Type: ir.BlockText, Text: s} }
 
 func toolUse(id, name, args string) ir.Block {
-	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: json.RawMessage(args)}}
+	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: jsontext.Value(args)}}
 }
 
 func (f *fixture) sessions() []session.Session {
@@ -128,6 +129,11 @@ func TestRunATurnInTheWorkingDirectory(t *testing.T) {
 	var res map[string]any
 	if code != ExitOK || json.Unmarshal([]byte(out), &res) != nil || res["text"] != "Still here." || res["session_id"] != list[0].ID {
 		t.Fatalf("json output: exit %d %q", code, out)
+	}
+	// The members are in a fixed order, and a run that waits on nothing
+	// lists no pending call as an empty list.
+	if !strings.HasPrefix(out, `{"detail":`) || !strings.Contains(out, `,"pending":[],"session_id":"`+list[0].ID+`","status":`) || !strings.HasSuffix(strings.TrimSpace(out), `"text":"Still here."}`) {
+		t.Fatalf("json output %q", out)
 	}
 }
 
@@ -260,7 +266,7 @@ func TestExitCodes(t *testing.T) {
 			t.Fatalf("%s exits %d, want %d", reason, got, want)
 		}
 	}
-	if summarize(json.RawMessage(`{"command":"`+strings.Repeat("x", 100)+`"}`)) != strings.Repeat("x", 80)+"..." || summarize(json.RawMessage(`[`)) != "" || summarize(json.RawMessage(`{}`)) != "" {
+	if summarize(jsontext.Value(`{"command":"`+strings.Repeat("x", 100)+`"}`)) != strings.Repeat("x", 80)+"..." || summarize(jsontext.Value(`[`)) != "" || summarize(jsontext.Value(`{}`)) != "" {
 		t.Fatal("summarize")
 	}
 }

@@ -24,7 +24,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"maps"
 	"net/http"
@@ -594,9 +594,7 @@ func (s *Server) copy(w http.ResponseWriter, r *http.Request) {
 		CopyTo    string `json:"copy_to"`
 		Recursive bool   `json:"recursive"`
 	}
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || in.CopyTo == "" || !in.Recursive {
+	if err := json.UnmarshalRead(r.Body, &in, json.RejectUnknownMembers(true)); err != nil || in.CopyTo == "" || !in.Recursive {
 		refuse(w, http.StatusBadRequest, "invalid_field", "the stub copies folders: copy_to and recursive true")
 		return
 	}
@@ -641,9 +639,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		Size        int64  `json:"size"`
 		ContentType string `json:"content_type"`
 	}
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || in.Owner == "" || in.Path == "" || in.Size <= 0 {
+	if err := json.UnmarshalRead(r.Body, &in, json.RejectUnknownMembers(true)); err != nil || in.Owner == "" || in.Path == "" || in.Size <= 0 {
 		refuse(w, http.StatusBadRequest, "invalid_field", "owner, path and a positive size")
 		return
 	}
@@ -694,7 +690,7 @@ func (s *Server) complete(w http.ResponseWriter, r *http.Request) {
 			ETag string `json:"etag"`
 		} `json:"parts"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := json.UnmarshalRead(r.Body, &in); err != nil {
 		refuse(w, http.StatusBadRequest, "bad_request", "the body is not JSON")
 		return
 	}

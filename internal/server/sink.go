@@ -22,7 +22,7 @@ type SinkEvent struct {
 	Subject    string         `json:"subject"`
 	Object     SinkObject     `json:"object"`
 	SessionID  string         `json:"session_id,omitempty"`
-	Agent      *SinkAgent     `json:"agent,omitempty"`
+	Agent      *SinkAgent     `json:"agent,omitzero"`
 	Outcome    string         `json:"outcome"`
 	Attributes map[string]any `json:"attributes,omitempty"`
 }

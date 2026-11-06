@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"slices"
 	"testing"
 
@@ -21,8 +22,8 @@ import (
 func TestEveryDecisionNamesItsLayer(t *testing.T) {
 	write := tools.Properties{Effect: tools.EffectWrite}
 	read := tools.Properties{Effect: tools.EffectRead}
-	bash := func(cmd string) json.RawMessage { b, _ := json.Marshal(map[string]string{"command": cmd}); return b }
-	fetch := json.RawMessage(`{"url":"https://elsewhere.example/page"}`)
+	bash := func(cmd string) jsontext.Value { b, _ := json.Marshal(map[string]string{"command": cmd}); return b }
+	fetch := jsontext.Value(`{"url":"https://elsewhere.example/page"}`)
 	allowlist := &Network{Mode: session.NetworkAllowlist, Hosts: []string{"docs.example"}}
 	asking := &Network{Mode: session.NetworkAllowlist, Hosts: []string{"docs.example"}, Ask: true}
 	cases := []struct {
@@ -30,7 +31,7 @@ func TestEveryDecisionNamesItsLayer(t *testing.T) {
 		policy     Policy
 		tool       string
 		props      tools.Properties
-		input      json.RawMessage
+		input      jsontext.Value
 		score      float64
 		kind       string
 		remembered []string
@@ -41,11 +42,11 @@ func TestEveryDecisionNamesItsLayer(t *testing.T) {
 		{"network asks", Policy{Mode: ModeConfirm, Network: asking}, tools.NameWebFetch, read, fetch, 0, machine.KindHost, nil, session.DecidedNetwork, "", VerdictAsk},
 		{"always confirm", Policy{Mode: ModeConfirm, AlwaysConfirm: []string{"bash(git push*)"}}, "bash", write, bash("git push origin main"), 0, machine.KindHost, nil, session.DecidedAlwaysConfirm, "bash(git push*)", VerdictAsk},
 		{"plan blocks a change", Policy{Mode: ModePlan}, "bash", write, bash("make"), 0, machine.KindHost, nil, session.DecidedPlan, "", VerdictBlock},
-		{"read-only in plan", Policy{Mode: ModePlan}, "read", read, json.RawMessage(`{"path":"a"}`), 0, machine.KindHost, nil, session.DecidedReadOnly, "", VerdictAllow},
-		{"read-only in confirm", Policy{Mode: ModeConfirm}, "read", read, json.RawMessage(`{"path":"a"}`), 0, machine.KindHost, nil, session.DecidedReadOnly, "", VerdictAllow},
+		{"read-only in plan", Policy{Mode: ModePlan}, "read", read, jsontext.Value(`{"path":"a"}`), 0, machine.KindHost, nil, session.DecidedReadOnly, "", VerdictAllow},
+		{"read-only in confirm", Policy{Mode: ModeConfirm}, "read", read, jsontext.Value(`{"path":"a"}`), 0, machine.KindHost, nil, session.DecidedReadOnly, "", VerdictAllow},
 		{"always allow", Policy{Mode: ModeConfirm, AlwaysAllow: []string{"bash(go test*)"}}, "bash", write, bash("go test ./..."), 0, machine.KindHost, nil, session.DecidedAlwaysAllow, "bash(go test*)", VerdictAllow},
 		{"remembered", Policy{Mode: ModeConfirm}, "bash", write, bash("make lint"), 0, machine.KindHost, []string{"bash(make*)"}, session.DecidedRemembered, "bash(make*)", VerdictAllow},
-		{"sandbox", Policy{Mode: ModeConfirm}, "write", write, json.RawMessage(`{"path":"a"}`), 0, machine.KindCella, nil, session.DecidedSandbox, "", VerdictAllow},
+		{"sandbox", Policy{Mode: ModeConfirm}, "write", write, jsontext.Value(`{"path":"a"}`), 0, machine.KindCella, nil, session.DecidedSandbox, "", VerdictAllow},
 		{"confirm asks", Policy{Mode: ModeConfirm}, "bash", write, bash("make"), 0, machine.KindHost, nil, session.DecidedConfirm, "", VerdictAsk},
 		{"score below flag", Policy{Mode: ModeProgressive}, "bash", write, bash("make"), 0.1, machine.KindCella, nil, session.DecidedScore, RuleBelowFlag, VerdictAllow},
 		{"score flags", Policy{Mode: ModeProgressive}, "bash", write, bash("make"), 0.4, machine.KindCella, nil, session.DecidedScore, RuleFlagAt, VerdictFlag},

@@ -41,7 +41,7 @@ type triggerRuns struct {
 	FiresOn   string `json:"fires_on"`
 	Suspended bool   `json:"suspended"`
 	// PerWeekUSDMicro is spec.budget.perWeek, absent without one.
-	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitempty"`
+	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitzero"`
 	// MaxAge is spec.maxAge: how late a firing may run after its time, so
 	// how long a one-shot that waits may wait.
 	MaxAge string `json:"max_age"`
@@ -49,14 +49,14 @@ type triggerRuns struct {
 	Wake bool `json:"wake"`
 	// Target is the one session every firing continues, a wake's or the
 	// one session.target names.
-	Target *runTarget `json:"target,omitempty"`
+	Target *runTarget `json:"target,omitzero"`
 	// Runs are the runs from since, oldest first.
 	Runs []triggerRun `json:"runs"`
 	// MoreRuns reports older runs from since left out.
 	MoreRuns bool `json:"more_runs"`
 	// PerRunUSDMicro is the mean cost of the latest trigger.PaceLooks runs
 	// of its own firings that ran and ended.
-	PerRunUSDMicro *int64 `json:"per_run_usd_micro,omitempty"`
+	PerRunUSDMicro *int64 `json:"per_run_usd_micro,omitzero"`
 	// Fires are the times it fires after now and before until.
 	Fires []time.Time `json:"fires"`
 	// MoreFires reports fire times before until left out.

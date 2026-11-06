@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -101,12 +101,12 @@ const MaxAnswers = 512
 // reads nothing into either: each is forwarded on the question about the
 // message and kept in no event.
 type messageBody struct {
-	Sender      json.RawMessage  `json:"sender,omitempty"`
+	Sender      jsontext.Value   `json:"sender,omitzero"`
 	Content     []lux.Block      `json:"content"`
 	Attachments []attachmentBody `json:"attachments,omitempty"`
-	Askable     bool             `json:"askable,omitempty"`
-	Answers     *string          `json:"answers,omitempty"`
-	SendNow     bool             `json:"send_now,omitempty"`
+	Askable     bool             `json:"askable,omitzero"`
+	Answers     *string          `json:"answers,omitzero"`
+	SendNow     bool             `json:"send_now,omitzero"`
 }
 
 // attachmentBody is one file as a client sends it: its bytes as base64
@@ -119,7 +119,7 @@ type attachmentBody struct {
 	MediaType string         `json:"media_type,omitempty"`
 	Data      string         `json:"data,omitempty"`
 	Blob      session.Digest `json:"blob,omitempty"`
-	Source    *sourceBody    `json:"source,omitempty"`
+	Source    *sourceBody    `json:"source,omitzero"`
 }
 
 // sourceBody is a file of the sender's own files as a message names it:
@@ -128,7 +128,7 @@ type attachmentBody struct {
 type sourceBody struct {
 	Owner   string `json:"owner"`
 	Path    string `json:"path"`
-	Version *int   `json:"version,omitempty"`
+	Version *int   `json:"version,omitzero"`
 }
 
 // file is one attached file checked and decoded, before it is stored:

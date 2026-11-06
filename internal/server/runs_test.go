@@ -5,7 +5,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"net/http"
 	"net/url"
 	"slices"
@@ -387,7 +387,7 @@ func TestTheRunsOfAListOfTimes(t *testing.T) {
 		r := resets
 		mu.Unlock()
 		if req.Action == authorizer.ActionSessionCreate && r != nil {
-			return authz.Decision{Reason: "share_spent", Limits: json.RawMessage(`{"resets_at":"` + r.Format(time.RFC3339) + `"}`)}, nil
+			return authz.Decision{Reason: "share_spent", Limits: jsontext.Value(`{"resets_at":"` + r.Format(time.RFC3339) + `"}`)}, nil
 		}
 		return f.authz.next.Authorize(context.Background(), req)
 	}

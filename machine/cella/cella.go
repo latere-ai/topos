@@ -22,7 +22,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -750,7 +750,7 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 	if m.o.Device {
 		m.deviceSpec(&sb)
 	}
-	return json.Marshal(sb)
+	return json.Marshal(sb, toCella)
 }
 
 // duration renders a duration in whole seconds, rounded up, which Cella's

@@ -4,7 +4,8 @@
 package tools
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -51,12 +52,12 @@ func (w *worklog) call(name, input string) (session.Event, session.Event, Result
 	w.t.Helper()
 	w.calls++
 	id := fmt.Sprintf("toolu_%d", w.calls)
-	use := w.add(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: name, Input: json.RawMessage(input), Verdict: "allow"})
-	res, err := builtinTool(w.t, name).Run(w.t.Context(), Call{ID: id, Input: json.RawMessage(input), Machine: w.m, State: StateOf(w.events, "")})
+	use := w.add(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: name, Input: jsontext.Value(input), Verdict: "allow"})
+	res, err := builtinTool(w.t, name).Run(w.t.Context(), Call{ID: id, Input: jsontext.Value(input), Machine: w.m, State: StateOf(w.events, "")})
 	if err != nil {
 		w.t.Fatalf("%s %s: %v", name, input, err)
 	}
-	var meta json.RawMessage
+	var meta jsontext.Value
 	if res.Meta != nil {
 		if meta, err = json.Marshal(res.Meta); err != nil {
 			w.t.Fatal(err)

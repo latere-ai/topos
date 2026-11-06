@@ -19,7 +19,7 @@
 package cellastub
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -530,9 +530,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 // decodeSandbox reads a Sandbox manifest strictly, as Cella does.
 func decodeSandbox(w http.ResponseWriter, r *http.Request) (v1.Sandbox, bool) {
 	var obj v1.Sandbox
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&obj); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<20), &obj, json.RejectUnknownMembers(true)); err != nil {
 		refuse(w, http.StatusBadRequest, "unknown_field", err.Error())
 		return v1.Sandbox{}, false
 	}
@@ -770,9 +768,7 @@ func (s *Server) secret(w http.ResponseWriter, r *http.Request) {
 // secret the apply makes, and secret.update about the one it replaces.
 func (s *Server) applySecret(w http.ResponseWriter, r *http.Request) {
 	var in v1.Secret
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
+	if err := json.UnmarshalRead(r.Body, &in, json.RejectUnknownMembers(true)); err != nil {
 		refuse(w, http.StatusBadRequest, "bad_request", "the secret does not decode: "+err.Error())
 		return
 	}

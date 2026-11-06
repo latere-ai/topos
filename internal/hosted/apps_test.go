@@ -4,7 +4,7 @@
 package hosted
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http/httptest"
 	"os"
 	"os/exec"

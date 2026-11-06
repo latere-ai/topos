@@ -5,7 +5,7 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"net/http"
 	"strings"
@@ -201,7 +201,7 @@ func TestTheFileToolsNameTheirPaths(t *testing.T) {
 			t.Fatalf("%s names no paths", name)
 		}
 		for in, want := range map[string]string{`{"path":"/memory/user/a.md"}`: "/memory/user/a.md", `{"pattern":"x"}`: "", `[`: ""} {
-			if got := p.Paths(json.RawMessage(in)); len(got) != 1 || got[0] != want {
+			if got := p.Paths(jsontext.Value(in)); len(got) != 1 || got[0] != want {
 				t.Errorf("%s %s: %q", name, in, got)
 			}
 		}

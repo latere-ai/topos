@@ -4,7 +4,7 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"maps"
 	"net/http"
 	"strings"
@@ -43,7 +43,7 @@ func TestACoresSpendRefusalStopsTheTurn(t *testing.T) {
 			// sandbox, which is where a create refusal meets the turn.
 			replies := []luxstub.Reply{glob, reviewed}
 			if c.command {
-				bash := luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: json.RawMessage(`{"command":"ls"}`)}}}, StopReason: ir.StopToolUse},
+				bash := luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: jsontext.Value(`{"command":"ls"}`)}}}, StopReason: ir.StopToolUse},
 					// The glob before it opened the sandbox, so the
 					// refusal meets the command, not the setup.
 					Respond: func(*ir.Request, *ir.Response) { cella.Fail(cellastub.OpSession, refusal) }}

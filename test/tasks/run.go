@@ -296,7 +296,7 @@ type RunResult struct {
 	Passed bool `json:"passed"`
 	// Reason is why a run failed.
 	Reason  string             `json:"reason,omitempty"`
-	Verdict *Verdict           `json:"verdict,omitempty"`
+	Verdict *Verdict           `json:"verdict,omitzero"`
 	Stop    session.StopReason `json:"stop_reason,omitempty"`
 	Detail  string             `json:"detail,omitempty"`
 	// Error is the message of the session's last session.error.
@@ -308,7 +308,7 @@ type RunResult struct {
 	MaxCostUSDMicro int64 `json:"max_cost_usd_micro"`
 	// BudgetExhausted is a model key refused for spend, which ends the
 	// suite incomplete.
-	BudgetExhausted bool   `json:"budget_exhausted,omitempty"`
+	BudgetExhausted bool   `json:"budget_exhausted,omitzero"`
 	DurationMS      int64  `json:"duration_ms"`
 	ServeURL        string `json:"serve_url,omitempty"`
 	Session         string `json:"session,omitempty"`

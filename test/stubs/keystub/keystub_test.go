@@ -4,7 +4,7 @@
 package keystub
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"strings"
 	"testing"
@@ -24,7 +24,7 @@ func put(t *testing.T, s *Server, bearer, path, body string) (int, map[string]an
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		t.Fatal(err)
 	}
 	return resp.StatusCode, out

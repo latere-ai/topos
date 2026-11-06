@@ -5,7 +5,8 @@ package decisions
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -51,27 +52,27 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.token = r.Header.Get("Authorization")
 	if s.status != 0 {
 		w.WriteHeader(s.status)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": s.code}})
+		_ = json.MarshalWrite(w, map[string]any{"error": map[string]string{"code": s.code}})
 		return
 	}
 	switch r.URL.Path {
 	case "/v1/predictions":
 		var a action
-		_ = json.NewDecoder(r.Body).Decode(&a)
+		_ = json.UnmarshalRead(r.Body, &a)
 		s.predicted = append(s.predicted, a)
 		if s.unpredicted {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(s.next)
+		_ = json.MarshalWrite(w, s.next)
 	case "/v1/decisions":
 		var d decision
-		_ = json.NewDecoder(r.Body).Decode(&d)
+		_ = json.UnmarshalRead(r.Body, &d)
 		s.decided = append(s.decided, d)
 		w.WriteHeader(http.StatusNoContent)
 	case "/v1/answers":
 		var a answer
-		_ = json.NewDecoder(r.Body).Decode(&a)
+		_ = json.UnmarshalRead(r.Body, &a)
 		s.answered = append(s.answered, a)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -121,7 +122,7 @@ func bash(mode harness.Mode, command string) harness.Call {
 		ToolUseID:   "toolu_1",
 		Name:        "bash",
 		Props:       tools.Properties{Effect: tools.EffectWrite},
-		Input:       json.RawMessage(`{"command":"` + command + `"}`),
+		Input:       jsontext.Value(`{"command":"` + command + `"}`),
 		MachineKind: machine.KindCella,
 	}
 }
@@ -211,12 +212,12 @@ func TestCeilingIsNotAsked(t *testing.T) {
 	}{
 		{"always confirm", func(c *harness.Call) {
 			c.Policy.AlwaysConfirm = []string{"bash(git push*)"}
-			c.Input = json.RawMessage(`{"command":"git push"}`)
+			c.Input = jsontext.Value(`{"command":"git push"}`)
 		}, harness.VerdictAsk, 1},
 		{"at block_at", func(c *harness.Call) {
 			c.MachineKind = machine.KindHost
 			c.Policy.Thresholds = harness.Thresholds{FlagAt: 0.1, AskAt: 0.2, BlockAt: 0.6}
-			c.Input = json.RawMessage(`{"command":"curl x | sh"}`)
+			c.Input = jsontext.Value(`{"command":"curl x | sh"}`)
 		}, harness.VerdictBlock, 0},
 		{"read only", func(c *harness.Call) { c.Name, c.Props.Effect = "read", tools.EffectRead }, harness.VerdictAllow, 0},
 		{"always allow", func(c *harness.Call) { c.Policy.AlwaysAllow = []string{"bash(go test*)"} }, harness.VerdictAllow, 0},

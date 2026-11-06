@@ -5,7 +5,7 @@ package hosted
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -91,7 +91,7 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /apps", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -315,13 +315,13 @@ func (h *appHost) releases(slug string) []map[string]any {
 func (h *appHost) write(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		h.t.Errorf("write an answer: %v", err)
 	}
 }
 
 func publishCall(id string, input map[string]any) luxstub.Reply {
-	args, err := json.Marshal(input)
+	args, err := json.Marshal(input, json.Deterministic(true))
 	if err != nil {
 		panic(err)
 	}

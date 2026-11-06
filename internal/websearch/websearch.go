@@ -11,7 +11,8 @@ package websearch
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,6 +48,25 @@ func New(u string, cred Credential, c *http.Client) (*Client, error) {
 	return &Client{url: u, cred: cred, http: c}, nil
 }
 
+// foreignJSON reads what the service answers, whose results are text from
+// the web: duplicate members, bytes that are not UTF-8 and member names in
+// any letter case are read, not refused.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
+// outbound writes a request: the query is the model's own text, so bytes
+// that are not UTF-8 are written as the replacement character, and a nil
+// list is null.
+var outbound = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
 // Search sends r and reads the answer. r.MaxResults below one asks
 // search.DefaultResults, so the service never applies a default of its
 // own.
@@ -56,7 +76,7 @@ func (c *Client) Search(ctx context.Context, r search.Request) (search.Result, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, search.Timeout)
 	defer cancel()
-	body, err := json.Marshal(r)
+	body, err := json.Marshal(r, outbound)
 	if err != nil {
 		return search.Result{}, fmt.Errorf("search: encode the request: %w", err)
 	}
@@ -104,7 +124,7 @@ func read(raw []byte, limit int) (search.Result, error) {
 		Results      *[]search.Hit `json:"results"`
 		CostUSDMicro *int64        `json:"cost_usd_micro"`
 	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	if err := json.Unmarshal(raw, &doc, foreignJSON); err != nil {
 		return search.Result{}, fmt.Errorf("%w: the answer does not decode: %w", search.ErrFailed, err)
 	}
 	if doc.Results == nil {
@@ -133,7 +153,7 @@ func refusal(resp *http.Response, raw []byte) *search.Refused {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	decoded := json.Unmarshal(raw, &env) == nil
+	decoded := json.Unmarshal(raw, &env, foreignJSON) == nil
 	if !decoded || env.Error == nil || strings.TrimSpace(env.Error.Message) == "" {
 		return nil
 	}

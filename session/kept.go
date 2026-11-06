@@ -3,8 +3,6 @@
 
 package session
 
-import "encoding/json"
-
 // FilesKept is the payload of files.kept (specs 055 and 064): the local
 // files an agent.message of the session's own thread shows as images or
 // links, read from the open machine once the message's step was committed
@@ -102,7 +100,7 @@ func KeptFor(id string, log []Event) bool {
 		var p struct {
 			Message string `json:"message"`
 		}
-		if e.Type == TypeFilesKept && json.Unmarshal(e.Payload, &p) == nil && p.Message == id {
+		if e.Type == TypeFilesKept && Unmarshal(e.Payload, &p) == nil && p.Message == id {
 			return true
 		}
 	}

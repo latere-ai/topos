@@ -6,7 +6,8 @@ package server
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -231,7 +232,7 @@ func TestLimitsApplyAtCreate(t *testing.T) {
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d := authz.Decision{Allow: true}
 		if req.Action == authorizer.ActionSessionCreate {
-			d.Limits = json.RawMessage(limits)
+			d.Limits = jsontext.Value(limits)
 		}
 		return d, nil
 	}
@@ -336,7 +337,7 @@ func TestLimitListsReachThePolicy(t *testing.T) {
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d := authz.Decision{Allow: true}
 		if req.Action == authorizer.ActionSessionCreate {
-			d.Limits = json.RawMessage(limits)
+			d.Limits = jsontext.Value(limits)
 		}
 		return d, nil
 	}
@@ -388,8 +389,8 @@ func TestSendSetsSender(t *testing.T) {
 	// An ask and a client's call wait for their answers; each takes one,
 	// of its own kind.
 	for _, use := range []session.AgentToolUse{
-		{ToolUseID: "toolu_1", Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"},
-		{ToolUseID: "toolu_2", Name: "pick", Input: json.RawMessage(`{}`), Verdict: "allow", Client: true},
+		{ToolUseID: "toolu_1", Name: "bash", Input: jsontext.Value(`{}`), Verdict: "ask"},
+		{ToolUseID: "toolu_2", Name: "pick", Input: jsontext.Value(`{}`), Verdict: "allow", Client: true},
 	} {
 		cur, err := f.sessions.Get(t.Context(), s.ID)
 		if err != nil {

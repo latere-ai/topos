@@ -6,7 +6,7 @@ package dialect
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,7 +76,7 @@ func Listed(ctx context.Context, client *http.Client, conn models.Connection) (m
 	var list struct {
 		Data []listed `json:"data"`
 	}
-	read := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, maxModelList)).Decode(&list) == nil
+	read := resp.StatusCode == http.StatusOK && json.UnmarshalRead(io.LimitReader(resp.Body, maxModelList), &list, models.FromProvider) == nil
 	if err := resp.Body.Close(); err != nil {
 		return models.Entry{}, false, fmt.Errorf("models: read the model list of %s: %w", base, err)
 	}

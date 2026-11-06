@@ -5,7 +5,8 @@ package models
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"strings"
@@ -27,7 +28,7 @@ import (
 type Accumulator struct {
 	resp    ir.Response
 	args    map[int]*strings.Builder
-	head    map[int]json.RawMessage
+	head    map[int]jsontext.Value
 	open    map[int]bool
 	invalid map[string]string
 	stopped bool
@@ -73,7 +74,7 @@ func (a *Accumulator) Add(ev ir.Event) error {
 			b.ToolUse = &tu
 			if len(tu.Args) > 0 {
 				if a.head == nil {
-					a.head = map[int]json.RawMessage{}
+					a.head = map[int]jsontext.Value{}
 				}
 				a.head[ev.Index] = tu.Args
 			}
@@ -156,11 +157,11 @@ func (a *Accumulator) settle(i int) {
 	delete(a.invalid, tu.ID)
 	switch {
 	case len(bytes.TrimSpace(raw)) == 0:
-		tu.Args = json.RawMessage(`{}`)
-	case json.Valid(raw):
-		tu.Args = json.RawMessage(raw)
+		tu.Args = jsontext.Value(`{}`)
+	case jsontext.Value(raw).IsValid(FromProvider):
+		tu.Args = jsontext.Value(raw)
 	default:
-		tu.Args = json.RawMessage(`{}`)
+		tu.Args = jsontext.Value(`{}`)
 		if a.invalid == nil {
 			a.invalid = map[string]string{}
 		}
@@ -202,7 +203,7 @@ func LuxMessage(r *ir.Response) (lux.Message, lux.Usage, error) {
 		return lux.Message{}, lux.Usage{}, fmt.Errorf("models: encode the response as Lux wire: %w", err)
 	}
 	var w lux.Response
-	if err := json.Unmarshal(b, &w); err != nil {
+	if err := json.Unmarshal(b, &w, FromProvider); err != nil {
 		return lux.Message{}, lux.Usage{}, fmt.Errorf("models: read the Lux wire response: %w", err)
 	}
 	return lux.Message{Role: ir.RoleAssistant, Blocks: w.Blocks}, w.Usage, nil

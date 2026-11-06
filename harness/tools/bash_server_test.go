@@ -7,7 +7,7 @@ package tools
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"math/rand/v2"
 	"net"
@@ -228,7 +228,7 @@ func TestAMovedCommandSaysSo(t *testing.T) {
 		close(now)
 	}()
 	input := mustInput(t, map[string]any{"command": "echo started; /bin/sleep 0.2; : > ready; while :; do echo tick; /bin/sleep 0.05; done", "timeout_ms": 60000})
-	res, err := bash.Run(t.Context(), Call{ID: "toolu_1", Input: json.RawMessage(input), Machine: f.h, MoveNow: now})
+	res, err := bash.Run(t.Context(), Call{ID: "toolu_1", Input: jsontext.Value(input), Machine: f.h, MoveNow: now})
 	if err != nil {
 		t.Fatal(err)
 	}

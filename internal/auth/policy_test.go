@@ -5,7 +5,7 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -325,7 +325,7 @@ func TestADenysLimitsGoWithItsReason(t *testing.T) {
 	const resets = `{"resets_at":"2026-10-06T00:00:00Z"}`
 	denying := func(reason, limits string) authz.Authorizer {
 		return decider(func(r authz.Request) (authz.Decision, error) {
-			return authz.Decision{Allow: r.Action == authorizer.ActionSessionRead, Reason: reason, Limits: json.RawMessage(limits)}, nil
+			return authz.Decision{Allow: r.Action == authorizer.ActionSessionRead, Reason: reason, Limits: jsontext.Value(limits)}, nil
 		})
 	}
 	send := authz.Request{Subject: bob, Action: authorizer.ActionSessionSend, Resource: authz.NewResource(authorizer.KindSession, "ses_1", nil)}
@@ -362,7 +362,7 @@ func TestADenysLimitsGoWithItsReason(t *testing.T) {
 func TestLimitsAtCreate(t *testing.T) {
 	limits := func(raw string) authz.Authorizer {
 		return decider(func(authz.Request) (authz.Decision, error) {
-			return authz.Decision{Allow: true, Limits: json.RawMessage(raw)}, nil
+			return authz.Decision{Allow: true, Limits: jsontext.Value(raw)}, nil
 		})
 	}
 	req := authz.Request{Subject: alice, Action: authorizer.ActionSessionCreate, Resource: authz.NewResource(authorizer.KindSession, "", nil)}

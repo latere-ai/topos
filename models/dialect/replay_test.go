@@ -5,7 +5,8 @@ package dialect
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"net/http"
 	"net/http/httptest"
@@ -44,8 +45,8 @@ var dialects = []struct {
 // stub's, not a provider's.
 func replayed(d ir.Dialect) ir.Response {
 	calls := []ir.Block{
-		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_01", Name: "read", Args: json.RawMessage(`{"path":"main.go"}`)}},
-		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_02", Name: "grep", Args: json.RawMessage(`{"pattern":"func main"}`)}},
+		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_01", Name: "read", Args: jsontext.Value(`{"path":"main.go"}`)}},
+		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_02", Name: "grep", Args: jsontext.Value(`{"pattern":"func main"}`)}},
 	}
 	text := ir.Block{Type: ir.BlockText, Text: "Reading the entry point."}
 	var blocks []ir.Block
@@ -57,7 +58,7 @@ func replayed(d ir.Dialect) ir.Response {
 			text,
 		}
 	case ir.DialectOpenAIResponses:
-		raw := json.RawMessage(`{"type":"reasoning","id":"rs_01","summary":[{"type":"summary_text","text":"Read main.go, then search for func main."}],"encrypted_content":"stub-encrypted-01"}`)
+		raw := jsontext.Value(`{"type":"reasoning","id":"rs_01","summary":[{"type":"summary_text","text":"Read main.go, then search for func main."}],"encrypted_content":"stub-encrypted-01"}`)
 		blocks = []ir.Block{{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: d, Kind: "reasoning", Raw: raw}}, text}
 	default:
 		blocks = []ir.Block{text}
@@ -297,7 +298,7 @@ func sentBack(t *testing.T, d ir.Dialect, next map[string]any) any {
 // it keeps its id.
 func normalized(t *testing.T, d ir.Dialect, v any) string {
 	t.Helper()
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +321,7 @@ func normalized(t *testing.T, d ir.Dialect, v any) string {
 			}
 		}
 	}
-	out, err := json.Marshal(c)
+	out, err := json.Marshal(c, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

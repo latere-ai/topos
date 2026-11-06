@@ -24,7 +24,7 @@
               "dialect": "openai-responses",
               "kind": "reasoning",
               "raw": {
-                "encrypted_content": "gAAA\u003cb\u0026c\u003e",
+                "encrypted_content": "gAAA<b&c>",
                 "id": "rs_1",
                 "type": "reasoning"
               }

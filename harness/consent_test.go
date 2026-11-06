@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"slices"
 	"strings"
@@ -499,7 +500,7 @@ func TestTheReachOfACall(t *testing.T) {
 				tool = b
 			}
 		}
-		return r.Of(tool, name, tools.Call{Input: json.RawMessage(input)}, false)
+		return r.Of(tool, name, tools.Call{Input: jsontext.Value(input)}, false)
 	}
 	if got := of(cella, "read", `{"path":"a"}`); got.Undo != session.UndoNone || got.Target != nil {
 		t.Errorf("read %+v", got)

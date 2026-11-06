@@ -5,7 +5,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -94,7 +95,7 @@ func TestWebSearchResults(t *testing.T) {
 	cctx, cancel := context.WithCancel(ctx)
 	done := make(chan Result)
 	go func() {
-		res, err := WebSearch(searching{block: true}).Run(cctx, Call{ID: "toolu_1", Input: json.RawMessage(`{"query":"go"}`), Machine: f.h})
+		res, err := WebSearch(searching{block: true}).Run(cctx, Call{ID: "toolu_1", Input: jsontext.Value(`{"query":"go"}`), Machine: f.h})
 		if err != nil {
 			t.Error(err)
 		}
@@ -159,11 +160,11 @@ func TestWebSearchSchemaFollowsTheConstants(t *testing.T) {
 		`{"query":"go","max_results":0}`,
 		`{"query":"go","depth":"deep"}`,
 	} {
-		if _, r := reg.Validate(NameWebSearch, json.RawMessage(input)); r == nil || r.Outcome != OutcomeInvalidInput {
+		if _, r := reg.Validate(NameWebSearch, jsontext.Value(input)); r == nil || r.Outcome != OutcomeInvalidInput {
 			t.Errorf("%s was not refused", input)
 		}
 	}
-	if _, r := reg.Validate(NameWebSearch, json.RawMessage(`{"query":"`+strings.Repeat("é", search.MaxQueryLength)+`","max_results":10}`)); r != nil {
+	if _, r := reg.Validate(NameWebSearch, jsontext.Value(`{"query":"`+strings.Repeat("é", search.MaxQueryLength)+`","max_results":10}`)); r != nil {
 		t.Errorf("a call at the bounds was refused: %+v", r)
 	}
 	if !slices.Contains(OptIn(), NameWebSearch) || slices.ContainsFunc(Builtins(), func(b Tool) bool { return b.Definition().Name == NameWebSearch }) {

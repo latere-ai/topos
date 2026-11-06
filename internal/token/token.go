@@ -17,7 +17,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -174,16 +174,17 @@ func (s *Signer) sign(input []byte) ([]byte, error) {
 }
 
 // thumbprint is RFC 7638: the SHA-256 of the required members in
-// lexicographic order, which encoding/json writes for a map.
+// lexicographic order, which a deterministic marshal writes for a map.
 func thumbprint(public map[string]string) string {
 	sum := sha256.Sum256(mustJSON(public))
 	return b64(sum[:])
 }
 
 // mustJSON encodes a value of fixed string and number members, which
-// cannot fail.
+// cannot fail. Map members are sorted so the bytes a signature or a
+// thumbprint covers are the same each time.
 func mustJSON(v any) []byte {
-	raw, err := json.Marshal(v)
+	raw, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		panic(err)
 	}

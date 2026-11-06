@@ -50,7 +50,7 @@ type WalkedFile struct {
 // stopped at MaxListed: a file after the last one listed was not seen.
 type WalkResult struct {
 	Files []WalkedFile `json:"files"`
-	Cut   bool         `json:"cut,omitempty"`
+	Cut   bool         `json:"cut,omitzero"`
 }
 
 // Walker is the optional interface of a machine that walks its working

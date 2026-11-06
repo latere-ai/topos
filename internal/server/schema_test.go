@@ -4,8 +4,8 @@
 package server
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -82,18 +82,16 @@ func fitsType(t *testing.T, what, body string, typ reflect.Type) {
 		t.Errorf("%s: no example", what)
 		return
 	}
-	dec := json.NewDecoder(bytes.NewReader([]byte(body)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(reflect.New(typ).Interface()); err != nil {
+	if err := json.Unmarshal([]byte(body), reflect.New(typ).Interface(), json.RejectUnknownMembers(true)); err != nil {
 		t.Errorf("%s does not fit %s: %v", what, typ, err)
 		return
 	}
-	// A member held as json.RawMessage fits anything, so it is decoded
+	// A member held as jsontext.Value fits anything, so it is decoded
 	// again into the type the document describes it by.
 	if len(rawFields[typ]) == 0 {
 		return
 	}
-	var members map[string]json.RawMessage
+	var members map[string]jsontext.Value
 	if err := json.Unmarshal([]byte(body), &members); err != nil {
 		t.Errorf("%s: %v", what, err)
 		return
@@ -103,16 +101,14 @@ func fitsType(t *testing.T, what, body string, typ reflect.Type) {
 		if !ok {
 			continue
 		}
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(reflect.New(stand).Interface()); err != nil {
+		if err := json.Unmarshal(raw, reflect.New(stand).Interface(), json.RejectUnknownMembers(true)); err != nil {
 			t.Errorf("%s: %s does not fit %s: %v", what, name, stand, err)
 		}
 	}
 }
 
 // TestRawFieldsAreWhatTheHandlersRead: each member described by a type
-// in rawFields is a json.RawMessage of its type, and a full value of the
+// in rawFields is a jsontext.Value of its type, and a full value of the
 // describing type is one its handler takes, so the document describes
 // what the server reads.
 func TestRawFieldsAreWhatTheHandlersRead(t *testing.T) {
@@ -121,12 +117,12 @@ func TestRawFieldsAreWhatTheHandlersRead(t *testing.T) {
 			f, ok := memberOf(typ, name)
 			if !ok {
 				t.Errorf("rawFields names %s.%s, which %s does not have", typ, name, typ)
-			} else if f.Type != reflect.TypeFor[json.RawMessage]() {
-				t.Errorf("%s.%s is %s, not json.RawMessage; its own type describes it", typ, name, f.Type)
+			} else if f.Type != reflect.TypeFor[jsontext.Value]() {
+				t.Errorf("%s.%s is %s, not jsontext.Value; its own type describes it", typ, name, f.Type)
 			}
 		}
 	}
-	marshal := func(v any) json.RawMessage {
+	marshal := func(v any) jsontext.Value {
 		b, err := json.Marshal(v)
 		if err != nil {
 			t.Fatal(err)

@@ -69,12 +69,12 @@ func continuedTitle(title string) string {
 // a fork tree of the fork's own in place of joining its parent's (spec
 // 056).
 type forkBody struct {
-	AtSeq     *uint64      `json:"at_seq,omitempty"`
-	BeforeSeq *uint64      `json:"before_seq,omitempty"`
-	Title     *string      `json:"title,omitempty"`
-	Message   *messageBody `json:"message,omitempty"`
-	Tree      *string      `json:"tree,omitempty"`
-	Attended  bool         `json:"attended,omitempty"`
+	AtSeq     *uint64      `json:"at_seq,omitzero"`
+	BeforeSeq *uint64      `json:"before_seq,omitzero"`
+	Title     *string      `json:"title,omitzero"`
+	Message   *messageBody `json:"message,omitzero"`
+	Tree      *string      `json:"tree,omitzero"`
+	Attended  bool         `json:"attended,omitzero"`
 }
 
 // TreeNew is the fork body's tree that starts a fork tree of the fork's

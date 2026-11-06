@@ -6,7 +6,8 @@ package harness
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -223,7 +225,7 @@ const ToolRequestConnection = session.ToolRequestConnection
 
 // RequestConnectionSchema is the input schema of request_connection, its
 // bound on a reason stated from session's constant.
-var RequestConnectionSchema = json.RawMessage(fmt.Sprintf(`{
+var RequestConnectionSchema = jsontext.Value(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "name": {"type": "string", "minLength": 1, "description": "The service's name, as the connections block lists it."},
@@ -257,7 +259,7 @@ func (r requestConnectionTool) Run(_ context.Context, c tools.Call) (tools.Resul
 		Name   string `json:"name"`
 		Reason string `json:"reason"`
 	}
-	if err := json.Unmarshal(c.Input, &in); err != nil {
+	if err := json.Unmarshal(c.Input, &in, models.FromProvider); err != nil {
 		return tools.Result{}, fmt.Errorf("harness: decode a request_connection call: %w", err)
 	}
 	offered := requestable(r.t.s, reachesHTTP(r.t.s, r.t.h.c.Machine))

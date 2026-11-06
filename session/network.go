@@ -47,7 +47,7 @@ const (
 type Network struct {
 	Mode   string   `json:"mode"`
 	Hosts  []string `json:"hosts,omitempty"`
-	Ask    bool     `json:"ask,omitempty"`
+	Ask    bool     `json:"ask,omitzero"`
 	Source string   `json:"source,omitempty"`
 }
 
@@ -62,11 +62,11 @@ type NetworkChanged struct {
 	Added      []string  `json:"added,omitempty"`
 	Removed    []string  `json:"removed,omitempty"`
 	Mode       string    `json:"mode,omitempty"`
-	Ask        *bool     `json:"ask,omitempty"`
+	Ask        *bool     `json:"ask,omitzero"`
 	Source     string    `json:"source"`
 	ToolUseID  string    `json:"tool_use_id,omitempty"`
 	ApprovalID string    `json:"approval_id,omitempty"`
-	Boundary   *Boundary `json:"boundary,omitempty"`
+	Boundary   *Boundary `json:"boundary,omitzero"`
 }
 
 // Moves reports whether the change moves the network itself: a host it
@@ -149,7 +149,7 @@ const ApprovalFromEgress = "egress"
 // Destination is where a refused connection was going.
 type Destination struct {
 	Host string `json:"host"`
-	Port int    `json:"port,omitempty"`
+	Port int    `json:"port,omitzero"`
 }
 
 // ApprovalRequested is the payload of approval.requested (spec 052): a
@@ -164,11 +164,11 @@ type ApprovalRequested struct {
 	Destination Destination `json:"destination"`
 	Reason      string      `json:"reason"`
 	Verdict     string      `json:"verdict"`
-	More        int         `json:"more,omitempty"`
+	More        int         `json:"more,omitzero"`
 	// Attended is whether a person began the turn the request was made in
 	// (spec 087), as an agent.tool_use records it; nil on an event written
 	// before it.
-	Attended *bool `json:"attended,omitempty"`
+	Attended *bool `json:"attended,omitzero"`
 }
 
 // ApprovalDecided is the payload of approval.decided: the person's answer

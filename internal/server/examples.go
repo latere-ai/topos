@@ -5,7 +5,8 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -119,7 +120,7 @@ var (
 			{Label: "North America", Description: "Two prospects asked for it."},
 		}},
 	}})
-	exampleAnswerBody = mustText(sendBody{Type: session.TypeUserAnswer, Payload: json.RawMessage(mustText(answerPayload{
+	exampleAnswerBody = mustText(sendBody{Type: session.TypeUserAnswer, Payload: jsontext.Value(mustText(answerPayload{
 		ToolUseID: exampleQuestionCall,
 		Answers:   []session.AnswerEntry{{Selected: []string{"SQLite"}, Text: "we have nobody to run a second schema"}, {}},
 	}))})
@@ -232,7 +233,7 @@ func examples() (map[string]example, error) {
 	person := session.Sender{Subject: exampleCaller, Kind: session.SenderPerson}
 	said := func(words string) []lux.Block { return []lux.Block{{Type: ir.BlockText, Text: words}} }
 	event := func(id string, seq uint64, typ session.Type, at time.Time, turn int, payload any) session.Event {
-		return session.Event{ID: id, Seq: seq, SessionID: exampleSessionID, Type: typ, Time: at, Turn: turn, Payload: json.RawMessage(text(payload))}
+		return session.Event{ID: id, Seq: seq, SessionID: exampleSessionID, Type: typ, Time: at, Turn: turn, Payload: jsontext.Value(text(payload))}
 	}
 	first := event(exampleFirstEventID, 1, session.TypeUserMessage, exampleTime(12, 5, 0), 0,
 		session.UserMessage{Sender: person, Content: said("Write the release notes for v1.4.0.")})
@@ -276,7 +277,7 @@ func examples() (map[string]example, error) {
 	// the rest of the window (spec 087).
 	fired.Status.Spend = &v1.TriggerSpend{WindowDays: 7, ExpectedLooks: 8}
 	delivery := trigger.Envelope{ID: exampleDelivery, Product: "github", Verb: "release.published", Resource: "example/widgets@v1.4.0", Actor: "ann",
-		Time: exampleTime(12, 40, 0), Payload: json.RawMessage(`{"tag":"v1.4.0"}`)}
+		Time: exampleTime(12, 40, 0), Payload: jsontext.Value(`{"tag":"v1.4.0"}`)}
 	started := firing{ID: exampleFiringID, TriggerID: exampleTriggerID, Origin: store.OriginEvent,
 		Event: &firingEvent{Product: delivery.Product, Verb: delivery.Verb, Resource: delivery.Resource, ID: delivery.ID},
 		Key:   delivery.Resource, Outcome: store.OutcomeStarted, SessionID: exampleFiredID, ReceivedAt: exampleTime(12, 40, 0)}
@@ -309,7 +310,7 @@ func examples() (map[string]example, error) {
 		"unarchiveSession": {response: text(ended)},
 		"resumeSession":    {request: text(resumeBody{Reason: "budget_raised", MaxCostUSDMicro: resumed.Budget.MaxCostUSDMicro}), response: text(resumed)},
 		"listEvents":       {response: list(first, cursorSeq(first.Seq))},
-		"sendEvent":        {request: text(sendBody{Type: session.TypeUserMessage, Payload: json.RawMessage(text(messageBody{Content: said("Add a section for the breaking changes.")}))}), response: text(sent)},
+		"sendEvent":        {request: text(sendBody{Type: session.TypeUserMessage, Payload: jsontext.Value(text(messageBody{Content: said("Add a section for the breaking changes.")}))}), response: text(sent)},
 		"streamEvents":     {response: frames.String()},
 		"redactEvent":      {request: text(redactBody{Reason: "The message held an access token."})},
 		"applyTrigger":     {request: exampleTriggerManifest, manifest: exampleTriggerYAML, response: text(applied), created: text(newTrigger)},

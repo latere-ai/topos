@@ -5,7 +5,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -59,8 +60,8 @@ func TestRegistryRefuses(t *testing.T) {
 		"empty name":   stub{def: Definition{Name: ""}},
 		"bad name":     stub{def: Definition{Name: "has space"}},
 		"long name":    stub{def: Definition{Name: strings.Repeat("a", 65)}},
-		"bad schema":   stub{def: Definition{Name: "x", InputSchema: json.RawMessage(`{"type":"object","uniqueItems":true}`)}},
-		"not a schema": stub{def: Definition{Name: "y", InputSchema: json.RawMessage(`[`)}},
+		"bad schema":   stub{def: Definition{Name: "x", InputSchema: jsontext.Value(`{"type":"object","uniqueItems":true}`)}},
+		"not a schema": stub{def: Definition{Name: "y", InputSchema: jsontext.Value(`[`)}},
 	} {
 		if err := r.Add(tool); err == nil {
 			t.Fatalf("%s: registered", name)
@@ -97,7 +98,7 @@ func TestValidate(t *testing.T) {
 		{"not json", "read", `{"path":`, OutcomeInvalidInput, notJSON("the text ends before the JSON value does", `{"path":`)},
 		{"trailing data", "read", `{"path":"a"} {"path":"b"}`, OutcomeInvalidInput, notJSON("there is more text after the first JSON value", `{"path":"a"} {"path":"b"}`)},
 		{"trailing brace", "read", `{"path":"a"}}`, OutcomeInvalidInput, notJSON("there is more text after the first JSON value", `{"path":"a"}}`)},
-		{"bad token", "read", `{"path":}`, OutcomeInvalidInput, notJSON("invalid character '}' looking for beginning of value", `{"path":}`)},
+		{"bad token", "read", `{"path":}`, OutcomeInvalidInput, notJSON(`jsontext: missing value after object name within "/path" after offset 8`, `{"path":}`)},
 		// Text past the excerpt is cut on a character boundary.
 		{"long", "read", long, OutcomeInvalidInput, notJSON("the text ends before the JSON value does", string([]rune(long)[:InvalidJSONExcerpt]))},
 		{"not an object", "read", `["a"]`, OutcomeInvalidInput, prefix + "/: the input is not an object"},
@@ -106,13 +107,13 @@ func TestValidate(t *testing.T) {
 		{"types", "read", `{"path":1,"offset":0,"limit":1.5,"extra":true}`, OutcomeInvalidInput,
 			prefix + "/extra: unexpected property\n/limit: expected integer, got number\n/offset: less than the minimum 1\n/path: expected string, got number"},
 	} {
-		tool, res := r.Validate(c.tool, json.RawMessage(c.input))
+		tool, res := r.Validate(c.tool, jsontext.Value(c.input))
 		if tool != nil || res == nil || res.Outcome != c.outcome || text(*res) != c.want || !res.IsError() {
 			t.Fatalf("%s: %v %+v\n%q", c.name, tool, res, text(*res))
 		}
 	}
 	// At most five problem lines.
-	_, res := r.Validate("grep", json.RawMessage(`{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7}`))
+	_, res := r.Validate("grep", jsontext.Value(`{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7}`))
 	if res == nil || strings.Count(text(*res), "\n") != 5 {
 		t.Fatalf("five lines: %q", text(*res))
 	}
@@ -122,7 +123,7 @@ func TestValidate(t *testing.T) {
 		{"free", `{"anything":[1,2]}`},
 		{"read", " {\"path\":\"a\"} \n"},
 	} {
-		tool, res := r.Validate(c.tool, json.RawMessage(c.input))
+		tool, res := r.Validate(c.tool, jsontext.Value(c.input))
 		if tool == nil || res != nil {
 			t.Fatalf("%s %s: %+v", c.tool, c.input, res)
 		}
@@ -132,7 +133,7 @@ func TestValidate(t *testing.T) {
 func TestStateOfFoldsMetas(t *testing.T) {
 	ev := func(t *testing.T, thread string, meta any) session.Event {
 		t.Helper()
-		var raw json.RawMessage
+		var raw jsontext.Value
 		if meta != nil {
 			b, err := json.Marshal(meta)
 			if err != nil {
@@ -148,17 +149,17 @@ func TestStateOfFoldsMetas(t *testing.T) {
 		return e
 	}
 	todos := []Todo{{ID: "1", Content: "c", Status: TodoPending}}
-	other, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_x", Name: "read", Input: json.RawMessage(`{}`), Verdict: "allow"}, time.Now())
+	other, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_x", Name: "read", Input: jsontext.Value(`{}`), Verdict: "allow"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	other.Subagent = "thr_a"
 	redacted := ev(t, "thr_a", Meta{Path: "/w/r", SHA256: "rr"})
-	redacted.Payload = json.RawMessage(`{"tombstone":true}`)
+	redacted.Payload = jsontext.Value(`{"tombstone":true}`)
 	broken := ev(t, "thr_a", nil)
-	broken.Payload = json.RawMessage(`{"meta":`)
+	broken.Payload = jsontext.Value(`{"meta":`)
 	badMeta := ev(t, "thr_a", nil)
-	badMeta.Payload = json.RawMessage(`{"tool_use_id":"x","meta":[1]}`)
+	badMeta.Payload = jsontext.Value(`{"tool_use_id":"x","meta":[1]}`)
 	events := []session.Event{
 		ev(t, "thr_a", Meta{Path: "/w/a", SHA256: "a1"}),
 		ev(t, "thr_a", Meta{Path: "/w/b"}),

@@ -6,7 +6,7 @@ package server
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"net/http"
@@ -136,7 +136,7 @@ func canonical(t *testing.T, v any) string {
 			m["next_cursor"] = "present"
 		}
 	}
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

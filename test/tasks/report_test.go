@@ -95,3 +95,26 @@ func TestReportFilesThatCannotBeUsed(t *testing.T) {
 		t.Fatal("a report that is not JSON was read")
 	}
 }
+
+// TestTheReportIsWrittenForPeopleToRead: report.json is indented by two
+// spaces, its members in sorted order, ends with a newline, and reads back
+// to the report.
+func TestTheReportIsWrittenForPeopleToRead(t *testing.T) {
+	dir := t.TempDir()
+	r := Report{Model: "m", Total: 1}
+	if err := WriteReport(dir, r); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, FileReportJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	if !strings.HasPrefix(text, "{\n  \"") || !strings.HasSuffix(text, "}\n") {
+		t.Fatalf("report.json is %q", text)
+	}
+	got, err := ReadReport(filepath.Join(dir, FileReportJSON))
+	if err != nil || got.Model != "m" || got.Total != 1 {
+		t.Fatalf("read back %+v, %v", got, err)
+	}
+}

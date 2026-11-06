@@ -12,8 +12,7 @@
 package keystub
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -176,9 +175,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ValueSHA256 string `json:"value_sha256"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || dec.Decode(&struct{}{}) != io.EOF || !hashRE.MatchString(in.ValueSHA256) {
+	if err := json.Unmarshal(b, &in, json.RejectUnknownMembers(true)); err != nil || !hashRE.MatchString(in.ValueSHA256) {
 		refuse(w, http.StatusBadRequest, "invalid_request", "the body is {\"value_sha256\": \"<64 hex>\"} and nothing else")
 		return
 	}

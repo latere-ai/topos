@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -69,7 +70,7 @@ func resultOf(t *testing.T, evs []session.Event, id string) session.ToolResult {
 // machine opened on demand.
 func TestHistoryNeverOpensAMachine(t *testing.T) {
 	props := tools.History(nil).Properties()
-	input := json.RawMessage(`{"query":"port"}`)
+	input := jsontext.Value(`{"query":"port"}`)
 	risk := Score(tools.NameHistory, props, input, machine.KindCella, nil)
 	if risk.Score != 0 || opensMachine(props) {
 		t.Fatalf("risk %+v, opens a machine %v", risk, opensMachine(props))
@@ -113,19 +114,19 @@ func TestHistoryReadsTheThreadsLogAsWritten(t *testing.T) {
 	l.add(session.TypeUserMessage, "", session.UserMessage{Sender: ada, Content: []lux.Block{{Type: ir.BlockText, Text: "The staging port is 8443."}}})
 	l.add(session.TypeAgentMessage, "", session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{
 		{Type: ir.BlockThinking, Text: "try curl", Signature: "sig"}, {Type: ir.BlockText, Text: "Checking."},
-		{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_1", Name: "bash", Args: json.RawMessage(`{"command":"curl"}`)}},
+		{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_1", Name: "bash", Args: jsontext.Value(`{"command":"curl"}`)}},
 	}}})
-	l.add(session.TypeAgentToolUse, "", session.AgentToolUse{ToolUseID: "toolu_1", Name: "bash", Input: json.RawMessage(`{"command":"curl"}`), Verdict: "allow"})
+	l.add(session.TypeAgentToolUse, "", session.AgentToolUse{ToolUseID: "toolu_1", Name: "bash", Input: jsontext.Value(`{"command":"curl"}`), Verdict: "allow"})
 	l.add(session.TypeToolResult, "", session.ToolResult{ToolUseID: "toolu_1", Content: []lux.Block{{Type: ir.BlockText, Text: "curl: ECONNREFUSED 127.0.0.1:8443"}}, Outcome: tools.OutcomeOK})
 	l.add(session.TypeContextCompacted, "", session.ContextCompacted{Kind: session.CompactClearToolResults, ToolUseIDs: []string{"toolu_1"}, FromSeq: 4, ToSeq: 4})
 	l.add(session.TypeContextCompacted, "", session.ContextCompacted{Kind: session.CompactSummary, FromSeq: 1, ToSeq: 4, Summary: "Ada asked about staging."})
 	secret := l.add(session.TypeUserMessage, "", session.UserMessage{Sender: ada, Content: []lux.Block{{Type: ir.BlockText, Text: "the token is s3cr3t"}}})
-	l.evs[secret-1].Payload = json.RawMessage(`{"tombstone":true}`)
+	l.evs[secret-1].Payload = jsontext.Value(`{"tombstone":true}`)
 	l.add(session.TypeEventRedacted, "", session.EventRedacted{EventID: l.evs[secret-1].ID, By: ada})
 	l.add(session.TypeAgentMessage, "", session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{
-		{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_h", Name: tools.NameHistory, Args: json.RawMessage(`{}`)}},
+		{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_h", Name: tools.NameHistory, Args: jsontext.Value(`{}`)}},
 	}}})
-	l.add(session.TypeAgentToolUse, "", session.AgentToolUse{ToolUseID: "toolu_h", Name: tools.NameHistory, Input: json.RawMessage(`{}`), Verdict: "allow"})
+	l.add(session.TypeAgentToolUse, "", session.AgentToolUse{ToolUseID: "toolu_h", Name: tools.NameHistory, Input: jsontext.Value(`{}`), Verdict: "allow"})
 	l.add(session.TypeUserMessage, "", session.UserMessage{Sender: ada, Content: []lux.Block{{Type: ir.BlockText, Text: "a message after the call"}}})
 
 	tu := &turn{h: e.h, s: e.s, sh: &shared{events: l.evs}}
@@ -171,7 +172,7 @@ func TestHistoryReadsTheThreadsLogAsWritten(t *testing.T) {
 	}
 	// A log the fold cannot read is the harness's failure.
 	broken := slices.Clone(l.evs)
-	broken[0].Payload = json.RawMessage(`[]`)
+	broken[0].Payload = jsontext.Value(`[]`)
 	if _, err := (&turn{h: e.h, s: e.s, sh: &shared{events: broken}}).history(t.Context(), tools.Call{ID: "toolu_h"}, tools.HistoryRead{}); err == nil {
 		t.Fatal("a payload that does not decode was read")
 	}
@@ -292,11 +293,11 @@ func TestAHistoryCallRunsAgainOnResume(t *testing.T) {
 	e := setup(t, withHistory)
 	ctx := t.Context()
 	e.send(ctx, "The port is 8443.")
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_h", Name: tools.NameHistory, Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_h", Name: tools.NameHistory, Args: jsontext.Value(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_h", Name: tools.NameHistory, Input: json.RawMessage(`{"query":"port"}`), Verdict: "allow", Repeatable: true}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_h", Name: tools.NameHistory, Input: jsontext.Value(`{"query":"port"}`), Verdict: "allow", Repeatable: true}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}

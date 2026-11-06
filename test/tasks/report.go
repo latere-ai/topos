@@ -4,7 +4,8 @@
 package tasks
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +24,7 @@ type Report struct {
 	// whether it was rendered as a session on a person's own computer
 	// reads it.
 	Prompt     string    `json:"prompt,omitempty"`
-	Device     bool      `json:"device,omitempty"`
+	Device     bool      `json:"device,omitzero"`
 	Started    time.Time `json:"started"`
 	DurationMS int64     `json:"duration_ms"`
 	// Passed and Total count runs; PassRate is Passed over Total.
@@ -33,7 +34,7 @@ type Report struct {
 	SpendUSDMicro int64   `json:"spend_usd_micro"`
 	// Incomplete is a suite that stopped before its last run, which
 	// never passes a bar.
-	Incomplete       bool          `json:"incomplete,omitempty"`
+	Incomplete       bool          `json:"incomplete,omitzero"`
 	IncompleteReason string        `json:"incomplete_reason,omitempty"`
 	Tasks            []TaskSummary `json:"tasks"`
 	Runs             []RunResult   `json:"runs"`
@@ -185,7 +186,7 @@ const (
 
 // WriteReport writes the report as report.json and report.md in dir.
 func WriteReport(dir string, r Report) error {
-	b, err := json.MarshalIndent(r, "", "  ")
+	b, err := json.Marshal(r, jsontext.WithIndent("  "), json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return fmt.Errorf("tasks: encode the report: %w", err)
 	}

@@ -4,7 +4,7 @@
 package hosted
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -62,7 +62,7 @@ func (l *lectio) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/parsing/parses":
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
 			l.t.Errorf("a submit's body: %v", err)
 		}
 		l.submits = append(l.submits, body)
@@ -98,7 +98,7 @@ func (l *lectio) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"error":{"code":"not_found","message":"Not found."}}`)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(out); err != nil {
+	if err := json.MarshalWrite(w, out); err != nil {
 		l.t.Error(err)
 	}
 }

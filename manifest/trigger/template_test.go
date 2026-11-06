@@ -4,7 +4,8 @@
 package trigger
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ import (
 func values(t *testing.T, payload string) Values {
 	t.Helper()
 	e := Envelope{ID: "d-1", Product: "github", Verb: "issue.opened", Resource: "o/r#7", Actor: "ann", Subject: "o",
-		Time: time.Date(2026, 9, 30, 8, 0, 0, 0, time.UTC), Payload: json.RawMessage(payload)}
+		Time: time.Date(2026, 9, 30, 8, 0, 0, 0, time.UTC), Payload: jsontext.Value(payload)}
 	event, err := e.Value()
 	if err != nil {
 		t.Fatal(err)

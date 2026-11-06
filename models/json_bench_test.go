@@ -4,7 +4,8 @@
 package models
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func benchProse(n int) string {
 // benchArgs are the arguments of a write call whose content is n bytes.
 func benchArgs(b *testing.B, n int) string {
 	b.Helper()
-	raw, err := json.Marshal(map[string]any{"path": "internal/server/generated.go", "content": benchProse(n)})
+	raw, err := json.Marshal(map[string]any{"path": "internal/server/generated.go", "content": benchProse(n)}, ToProvider)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func benchResponse(b *testing.B, n int) *ir.Response {
 		ID: "msg_01XFDUDYJgAACzvnptvVoYEL", Model: "claude-haiku-5-5",
 		Blocks: []ir.Block{
 			{Type: ir.BlockText, Text: "I'll write the file now, then run the tests."},
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_01A9XkQ2", Name: "write", Args: json.RawMessage(benchArgs(b, n))}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_01A9XkQ2", Name: "write", Args: jsontext.Value(benchArgs(b, n))}},
 		},
 		StopReason: ir.StopToolUse,
 		Usage:      ir.Usage{InputTokens: 1200, OutputTokens: 80},
@@ -58,7 +59,7 @@ func BenchmarkJSONLuxMessageRoundTrip(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			enc, err := json.Marshal(msg)
+			enc, err := json.Marshal(msg, ToProvider)
 			if err != nil {
 				b.Fatal(err)
 			}

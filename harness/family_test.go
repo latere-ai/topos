@@ -4,7 +4,7 @@
 package harness
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"slices"
 	"strings"
 	"testing"
@@ -31,7 +31,7 @@ func TestFamilyChangeReportsLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"weigh it"}],"encrypted_content":"enc-1"}`)
+	item := jsontext.Value(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"weigh it"}],"encrypted_content":"enc-1"}`)
 	e.stub.Script(model,
 		reply(ir.StopEndTurn, ir.Block{Type: ir.BlockThinking, Text: "plan", Signature: "sig-1"}, ir.Block{Type: ir.BlockRedactedThinking, Redacted: "red-1"}, text("Planned.")),
 		reply(ir.StopEndTurn, ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: item}}, text("Weighed.")),

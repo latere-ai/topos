@@ -5,7 +5,7 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -27,7 +27,7 @@ type switcher struct {
 }
 
 func (switcher) Definition() tools.Definition {
-	return tools.Definition{Name: "switch", Description: "switches the model", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	return tools.Definition{Name: "switch", Description: "switches the model", InputSchema: jsontext.Value(`{"type":"object"}`)}
 }
 func (switcher) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectRead} }
 func (sw switcher) Run(ctx context.Context, _ tools.Call) (tools.Result, error) {
@@ -70,7 +70,7 @@ func TestAModelSwitchAppliesToTheNextTurn(t *testing.T) {
 		return c, c.Tools.AddBuiltin(switcher{st: f.store, id: s.ID, to: other})
 	}
 	f.stub.Script(model,
-		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_s", Name: "switch", Args: json.RawMessage(`{}`)}}),
+		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_s", Name: "switch", Args: jsontext.Value(`{}`)}}),
 		reply(ir.Block{Type: ir.BlockText, Text: "Still the first model."}),
 	)
 	f.stub.Script(other, luxstub.Reply{Response: ir.Response{Model: other, Blocks: []ir.Block{{Type: ir.BlockText, Text: "The other model."}}, StopReason: ir.StopEndTurn, Usage: ir.Usage{InputTokens: 10, OutputTokens: 2}}})

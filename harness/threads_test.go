@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"slices"
@@ -280,11 +280,11 @@ func TestAThreadThatFinishedBeforeACrashIsNotRunAgain(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.send(ctx, "Go.")
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: ToolAgent, Args: json.RawMessage(`{"subagent":"reviewer","task":"t"}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: ToolAgent, Args: jsontext.Value(`{"subagent":"reviewer","task":"t"}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_s", Name: ToolAgent, Input: json.RawMessage(`{"subagent":"reviewer","task":"t"}`), Verdict: "allow"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_s", Name: ToolAgent, Input: jsontext.Value(`{"subagent":"reviewer","task":"t"}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestAThreadThatFinishedBeforeACrashIsNotRunAgain(t *testing.T) {
 
 	lost := setup(t, withReviewer(nil))
 	lost.send(ctx, "Go.")
-	use2, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_x", Name: ToolAgent, Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
+	use2, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_x", Name: ToolAgent, Input: jsontext.Value(`{}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -727,11 +727,11 @@ func TestAnAdvisorCallResumes(t *testing.T) {
 	e := setup(t, withAdvisor)
 	ctx := t.Context()
 	e.send(ctx, "Go.")
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_a", Name: ToolAdvisor, Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_a", Name: ToolAdvisor, Args: jsontext.Value(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_a", Name: ToolAdvisor, Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_a", Name: ToolAdvisor, Input: jsontext.Value(`{}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}

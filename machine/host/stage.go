@@ -7,7 +7,8 @@ package host
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -398,7 +399,7 @@ func (h *Host) stageBackground(ctx context.Context, r machine.ExecRequest) (mach
 	}
 	// The job's handle is kept in its stage directory, so the end of a
 	// session whose later turns opened another machine still finds it.
-	b, err := json.Marshal(l.handle)
+	b, err := json.Marshal(l.handle, jsontext.AllowInvalidUTF8(true))
 	if err == nil {
 		err = os.WriteFile(filepath.Join(l.dir, jobHandle), b, 0o600)
 	}
@@ -480,7 +481,7 @@ func StopJobs(ctx context.Context, driver hostsandbox.Sandbox, stageDir string) 
 			}
 			var handle hostsandbox.StageHandle
 			if err == nil {
-				err = json.Unmarshal(b, &handle)
+				err = json.Unmarshal(b, &handle, jsontext.AllowInvalidUTF8(true))
 			}
 			if err != nil {
 				errs <- fmt.Errorf("machine: read the job's handle %s: %w", p, err)

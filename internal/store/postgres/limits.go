@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -129,7 +128,7 @@ func (s *Store) renameSessionAgents(ctx context.Context, tx pgx.Tx, log *slog.Lo
 		}
 		for _, h := range page {
 			var sess session.Session
-			if err := json.Unmarshal([]byte(h.body), &sess); err != nil {
+			if err := session.Unmarshal([]byte(h.body), &sess); err != nil {
 				return 0, fmt.Errorf("%w: the header of %s: %w", session.ErrCorrupt, h.id, err)
 			}
 			if sess.Agent.Bundle == "" {

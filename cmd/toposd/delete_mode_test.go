@@ -4,7 +4,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"maps"
 	"net/http"
 	"strings"
@@ -104,7 +105,7 @@ func TestADeletedSessionIsGone(t *testing.T) {
 // for, records the change in its log and its header, and never reaches
 // the machine for it.
 func TestAModeChangeReachesTheRunner(t *testing.T) {
-	write := luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_w", Name: "write", Args: json.RawMessage(`{"path":"NOTES.md","content":"x"}`)}}}, StopReason: ir.StopToolUse}}
+	write := luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_w", Name: "write", Args: jsontext.Value(`{"path":"NOTES.md","content":"x"}`)}}}, StopReason: ir.StopToolUse}}
 	send, waitFor := serveOverTheStubs(t, said("Ready."), write, said("I will only look."))
 	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"builder","message":"Get ready."}`)
 	var s session.Session

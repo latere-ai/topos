@@ -4,7 +4,7 @@
 package manifest
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"reflect"
 	"strings"
@@ -173,12 +173,12 @@ func TestInstructionsFile(t *testing.T) {
 
 func TestTheWalkerReadsEveryType(t *testing.T) {
 	var s struct {
-		N  int             `json:"n"`
-		F  float64         `json:"f"`
-		B  bool            `json:"b"`
-		T  time.Time       `json:"t"`
-		R  json.RawMessage `json:"r"`
-		U  uint            `json:"u"`
+		N  int            `json:"n"`
+		F  float64        `json:"f"`
+		B  bool           `json:"b"`
+		T  time.Time      `json:"t"`
+		R  jsontext.Value `json:"r"`
+		U  uint           `json:"u"`
 		In struct {
 			X string `json:"x"`
 		} `json:"in"`
@@ -187,7 +187,7 @@ func TestTheWalkerReadsEveryType(t *testing.T) {
 	}
 	w := &walker{}
 	tree := map[string]any{
-		"n": json.Number("7"), "f": json.Number("0.5"), "b": true, "t": "2026-09-27T09:00:00Z",
+		"n": jsontext.Value("7"), "f": jsontext.Value("0.5"), "b": true, "t": "2026-09-27T09:00:00Z",
 		"r": map[string]any{"k": uint64(1), "l": []any{int64(-1)}}, "in": map[string]any{"x": "y"},
 	}
 	w.value("", tree, reflect.ValueOf(&s).Elem())
@@ -227,14 +227,14 @@ func TestTheWalkerReadsEveryType(t *testing.T) {
 	var i64 struct {
 		N int64 `json:"n"`
 	}
-	for _, in := range []any{int64(-3), float64(4), json.Number("x"), 1e300} {
+	for _, in := range []any{int64(-3), float64(4), jsontext.Value("x"), 1e300} {
 		w = &walker{}
 		w.value("", map[string]any{"n": in}, reflect.ValueOf(&i64).Elem())
 		if _, ok := integer(in); ok == (len(w.problems) > 0) {
 			t.Fatalf("%v: %v", in, w.problems)
 		}
 	}
-	for _, in := range []any{uint64(1), int64(1), json.Number("x"), nil, map[string]string{}} {
+	for _, in := range []any{uint64(1), int64(1), jsontext.Value("x"), nil, map[string]string{}} {
 		if _, ok := number(in); ok != (in == uint64(1) || in == int64(1)) {
 			t.Fatalf("number %v", in)
 		}

@@ -5,7 +5,8 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -192,7 +193,7 @@ func reply(blocks ...ir.Block) luxstub.Reply {
 func TestARunThroughTheHTTPModel(t *testing.T) {
 	stub := luxstub.New(t)
 	stub.Script(httpModel,
-		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: json.RawMessage(`{"path":"hello.txt","content":"hello"}`)}}),
+		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: jsontext.Value(`{"path":"hello.txt","content":"hello"}`)}}),
 		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
 	)
 	res, err := RunTask(t.Context(), loadTask(t, "coding/echo"), Options{Work: t.TempDir(), Connection: stubConnection(stub)}, 1)
@@ -226,7 +227,7 @@ func TestTheDevicePrompt(t *testing.T) {
 		t.Helper()
 		stub := luxstub.New(t)
 		stub.Script(httpModel,
-			reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: json.RawMessage(`{"path":"hello.txt","content":"hello"}`)}}),
+			reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: jsontext.Value(`{"path":"hello.txt","content":"hello"}`)}}),
 			reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
 		)
 		o.Work, o.Connection = t.TempDir(), stubConnection(stub)
@@ -313,7 +314,7 @@ func TestAModelTheCatalogDoesNotKnow(t *testing.T) {
 		t.Fatalf("report %+v", rep)
 	}
 	stub.Script("house-model",
-		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: json.RawMessage(`{"path":"hello.txt","content":"hello"}`)}}),
+		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: jsontext.Value(`{"path":"hello.txt","content":"hello"}`)}}),
 		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
 	)
 	entry := models.Entry{Family: models.FamilyAnthropic, InputWindow: 100_000, MaxOutputTokens: 8_000, Pricing: ScriptedEntry("x").Pricing}
@@ -330,7 +331,7 @@ func TestARunTakesTheDoorsFigures(t *testing.T) {
 	stub := luxstub.New(t)
 	stub.Models(bridge.Model{Name: httpModel, ContextWindow: 100_000, MaxOutputTokens: 2_048, Pricing: &bridge.ModelPricing{Currency: "USD", Input: "2", Output: "2"}})
 	stub.Script(httpModel,
-		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: json.RawMessage(`{"path":"hello.txt","content":"hello"}`)}}),
+		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: jsontext.Value(`{"path":"hello.txt","content":"hello"}`)}}),
 		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
 	)
 	res, err := RunTask(t.Context(), loadTask(t, "coding/echo"), Options{Work: t.TempDir(), Connection: stubConnection(stub)}, 1)

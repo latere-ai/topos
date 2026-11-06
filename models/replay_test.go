@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"testing"
@@ -41,7 +41,7 @@ func TestReplayComparesEachRecordedRequest(t *testing.T) {
 		log = append(log, e)
 	}
 	tomb := log[0]
-	tomb.Payload, tomb.Seq = json.RawMessage(`{"tombstone":true}`), 9
+	tomb.Payload, tomb.Seq = jsontext.Value(`{"tombstone":true}`), 9
 	log = append(log, tomb)
 	rebuild := func(_ context.Context, _ []session.Event, _ session.Event, mr session.ModelRequest) (Request, error) {
 		return Request{Connection: Connection{Model: mr.Model}}, nil
@@ -74,7 +74,7 @@ func TestReplayComparesEachRecordedRequest(t *testing.T) {
 		t.Fatalf("an encoding that failed: %v", err)
 	}
 	bad := log[0]
-	bad.Payload = json.RawMessage(`{"model":`)
+	bad.Payload = jsontext.Value(`{"model":`)
 	if _, err := Replay(t.Context(), []session.Event{bad}, rebuild, fixedEncoder{}); err == nil {
 		t.Fatal("an unreadable model.request replayed")
 	}

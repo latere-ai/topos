@@ -5,7 +5,7 @@ package session
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -126,8 +126,8 @@ func restate(e Event) (Event, error) {
 	if p, ok := ownStatus(e); !ok || p.Status != StatusEnded {
 		return e, nil
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(e.Payload, &fields); err != nil {
+	var fields map[string]jsontext.Value
+	if err := Unmarshal(e.Payload, &fields); err != nil {
 		return Event{}, fmt.Errorf("session: restate the fork point %s: %w", e.ID, err)
 	}
 	for k, v := range map[string]any{"status": StatusIdle, "stop_reason": StopEndTurn} {

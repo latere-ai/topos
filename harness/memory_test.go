@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -186,7 +187,7 @@ type paths struct {
 	of []string
 }
 
-func (p paths) Paths(json.RawMessage) []string { return p.of }
+func (p paths) Paths(jsontext.Value) []string { return p.of }
 
 // TestTheAttachmentsBlockNamesMemory: a session with memory folders names
 // each one and its access in the attachments block after its apps, every
@@ -245,7 +246,7 @@ func TestTheAttachmentsBlockNamesMemory(t *testing.T) {
 func TestTheMemoryVerdict(t *testing.T) {
 	ctx := t.Context()
 	writeProps, readProps := tools.Properties{Effect: tools.EffectWrite}, tools.Properties{Effect: tools.EffectRead}
-	in := json.RawMessage(`{"path":"/memory/project/a.md","content":"x"}`)
+	in := jsontext.Value(`{"path":"/memory/project/a.md","content":"x"}`)
 	for _, tc := range []struct {
 		policy  Policy
 		props   tools.Properties

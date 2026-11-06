@@ -6,7 +6,7 @@ package runner
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,7 +41,7 @@ type poster struct {
 }
 
 func (poster) Definition() tools.Definition {
-	return tools.Definition{Name: "post", Description: "sends a message with a file", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	return tools.Definition{Name: "post", Description: "sends a message with a file", InputSchema: jsontext.Value(`{"type":"object"}`)}
 }
 func (poster) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectRead} }
 func (p poster) Run(ctx context.Context, _ tools.Call) (tools.Result, error) {

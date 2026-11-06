@@ -5,7 +5,7 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -115,7 +115,7 @@ func readEvent(rows pgx.Rows) (session.Event, error) {
 	if err := rows.Scan(&e.SessionID, &seq, &e.ID, &typ, &e.Time, &e.Subagent, &e.Turn, &e.Step, &payload); err != nil {
 		return session.Event{}, err
 	}
-	e.Seq, e.Type, e.Payload, e.Time = uint64(seq), session.Type(typ), json.RawMessage(payload), e.Time.UTC()
+	e.Seq, e.Type, e.Payload, e.Time = uint64(seq), session.Type(typ), jsontext.Value(payload), e.Time.UTC()
 	return e, nil
 }
 

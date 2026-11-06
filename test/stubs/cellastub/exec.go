@@ -6,7 +6,7 @@ package cellastub
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -115,8 +115,8 @@ type execRequest struct {
 	Env     map[string]string `json:"env,omitempty"`
 	Workdir string            `json:"workdir,omitempty"`
 	Timeout string            `json:"timeout,omitempty"`
-	Cols    int               `json:"cols,omitempty"`
-	Rows    int               `json:"rows,omitempty"`
+	Cols    int               `json:"cols,omitzero"`
+	Rows    int               `json:"rows,omitzero"`
 }
 
 // capped keeps the head of an output, up to outputCap bytes.
@@ -142,9 +142,7 @@ func (s *Server) execWait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req execRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || req.Cols != 0 || req.Rows != 0 {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, MaxBodyBytes), &req, json.RejectUnknownMembers(true)); err != nil || req.Cols != 0 || req.Rows != 0 {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			refuse(w, http.StatusRequestEntityTooLarge, "body_too_large", err.Error())
@@ -220,9 +218,7 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req execRequest
-	dec := json.NewDecoder(bytes.NewReader(first))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := json.Unmarshal(first, &req, json.RejectUnknownMembers(true)); err != nil {
 		s.record(c.closeWith(1008, err.Error()))
 		return
 	}

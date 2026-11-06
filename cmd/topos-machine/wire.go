@@ -5,7 +5,8 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -37,6 +38,11 @@ const (
 	frameExit   = 'x' // the command ended, an exitBody; the read finished
 )
 
+// wireJSON is how the helper writes its bodies: a path or an error message
+// can carry bytes that are not UTF-8, which are written as the replacement
+// character instead of failing the answer.
+var wireJSON = jsontext.AllowInvalidUTF8(true)
+
 // maxFrame bounds one frame's payload, the exec socket's own bound on a
 // message.
 const maxFrame = 1 << 20
@@ -62,7 +68,7 @@ func (f *frameWriter) frame(kind byte, payload []byte) error {
 }
 
 func (f *frameWriter) json(kind byte, v any) error {
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, wireJSON)
 	if err != nil {
 		return err
 	}
@@ -147,10 +153,10 @@ func kindOf(err error) string {
 // server stopped early or a move frame moved nothing, if either did.
 type exitBody struct {
 	Code      int    `json:"code"`
-	TimedOut  bool   `json:"timedOut,omitempty"`
-	Canceled  bool   `json:"canceled,omitempty"`
-	Moved     bool   `json:"moved,omitempty"`
-	PID       int    `json:"pid,omitempty"`
+	TimedOut  bool   `json:"timedOut,omitzero"`
+	Canceled  bool   `json:"canceled,omitzero"`
+	Moved     bool   `json:"moved,omitzero"`
+	PID       int    `json:"pid,omitzero"`
 	Log       string `json:"log,omitempty"`
 	Ports     []int  `json:"ports,omitempty"`
 	ServerErr string `json:"serverError,omitempty"`
@@ -175,17 +181,17 @@ type jobBody struct {
 // response is the one JSON answer of the search, job and fs modes: one of
 // its fields is set.
 type response struct {
-	Result  *machine.SearchResult `json:"result,omitempty"`
-	Walk    *machine.WalkResult   `json:"walk,omitempty"`
+	Result  *machine.SearchResult `json:"result,omitzero"`
+	Walk    *machine.WalkResult   `json:"walk,omitzero"`
 	Entries []entry               `json:"entries,omitempty"`
-	Job     *jobBody              `json:"job,omitempty"`
-	Done    bool                  `json:"done,omitempty"`
-	Error   *errorBody            `json:"error,omitempty"`
+	Job     *jobBody              `json:"job,omitzero"`
+	Done    bool                  `json:"done,omitzero"`
+	Error   *errorBody            `json:"error,omitzero"`
 }
 
 // answer writes a response and returns the mode's exit code.
 func answer(stdout io.Writer, r response) int {
-	if err := json.NewEncoder(stdout).Encode(r); err != nil {
+	if err := json.MarshalEncode(jsontext.NewEncoder(stdout, wireJSON), r); err != nil {
 		return 3
 	}
 	return 0

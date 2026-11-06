@@ -4,7 +4,8 @@
 package server
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"maps"
 	"net/http"
 	"os"
@@ -114,7 +115,7 @@ func TestTodoResultMetaIsWhatTheTodoToolRecords(t *testing.T) {
 
 	run := func(in string) tools.Result {
 		t.Helper()
-		res, err := todo.Run(t.Context(), tools.Call{ID: "toolu_1", Input: json.RawMessage(in)})
+		res, err := todo.Run(t.Context(), tools.Call{ID: "toolu_1", Input: jsontext.Value(in)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,9 +178,9 @@ func TestASessionsSpendingKeptCurrentFromItsStream(t *testing.T) {
 		t.Helper()
 		var page struct {
 			Items []struct {
-				ID      string          `json:"id"`
-				Type    string          `json:"type"`
-				Payload json.RawMessage `json:"payload"`
+				ID      string         `json:"id"`
+				Type    string         `json:"type"`
+				Payload jsontext.Value `json:"payload"`
 			} `json:"items"`
 		}
 		f.do(http.MethodGet, "/v1/sessions/"+id+"/events?limit=100&from_seq="+strconv.FormatUint(from, 10), "alice", "").decode(t, &page)
@@ -212,7 +213,7 @@ func TestASessionsSpendingKeptCurrentFromItsStream(t *testing.T) {
 		session.UserMessage{Sender: s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Find three flats."}}},
 		session.SessionStatus{Status: session.StatusRunning},
 		session.ModelRequest{Model: "claude-haiku-4-5", CostUSDMicro: new(int64(300)), Outcome: "ok"},
-		session.AgentToolUse{ToolUseID: "toolu_s", Name: tools.NameWebSearch, Input: json.RawMessage(`{"query":"flats"}`), Verdict: "allow"},
+		session.AgentToolUse{ToolUseID: "toolu_s", Name: tools.NameWebSearch, Input: jsontext.Value(`{"query":"flats"}`), Verdict: "allow"},
 		session.ToolResult{ToolUseID: "toolu_s", Content: []lux.Block{{Type: ir.BlockText, Text: "3 results"}}, Outcome: tools.OutcomeOK, CostUSDMicro: &search},
 		session.ModelRequest{Model: "claude-haiku-4-5", Outcome: "ok"},
 	)

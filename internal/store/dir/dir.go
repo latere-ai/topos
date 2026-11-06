@@ -33,7 +33,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -490,7 +489,7 @@ func readJSON(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("dir: read %s: %w", filepath.Base(path), err)
 	}
-	if err := json.Unmarshal(b, v); err != nil {
+	if err := session.Unmarshal(b, v); err != nil {
 		return fmt.Errorf("%w: %s: %w", session.ErrCorrupt, filepath.Base(path), err)
 	}
 	return nil

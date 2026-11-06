@@ -4,9 +4,9 @@
 package proposal
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
@@ -34,7 +34,7 @@ const (
 
 // wakeSchema is the wake tool's input, its bounds read from their
 // constants.
-var wakeSchema = json.RawMessage(fmt.Sprintf(`{
+var wakeSchema = jsontext.Value(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "action": {"type": "string", "enum": [%q, %q], "description": "set to set this conversation's next wake, replacing a pending one; cancel to cancel it."},
@@ -87,11 +87,9 @@ type wakeInput struct {
 	Note   string `json:"note"`
 }
 
-func decodeWake(raw json.RawMessage) (wakeInput, error) {
+func decodeWake(raw jsontext.Value) (wakeInput, error) {
 	var in wakeInput
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	err := dec.Decode(&in)
+	err := json.Unmarshal(raw, &in, modelInput)
 	return in, err
 }
 

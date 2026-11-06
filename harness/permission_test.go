@@ -4,7 +4,7 @@
 package harness
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"reflect"
 	"slices"
 	"testing"
@@ -39,7 +39,7 @@ func TestScoreFollowsTheRuleFeatures(t *testing.T) {
 		{"web_fetch", `nope`, machine.KindHost, tools.EffectExternal, 0.6},
 		{"custom", `{}`, machine.KindHost, "", 0.6},
 	} {
-		r := Score(c.name, props(c.effect), json.RawMessage(c.input), c.kind, egress)
+		r := Score(c.name, props(c.effect), jsontext.Value(c.input), c.kind, egress)
 		if r.Score != c.want || r.Source != RiskSource || len(r.Features) == 0 {
 			t.Fatalf("Score(%s %s on %s) = %+v, want %v", c.name, c.input, c.kind, r, c.want)
 		}
@@ -53,14 +53,14 @@ func TestDecideAppliesTheModeAndTheLists(t *testing.T) {
 	top := session.Risk{Score: 0.95}
 	write := props(tools.EffectWrite)
 	read := props(tools.EffectRead)
-	cmd := json.RawMessage(`{"command":"make deploy"}`)
-	path := json.RawMessage(`{"path":"docs/a/b.md"}`)
+	cmd := jsontext.Value(`{"command":"make deploy"}`)
+	path := jsontext.Value(`{"path":"docs/a/b.md"}`)
 	for _, c := range []struct {
 		name   string
 		policy Policy
 		tool   string
 		props  tools.Properties
-		input  json.RawMessage
+		input  jsontext.Value
 		risk   session.Risk
 		kind   string
 		rem    []string
@@ -83,8 +83,8 @@ func TestDecideAppliesTheModeAndTheLists(t *testing.T) {
 		{"progressive block", Policy{Mode: ModeProgressive}, "bash", write, cmd, top, machine.KindHost, nil, VerdictBlock},
 		{"progressive thresholds", Policy{Mode: ModeProgressive, Thresholds: Thresholds{FlagAt: 0.05, AskAt: 0.08, BlockAt: 0.09}}, "bash", write, cmd, low, machine.KindHost, nil, VerdictBlock},
 		{"progressive confirm list", Policy{Mode: ModeProgressive, AlwaysConfirm: []string{"bash"}}, "bash", write, cmd, low, machine.KindHost, nil, VerdictAsk},
-		{"web domain", Policy{Mode: ModeConfirm, AlwaysAllow: []string{"web_fetch(domain:*.example.com)"}}, "web_fetch", props(tools.EffectExternal), json.RawMessage(`{"url":"https://docs.example.com/x"}`), high, machine.KindHost, nil, VerdictAllow},
-		{"bad input", Policy{Mode: ModeConfirm, AlwaysAllow: []string{"bash(make*)"}}, "bash", write, json.RawMessage(`[`), low, machine.KindHost, nil, VerdictAsk},
+		{"web domain", Policy{Mode: ModeConfirm, AlwaysAllow: []string{"web_fetch(domain:*.example.com)"}}, "web_fetch", props(tools.EffectExternal), jsontext.Value(`{"url":"https://docs.example.com/x"}`), high, machine.KindHost, nil, VerdictAllow},
+		{"bad input", Policy{Mode: ModeConfirm, AlwaysAllow: []string{"bash(make*)"}}, "bash", write, jsontext.Value(`[`), low, machine.KindHost, nil, VerdictAsk},
 		{"other tool", Policy{Mode: ModeConfirm, AlwaysAllow: []string{"edit"}}, "write", write, path, low, machine.KindHost, nil, VerdictAsk},
 	} {
 		d := c.policy.Decide(c.tool, c.props, c.input, c.risk, c.kind, c.rem)

@@ -4,7 +4,6 @@
 package session
 
 import (
-	"encoding/json"
 	"slices"
 	"time"
 )
@@ -54,7 +53,7 @@ func noticeOf(e Event) *Notice {
 			Notice *NoticeMeta `json:"notice"`
 		} `json:"meta"`
 	}
-	if json.Unmarshal(e.Payload, &p) != nil || p.Meta.Notice == nil {
+	if Unmarshal(e.Payload, &p) != nil || p.Meta.Notice == nil {
 		return nil
 	}
 	return &Notice{Title: p.Meta.Notice.Title, Seq: e.Seq, At: e.Time}

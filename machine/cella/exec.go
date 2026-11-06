@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -227,7 +227,7 @@ func opened(sess *client.Session, op, p string) error {
 			return errors.Join(noHelper(sess, h[:], err), closeSession(sess))
 		}
 		var e errorBody
-		if json.Unmarshal(payload, &e) == nil && e.Kind != "" {
+		if json.Unmarshal(payload, &e, fromHelper) == nil && e.Kind != "" {
 			return errors.Join(e.err(op, p), closeSession(sess))
 		}
 		return errors.Join(fmt.Errorf("%w: %q", errNoHelper, truncate(append(h[:], payload...))), closeSession(sess))
@@ -368,7 +368,7 @@ func (st *stream) next() {
 		st.res.Dir = string(payload)
 	case frameExit:
 		var e exitBody
-		if err := json.Unmarshal(payload, &e); err != nil {
+		if err := json.Unmarshal(payload, &e, fromHelper); err != nil {
 			st.end(fmt.Errorf("machine: the helper's exit %q: %w", payload, err))
 			return
 		}
@@ -380,7 +380,7 @@ func (st *stream) next() {
 		st.end(nil)
 	case frameFail:
 		var e errorBody
-		if err := json.Unmarshal(payload, &e); err != nil {
+		if err := json.Unmarshal(payload, &e, fromHelper); err != nil {
 			st.end(fmt.Errorf("machine: the helper's failure %q: %w", payload, err))
 			return
 		}

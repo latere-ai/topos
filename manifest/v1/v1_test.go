@@ -4,7 +4,8 @@
 package v1
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func TestAToolIsANameOrAnObject(t *testing.T) {
 	}
 	want := []Tool{
 		{Name: "read"},
-		{Name: "ask", Client: true, Description: "Ask the person.", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "ask", Client: true, Description: "Ask the person.", InputSchema: jsontext.Value(`{"type":"object"}`)},
 		{Name: "bash", OutputLimit: 4096},
 	}
 	if !reflect.DeepEqual(spec.Tools, want) {
@@ -50,7 +51,7 @@ func TestTheResolvedFormWritesFixedDefaultsAndOmitsTheRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(b)
-	for _, want := range []string{`"apiVersion":"topos.latere.ai/v1"`, `"kind":"Agent"`, `"instructions":""`, `"tools":null`, `"subagentLimits":{"maxDepth":null,"maxConcurrent":null}`, `"limits":{"turnTimeout":"","maxAge":""}`} {
+	for _, want := range []string{`"apiVersion":"topos.latere.ai/v1"`, `"kind":"Agent"`, `"instructions":""`, `"tools":[]`, `"subagentLimits":{"maxDepth":null,"maxConcurrent":null}`, `"limits":{"turnTimeout":"","maxAge":""}`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%s lacks %s", got, want)
 		}

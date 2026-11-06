@@ -4,7 +4,8 @@
 package session
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -46,7 +47,7 @@ func (l *qlog) redact(id string) {
 var (
 	ada   = Sender{Subject: "usr_ada", Name: "Ada", Kind: SenderPerson}
 	cron  = Sender{Subject: TriggerSubjectPrefix + "trg_1", Kind: SenderTrigger}
-	twoQs = json.RawMessage(`{"questions":[` +
+	twoQs = jsontext.Value(`{"questions":[` +
 		`{"header":"Storage","question":"Which database?","options":[{"label":"Postgres","description":"The shared cluster.","recommended":true},{"label":"SQLite","description":"A file."}]},` +
 		`{"header":"Regions","question":"Which regions?","multiple":true,"options":[{"label":"Europe","description":"Current customers."},{"label":"North America","description":"Two prospects."}]}]}`)
 )
@@ -276,9 +277,9 @@ func TestWhatClosedAQuestion(t *testing.T) {
 		gone := l.add(TypeAgentToolUse, asked("toolu_gone"))
 		l.add(TypeToolResult, ToolResult{ToolUseID: "toolu_gone"})
 		l.redact(gone.ID)
-		l.evs = append(l.evs, Event{Type: TypeAgentToolUse, Payload: json.RawMessage(`[`)}, Event{Type: TypeUserMessage, Payload: json.RawMessage(`[`)})
+		l.evs = append(l.evs, Event{Type: TypeAgentToolUse, Payload: jsontext.Value(`[`)}, Event{Type: TypeUserMessage, Payload: jsontext.Value(`[`)})
 		// A question whose input does not decode is still a question.
-		l.add(TypeAgentToolUse, AgentToolUse{ToolUseID: "toolu_odd", Name: ToolQuestion, Input: json.RawMessage(`"text"`)})
+		l.add(TypeAgentToolUse, AgentToolUse{ToolUseID: "toolu_odd", Name: ToolQuestion, Input: jsontext.Value(`"text"`)})
 		qs := Questions(l.evs)
 		if len(qs) != 1 || qs[0].ToolUseID != "toolu_odd" || len(qs[0].Input.Questions) != 0 {
 			t.Fatalf("questions %+v", qs)

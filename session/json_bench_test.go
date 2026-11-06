@@ -4,7 +4,7 @@
 package session
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +37,7 @@ func benchAgentMessage(n int) AgentMessage {
 	return AgentMessage{
 		Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{
 			{Type: ir.BlockText, Text: benchProse(n)},
-			{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_01A9XkQ2", Name: "read", Args: json.RawMessage(`{"path":"session/event.go","offset":120,"limit":80}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_01A9XkQ2", Name: "read", Args: jsontext.Value(`{"path":"session/event.go","offset":120,"limit":80}`)}},
 		}},
 		StopReason: ir.StopToolUse,
 		Request:    "evt_01JBX5Z8M2Q4R6T8V0W2Y4A6C8",
@@ -51,7 +51,7 @@ func benchToolResult(n int) ToolResult {
 		Content:    []lux.Block{{Type: ir.BlockText, Text: benchProse(n)}},
 		Outcome:    "ok",
 		DurationMS: 42,
-		Meta:       json.RawMessage(`{"sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","cwd":"/work/topos"}`),
+		Meta:       jsontext.Value(`{"sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","cwd":"/work/topos"}`),
 	}
 }
 
@@ -102,7 +102,7 @@ func BenchmarkJSONEventUnmarshal(b *testing.B) {
 			b.SetBytes(int64(len(enc)))
 			for b.Loop() {
 				var e Event
-				if err := json.Unmarshal(enc, &e); err != nil {
+				if err := Unmarshal(enc, &e); err != nil {
 					b.Fatal(err)
 				}
 			}

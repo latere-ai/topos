@@ -6,7 +6,6 @@ package postgres
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"strconv"
 	"sync"
 	"time"
@@ -193,7 +192,7 @@ func (l *listener) deliver(payload string) {
 		return
 	}
 	var note deltaNote
-	if err := json.Unmarshal([]byte(payload), &note); err != nil {
+	if err := session.Unmarshal([]byte(payload), &note); err != nil {
 		l.hub.Drop("", 1, "a notification that does not decode", err)
 		return
 	}

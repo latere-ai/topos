@@ -5,7 +5,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"maps"
 	"net/http"
 	"strings"
@@ -59,7 +59,10 @@ func TestServeNamesItsSessions(t *testing.T) {
 		if code != http.StatusCreated {
 			t.Fatalf("create: %d %s", code, body)
 		}
-		var s struct{ ID, Title string }
+		var s struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}
 		if err := json.Unmarshal([]byte(body), &s); err != nil {
 			t.Fatal(err)
 		}
@@ -160,7 +163,10 @@ func TestTheRunnerRoleNamesASession(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("create: %d %s", code, body)
 	}
-	var s struct{ ID, Title string }
+	var s struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
 	if err := json.Unmarshal([]byte(body), &s); err != nil {
 		t.Fatal(err)
 	}

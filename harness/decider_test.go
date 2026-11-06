@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"reflect"
 	"testing"
@@ -33,7 +33,7 @@ func TestRulesDeciderMatchesPolicy(t *testing.T) {
 		{"web_fetch", tools.Properties{Effect: tools.EffectExternal}, `{"url":"https://example.com/x"}`, machine.KindHost},
 	}
 	for _, c := range cases {
-		in := json.RawMessage(c.input)
+		in := jsontext.Value(c.input)
 		risk, d, err := Rules{}.Decide(context.Background(), Call{Policy: p, Name: c.name, Props: c.props, Input: in, MachineKind: c.kind})
 		if err != nil {
 			t.Fatal(err)

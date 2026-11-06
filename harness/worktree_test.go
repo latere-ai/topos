@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,11 +26,14 @@ import (
 type writer struct{}
 
 func (writer) Definition() tools.Definition {
-	return tools.Definition{Name: "put", Description: "write a file", InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"}}}`)}
+	return tools.Definition{Name: "put", Description: "write a file", InputSchema: jsontext.Value(`{"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"}}}`)}
 }
 func (writer) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectWrite} }
 func (writer) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
-	var in struct{ Path, Text string }
+	var in struct {
+		Path string `json:"path"`
+		Text string `json:"text"`
+	}
 	if err := json.Unmarshal(c.Input, &in); err != nil {
 		return tools.Result{}, err
 	}

@@ -5,7 +5,8 @@ package session_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"slices"
 	"strings"
@@ -121,7 +122,7 @@ func TestAForkRestatesTheEndOfItsTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
-	end, err := session.NewEvent(session.TypeSessionStatus, json.RawMessage(
+	end, err := session.NewEvent(session.TypeSessionStatus, jsontext.Value(
 		`{"status":"ended","stop_reason":"completed","checkpoint":{"ref":"refs/topos/checkpoints/x/1","commit":"0000000000000000000000000000000000000001"},"later":{"kept":true}}`), at.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +179,7 @@ func TestAForkRestatesTheEndOfItsTurn(t *testing.T) {
 	}
 	var p struct {
 		session.SessionStatus
-		Later json.RawMessage `json:"later"`
+		Later jsontext.Value `json:"later"`
 	}
 	if err := json.Unmarshal(last.Payload, &p); err != nil {
 		t.Fatal(err)

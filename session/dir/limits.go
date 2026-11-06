@@ -6,7 +6,6 @@ package dir
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -87,7 +86,7 @@ func (s *Store) header(id string) (session.Session, error) {
 		return session.Session{}, fmt.Errorf("dir: read session %s: %w", id, err)
 	}
 	var hdr session.Session
-	if err := json.Unmarshal(b, &hdr); err != nil {
+	if err := session.Unmarshal(b, &hdr); err != nil {
 		return session.Session{}, fmt.Errorf("%w: session.json of %s: %w", session.ErrCorrupt, id, err)
 	}
 	return hdr, nil

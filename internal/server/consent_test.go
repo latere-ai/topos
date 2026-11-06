@@ -4,7 +4,7 @@
 package server
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"net/http"
 	"slices"
 	"strconv"
@@ -30,7 +30,7 @@ func TestConfirmationAnswerFields(t *testing.T) {
 		t.Helper()
 		var evs []session.Event
 		for _, id := range ids {
-			evs = append(evs, ev(t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"}))
+			evs = append(evs, ev(t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: "bash", Input: jsontext.Value(`{}`), Verdict: "ask"}))
 		}
 		f.put(s.ID, evs...)
 	}

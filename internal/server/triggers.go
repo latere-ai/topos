@@ -6,9 +6,11 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"slices"
@@ -539,7 +541,7 @@ type firing struct {
 	ID         string       `json:"id,omitempty"`
 	TriggerID  string       `json:"trigger_id"`
 	Origin     string       `json:"origin"`
-	Event      *firingEvent `json:"event,omitempty"`
+	Event      *firingEvent `json:"event,omitzero"`
 	Key        string       `json:"key"`
 	Outcome    string       `json:"outcome,omitempty"`
 	Reason     string       `json:"reason,omitempty"`
@@ -551,7 +553,7 @@ func renderFiring(f store.Firing) (firing, error) {
 	out := firing{ID: f.ID, TriggerID: f.TriggerID, Origin: f.Origin, Key: f.Key, Outcome: f.Outcome, Reason: f.Reason, SessionID: f.SessionID, ReceivedAt: f.ReceivedAt.UTC()}
 	if len(f.Envelope) > 0 {
 		var e trigger.Envelope
-		if err := json.Unmarshal(f.Envelope, &e); err != nil {
+		if err := session.Unmarshal(f.Envelope, &e); err != nil {
 			return firing{}, err
 		}
 		out.Event = &firingEvent{Product: e.Product, Verb: e.Verb, Resource: e.Resource, ID: e.ID}
@@ -586,12 +588,11 @@ func (c *call) fireTrigger() error {
 		return refuse(CodeInvalidRequest, "an event trigger takes one envelope: id, product, verb, resource, time and payload")
 	case spec.On != nil:
 		env = &trigger.Envelope{}
-		dec := json.NewDecoder(bytes.NewReader(body))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(env); err != nil {
+		dec := jsontext.NewDecoder(bytes.NewReader(body))
+		if err := json.UnmarshalDecode(dec, env, json.RejectUnknownMembers(true)); err != nil {
 			return refuse(CodeInvalidRequest, "the envelope does not decode: %v", err)
 		}
-		if dec.More() {
+		if _, err := dec.ReadToken(); !errors.Is(err, io.EOF) {
 			return refuse(CodeInvalidRequest, "the body holds more than one envelope")
 		}
 		if err := env.Check(); err != nil {
@@ -868,7 +869,7 @@ func (actor) Refusal(err error) (string, *time.Time, bool) {
 // name it, resets_at; nil for limits that name none or do not read, which
 // a refusal is then taken as having none.
 func resetsAt(e *apiError) *time.Time {
-	raw, ok := e.details["limits"].(json.RawMessage)
+	raw, ok := e.details["limits"].(jsontext.Value)
 	if !ok {
 		return nil
 	}
@@ -893,7 +894,7 @@ func (s *Server) agentNames(ctx context.Context, agentID, name string) (bool, er
 		return false, err
 	}
 	var doc v1.Agent
-	if err := json.Unmarshal(v.Doc, &doc); err != nil {
+	if err := session.Unmarshal(v.Doc, &doc); err != nil {
 		return false, fmt.Errorf("server: agent %s's version %d does not read: %w", a.ID, a.Latest, err)
 	}
 	return slices.ContainsFunc(doc.Spec.Tools, func(t v1.Tool) bool { return t.Name == name && !t.Client }), nil

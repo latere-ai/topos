@@ -5,7 +5,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"slices"
 	"strconv"
@@ -50,7 +51,7 @@ func newOrgFixture(t *testing.T) *orgFixture {
 			d := authz.Decision{Allow: true}
 			switch {
 			case req.Action == authorizer.ActionAgentCreate:
-				d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+				d.Limits = jsontext.Value(`{"owner":{"type":"organization","id":"acme"}}`)
 			case authz.IsList(req.Action):
 				d.Filter = filter
 			}
@@ -303,11 +304,11 @@ func TestListsHoldTheirContext(t *testing.T) {
 
 // equalJSON compares two values as JSON renders them.
 func equalJSON(a, b any) bool {
-	x, err := json.Marshal(a)
+	x, err := json.Marshal(a, json.Deterministic(true))
 	if err != nil {
 		return false
 	}
-	y, err := json.Marshal(b)
+	y, err := json.Marshal(b, json.Deterministic(true))
 	return err == nil && string(x) == string(y)
 }
 

@@ -6,7 +6,8 @@ package tasks
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"time"
@@ -18,13 +19,23 @@ import (
 // without what the session gives it when it is written, its id, its
 // session and its sequence.
 type logLine struct {
-	Type     session.Type    `json:"type"`
-	Time     *time.Time      `json:"time"`
-	Turn     int             `json:"turn"`
-	Step     int             `json:"step"`
-	Subagent string          `json:"subagent"`
-	Payload  json.RawMessage `json:"payload"`
+	Type     session.Type   `json:"type"`
+	Time     *time.Time     `json:"time"`
+	Turn     int            `json:"turn"`
+	Step     int            `json:"step"`
+	Subagent string         `json:"subagent"`
+	Payload  jsontext.Value `json:"payload"`
 }
+
+// userFile reads JSON this package does not produce: a file a person or an
+// agent wrote and the input of a model's call. Duplicate members, bytes
+// that are not UTF-8 and member names in any letter case are read, not
+// refused.
+var userFile = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
 
 // readLog reads a task's log, with its placeholders replaced: one event
 // per line, blank lines aside, each of a type schema v1 defines and with
@@ -44,16 +55,14 @@ func readLog(path, workdir, serveURL string, now time.Time) ([]session.Event, er
 		if len(line) == 0 {
 			continue
 		}
-		dec := json.NewDecoder(bytes.NewReader(line))
-		dec.DisallowUnknownFields()
 		var l logLine
-		if err := dec.Decode(&l); err != nil {
+		if err := json.Unmarshal(line, &l, userFile, json.RejectUnknownMembers(true)); err != nil {
 			return nil, fmt.Errorf("line %d: %w", n, err)
 		}
 		switch {
 		case !session.Known[l.Type]:
 			return nil, fmt.Errorf("line %d: %q is not an event type of schema v1", n, l.Type)
-		case !json.Valid(l.Payload) || !bytes.HasPrefix(bytes.TrimSpace(l.Payload), []byte("{")):
+		case !l.Payload.IsValid(userFile) || !bytes.HasPrefix(bytes.TrimSpace(l.Payload), []byte("{")):
 			return nil, fmt.Errorf("line %d: the payload is not a JSON object", n)
 		}
 		at := now

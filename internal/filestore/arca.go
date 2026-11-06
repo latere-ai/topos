@@ -18,7 +18,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -120,7 +121,7 @@ func (a *Arca) send(ctx context.Context, method, u string, body io.Reader, size 
 
 // sendJSON sends a JSON body to the files API.
 func (a *Arca) sendJSON(ctx context.Context, method, u string, in any, header http.Header) (*http.Response, error) {
-	b, err := json.Marshal(in)
+	b, err := json.Marshal(in, jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +339,7 @@ func (a *Arca) putParts(ctx context.Context, ref, mediaType string, size int64, 
 		return refusal("upload", resp)
 	}
 	var up uploadSession
-	derr := json.NewDecoder(io.LimitReader(resp.Body, maxErrorBody)).Decode(&up)
+	derr := json.UnmarshalRead(io.LimitReader(resp.Body, maxErrorBody), &up)
 	closeBody(resp)
 	if derr != nil {
 		return fmt.Errorf("filestore: the upload of %s answered no session: %w", ref, derr)

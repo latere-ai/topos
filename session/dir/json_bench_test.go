@@ -5,7 +5,7 @@ package dir
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +33,7 @@ func benchBatch(b *testing.B, first uint64, n int) []session.Event {
 		typ session.Type
 		p   any
 	}{
-		{session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_01A9XkQ2", Name: "read", Input: json.RawMessage(`{"path":"session/event.go","offset":120,"limit":80}`), Verdict: "allow"}},
+		{session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_01A9XkQ2", Name: "read", Input: jsontext.Value(`{"path":"session/event.go","offset":120,"limit":80}`), Verdict: "allow"}},
 		{session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_01A9XkQ2", Content: []lux.Block{{Type: ir.BlockText, Text: benchProse(n)}}, Outcome: "ok", DurationMS: 42}},
 		{session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: benchProse(300)}}}, StopReason: ir.StopEndTurn}},
 	}

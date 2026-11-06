@@ -5,7 +5,8 @@ package manifest
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"os"
@@ -245,10 +246,10 @@ func TestStoredSubagentsArePinnedTransitively(t *testing.T) {
 
 // golden is what a testdata file resolves to.
 type golden struct {
-	Kind   string          `json:"kind"`
-	Name   string          `json:"name"`
-	Status v1.Status       `json:"status"`
-	Spec   json.RawMessage `json:"spec"`
+	Kind   string         `json:"kind"`
+	Name   string         `json:"name"`
+	Status v1.Status      `json:"status"`
+	Spec   jsontext.Value `json:"spec"`
 }
 
 // TestTestdataResolves holds each file of testdata to the resolved form
@@ -271,7 +272,7 @@ func TestTestdataResolves(t *testing.T) {
 		for _, r := range rs {
 			out = append(out, golden{Kind: r.Kind, Name: r.Name, Status: r.Status(), Spec: r.Spec})
 		}
-		got, err := json.MarshalIndent(out, "", "  ")
+		got, err := json.Marshal(out, json.Deterministic(true), jsontext.WithIndent("  "))
 		if err != nil {
 			t.Fatal(err)
 		}

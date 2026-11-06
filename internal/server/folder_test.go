@@ -5,7 +5,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"maps"
 	"net/http"
@@ -160,7 +161,7 @@ func TestTheAllowsFolderIsKeptAndAnsweredOnceUsed(t *testing.T) {
 	none.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d, err := none.authz.next.Authorize(context.Background(), req)
 		if d.Allow && req.Action == authorizer.ActionSessionCreate {
-			d.Limits = json.RawMessage(`{"folder":{"url":"https://files.example.com/v1","owner":"o","path":"files/x"}}`)
+			d.Limits = jsontext.Value(`{"folder":{"url":"https://files.example.com/v1","owner":"o","path":"files/x"}}`)
 		}
 		return d, err
 	}

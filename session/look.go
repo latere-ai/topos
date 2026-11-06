@@ -71,10 +71,10 @@ type MessageSpend struct {
 	TriggerID         string `json:"trigger_id"`
 	WindowDays        int    `json:"window_days"`
 	SpentUSDMicro     int64  `json:"spent_usd_micro"`
-	PerWeekUSDMicro   *int64 `json:"per_week_usd_micro,omitempty"`
-	PerLookUSDMicro   *int64 `json:"per_look_usd_micro,omitempty"`
+	PerWeekUSDMicro   *int64 `json:"per_week_usd_micro,omitzero"`
+	PerLookUSDMicro   *int64 `json:"per_look_usd_micro,omitzero"`
 	ExpectedLooks     int    `json:"expected_looks"`
-	ProjectedUSDMicro *int64 `json:"projected_usd_micro,omitempty"`
+	ProjectedUSDMicro *int64 `json:"projected_usd_micro,omitzero"`
 }
 
 // Ahead reports whether the watch is ahead of pace: its window is on

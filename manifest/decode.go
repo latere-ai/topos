@@ -5,7 +5,8 @@ package manifest
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"latere.ai/x/topos/harness/tools"
 	v1 "latere.ai/x/topos/manifest/v1"
 )
 
@@ -50,11 +52,9 @@ func parse(body []byte) ([]any, error) {
 
 func parseJSON(body []byte) ([]any, error) {
 	var docs []any
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
+	dec := tools.NewTreeDecoder(bytes.NewReader(body))
 	for {
-		var v any
-		err := dec.Decode(&v)
+		v, err := tools.ReadTree(dec)
 		if errors.Is(err, io.EOF) {
 			return docs, nil
 		}
@@ -196,7 +196,7 @@ type walker struct {
 
 var (
 	typeTool = reflect.TypeFor[v1.Tool]()
-	typeRaw  = reflect.TypeFor[json.RawMessage]()
+	typeRaw  = reflect.TypeFor[jsontext.Value]()
 	typeTime = reflect.TypeFor[time.Time]()
 )
 
@@ -344,7 +344,7 @@ func (w *walker) raw(path string, in any, v reflect.Value) {
 		w.add(path, "want a mapping, got "+kindOf(in))
 		return
 	}
-	b, err := json.Marshal(jsonable(in))
+	b, err := json.Marshal(jsonable(in), json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		w.add(path, "not representable as JSON")
 		return
@@ -352,8 +352,8 @@ func (w *walker) raw(path string, in any, v reflect.Value) {
 	v.SetBytes(b)
 }
 
-// jsonable converts the YAML decoder's number types to ones
-// encoding/json renders exactly.
+// jsonable converts the YAML decoder's number types to ones the JSON
+// encoder renders exactly.
 func jsonable(in any) any {
 	switch x := in.(type) {
 	case map[string]any:
@@ -369,9 +369,9 @@ func jsonable(in any) any {
 		}
 		return out
 	case uint64:
-		return json.Number(strconv.FormatUint(x, 10))
+		return jsontext.Value(strconv.FormatUint(x, 10))
 	case int64:
-		return json.Number(strconv.FormatInt(x, 10))
+		return jsontext.Value(strconv.FormatInt(x, 10))
 	}
 	return in
 }
@@ -433,8 +433,8 @@ func integer(in any) (int64, bool) {
 			return 0, false
 		}
 		return int64(x), true
-	case json.Number:
-		n, err := x.Int64()
+	case jsontext.Value:
+		n, err := strconv.ParseInt(string(x), 10, 64)
 		return n, err == nil
 	}
 	return 0, false
@@ -449,8 +449,8 @@ func number(in any) (float64, bool) {
 		return float64(x), true
 	case float64:
 		return x, true
-	case json.Number:
-		f, err := x.Float64()
+	case jsontext.Value:
+		f, err := strconv.ParseFloat(string(x), 64)
 		return f, err == nil
 	}
 	return 0, false
@@ -467,7 +467,7 @@ func kindOf(in any) string {
 		return "a string"
 	case bool:
 		return "a boolean"
-	case uint64, int64, float64, json.Number:
+	case uint64, int64, float64, jsontext.Value:
 		return "a number"
 	case nil:
 		return "null"

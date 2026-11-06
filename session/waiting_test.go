@@ -4,7 +4,7 @@
 package session_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 
@@ -227,7 +227,7 @@ func TestAHeldMessageWaitsWithTheSession(t *testing.T) {
 	aStep(b)
 	b.request(true)
 	b.assistant("", 1, false, use("toolu_q", session.ToolQuestion))
-	b.add(session.TypeAgentToolUse, "", 1, session.AgentToolUse{ToolUseID: "toolu_q", Name: session.ToolQuestion, Input: json.RawMessage(`{"questions":[{"header":"Port","question":"Which port?","options":[{"label":"8000","description":"The default."},{"label":"9000","description":"Free."}]}]}`), Verdict: "allow"})
+	b.add(session.TypeAgentToolUse, "", 1, session.AgentToolUse{ToolUseID: "toolu_q", Name: session.ToolQuestion, Input: jsontext.Value(`{"questions":[{"header":"Port","question":"Which port?","options":[{"label":"8000","description":"The default."},{"label":"9000","description":"Free."}]}]}`), Verdict: "allow"})
 	b.add(session.TypeUserMessage, "", 1, session.UserMessage{Sender: firing, Content: []lux.Block{txt("Check the deploy.")}, FiringID: "fir_1"})
 	b.status(session.StatusIdle, session.StopQuestion, "")
 	if _, open := session.OpenQuestion(b.events); !open {

@@ -4,7 +4,7 @@
 package idpstub
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/url"
@@ -59,7 +59,7 @@ func hostToken(t *testing.T, s *Server, secret string) answer {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		t.Fatal(err)
 	}
 	return answer{resp.StatusCode, out}
@@ -194,7 +194,7 @@ func TestAServiceTokenNamesItsAudience(t *testing.T) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		t.Fatal(err)
 	}
 	tok, _ := out["access_token"].(string)

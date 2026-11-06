@@ -5,7 +5,8 @@ package decisions
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,8 +70,8 @@ func sent(t *testing.T, kind string, tool tools.Tool, input string, state tools.
 	name := tool.Definition().Name
 	c := harness.Call{
 		Policy: harness.Policy{Mode: harness.ModeConfirm}, Session: sess, ToolUseID: "toolu_1", Name: name,
-		Props: tool.Properties(), Input: json.RawMessage(input), MachineKind: kind,
-		Reach: r.Of(tool, name, tools.Call{Input: json.RawMessage(input), State: state}, false), Holds: r.Holds(),
+		Props: tool.Properties(), Input: jsontext.Value(input), MachineKind: kind,
+		Reach: r.Of(tool, name, tools.Call{Input: jsontext.Value(input), State: state}, false), Holds: r.Holds(),
 	}
 	if _, _, err := d.Decide(context.Background(), c); err != nil {
 		t.Fatal(err)
@@ -206,7 +207,7 @@ func TestBoundaryDecidesOrganization(t *testing.T) {
 	fetch := builtinTool(t, "web_fetch")
 	of := func(b *session.Boundary, url string) *bool {
 		r := harness.Reaching{Kind: machine.KindCella, Boundary: b}
-		return r.Of(fetch, "web_fetch", tools.Call{Input: json.RawMessage(`{"url":"` + url + `"}`)}, false).Crosses.Organization
+		return r.Of(fetch, "web_fetch", tools.Call{Input: jsontext.Value(`{"url":"` + url + `"}`)}, false).Crosses.Organization
 	}
 	b := &session.Boundary{Hosts: []string{"*.example.com", "example.org"}}
 	if got := of(b, "https://api.example.com/x"); got == nil || *got {
@@ -238,11 +239,11 @@ func TestFirstContact(t *testing.T) {
 		return e
 	}
 	log := []session.Event{
-		ev(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_1", Name: "web_fetch", Input: json.RawMessage(`{"url":"https://a.example.com/x"}`)}),
+		ev(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_1", Name: "web_fetch", Input: jsontext.Value(`{"url":"https://a.example.com/x"}`)}),
 		ev(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_1", Outcome: tools.OutcomeOK}),
-		ev(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_2", Name: "web_fetch", Input: json.RawMessage(`{"url":"https://b.example.com/x"}`)}),
+		ev(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_2", Name: "web_fetch", Input: jsontext.Value(`{"url":"https://b.example.com/x"}`)}),
 		ev(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_2", Outcome: tools.OutcomeError}),
-		ev(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_3", Name: "bash", Input: json.RawMessage(`{"command":"curl https://c.example.com"}`)}),
+		ev(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_3", Name: "bash", Input: jsontext.Value(`{"command":"curl https://c.example.com"}`)}),
 		ev(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_3", Outcome: tools.OutcomeOK}),
 	}
 	fetched := harness.FetchedHosts(log)
@@ -252,13 +253,13 @@ func TestFirstContact(t *testing.T) {
 	r := harness.Reaching{Kind: machine.KindCella, Fetched: fetched}
 	fetch := builtinTool(t, "web_fetch")
 	for url, want := range map[string]string{"https://a.example.com/y": session.ContactRepeat, "https://b.example.com/y": session.ContactFirst, "https://c.example.com": session.ContactFirst} {
-		if got := r.Of(fetch, "web_fetch", tools.Call{Input: json.RawMessage(`{"url":"` + url + `"}`)}, false).Contact; got != want {
+		if got := r.Of(fetch, "web_fetch", tools.Call{Input: jsontext.Value(`{"url":"` + url + `"}`)}, false).Contact; got != want {
 			t.Errorf("%s: %s, want %s", url, got, want)
 		}
 	}
 	app := publish.New(publish.Options{URL: "https://apps.example.com", GitURL: "https://git.example.com"}, sess, nil)
-	first := app.Reach(tools.Call{Input: json.RawMessage(`{"path":"site"}`)})
-	again := app.Reach(tools.Call{Input: json.RawMessage(`{"path":"site"}`), State: tools.State{App: &session.PublishMeta{App: "site", AppID: "app_1"}}})
+	first := app.Reach(tools.Call{Input: jsontext.Value(`{"path":"site"}`)})
+	again := app.Reach(tools.Call{Input: jsontext.Value(`{"path":"site"}`), State: tools.State{App: &session.PublishMeta{App: "site", AppID: "app_1"}}})
 	if first.Contact != session.ContactFirst || first.Target.ID != "" || again.Contact != session.ContactRepeat || again.Target.ID != "app_1" {
 		t.Errorf("publish: first %+v, again %+v", first, again)
 	}
@@ -273,14 +274,14 @@ func TestScopeSource(t *testing.T) {
 	ctx := context.Background()
 	write := harness.Call{
 		Policy: harness.Policy{Mode: harness.ModeProgressive}, Session: sess, ToolUseID: "toolu_1", Name: "write",
-		Props: tools.Properties{Effect: tools.EffectWrite}, Input: json.RawMessage(`{"path":"a"}`), MachineKind: machine.KindCella,
+		Props: tools.Properties{Effect: tools.EffectWrite}, Input: jsontext.Value(`{"path":"a"}`), MachineKind: machine.KindCella,
 		Reach: tools.Reach{Undo: session.UndoReversible, Crosses: session.Crosses{Machine: new(false), Remote: new(false)}, Target: &tools.ReachTarget{Kind: "path", Class: session.TargetOwn}},
 	}
 	claimed := harness.ClaimedScope(write.Reach)
 	p := allowSuggestion()
 	p.Scope = &readScope{
 		Undo: "irreversible", TargetClass: "unknown", TargetKind: "zz-main", Contact: "first",
-		Crosses: map[string]json.RawMessage{"machine": json.RawMessage(`"unknown"`), "remote": json.RawMessage(`"yes"`), "public": json.RawMessage(`false`), "network": json.RawMessage(`"no"`), "organization": json.RawMessage(`7`)},
+		Crosses: map[string]jsontext.Value{"machine": jsontext.Value(`"unknown"`), "remote": jsontext.Value(`"yes"`), "public": jsontext.Value(`false`), "network": jsontext.Value(`"no"`), "organization": jsontext.Value(`7`)},
 	}
 	want := session.CallScope{
 		Undo: session.UndoIrreversible, Crosses: &session.Crosses{Machine: new(false), Remote: new(true), Network: new(false), Public: new(false)},
@@ -516,10 +517,10 @@ func TestHandoffAttributes(t *testing.T) {
 	s := &service{next: allowSuggestion()}
 	d := newDecider(t, s, 0.5)
 	for _, c := range []harness.Call{
-		{Name: harness.ToolAgent, Input: json.RawMessage(`{"subagent":"reviewer","task":"zzmarker"}`), Depth: 1, Handoff: &harness.Handoff{Writes: true, Isolation: "worktree"}},
-		{Name: harness.ToolSendMessage, Input: json.RawMessage(`{"to":"evt_1","message":"zzmarker"}`), Handoff: &harness.Handoff{External: true}},
-		{Name: harness.ToolMessage, Input: json.RawMessage(`{"thread":"evt_1","content":"zzmarker"}`)},
-		{Name: "bash", Input: json.RawMessage(`{"command":"ls"}`), Depth: 2},
+		{Name: harness.ToolAgent, Input: jsontext.Value(`{"subagent":"reviewer","task":"zzmarker"}`), Depth: 1, Handoff: &harness.Handoff{Writes: true, Isolation: "worktree"}},
+		{Name: harness.ToolSendMessage, Input: jsontext.Value(`{"to":"evt_1","message":"zzmarker"}`), Handoff: &harness.Handoff{External: true}},
+		{Name: harness.ToolMessage, Input: jsontext.Value(`{"thread":"evt_1","content":"zzmarker"}`)},
+		{Name: "bash", Input: jsontext.Value(`{"command":"ls"}`), Depth: 2},
 	} {
 		c.Policy, c.Session, c.ToolUseID, c.MachineKind = harness.Policy{Mode: harness.ModeConfirm}, sess, "toolu_1", machine.KindCella
 		c.Props = tools.Properties{Effect: tools.EffectNone}

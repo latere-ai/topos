@@ -5,7 +5,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"slices"
 	"strconv"
 	"strings"
@@ -206,8 +206,8 @@ func sameJSON(t *testing.T, v any, want string) bool {
 	if err := json.Unmarshal([]byte(want), &b); err != nil {
 		t.Fatal(err)
 	}
-	ra, _ := json.Marshal(a)
-	rb, _ := json.Marshal(b)
+	ra, _ := json.Marshal(a, json.Deterministic(true))
+	rb, _ := json.Marshal(b, json.Deterministic(true))
 	return string(ra) == string(rb)
 }
 

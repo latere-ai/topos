@@ -10,7 +10,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -546,7 +547,7 @@ func TestServeStopsOnAStoreItCannotOpen(t *testing.T) {
 
 // glob is a reply that calls glob, a tool that acts on the machine, so
 // the session's machine is opened on demand.
-var glob = luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_glob", Name: "glob", Args: json.RawMessage(`{"pattern":"*.go"}`)}}}, StopReason: ir.StopToolUse}}
+var glob = luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_glob", Name: "glob", Args: jsontext.Value(`{"pattern":"*.go"}`)}}}, StopReason: ir.StopToolUse}}
 
 // hostedStubs are a stub Lux that answers with replies, or when none is
 // given calls glob, which opens the session's machine, and then answers
@@ -1014,7 +1015,7 @@ func TestCellaMachineSurvivesRunnerRestart(t *testing.T) {
 			once.Do(func() { close(started) })
 			<-release
 		}},
-		luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_glob_again", Name: "glob", Args: json.RawMessage(`{"pattern":"*.go"}`)}}}, StopReason: ir.StopToolUse}},
+		luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_glob_again", Name: "glob", Args: jsontext.Value(`{"pattern":"*.go"}`)}}}, StopReason: ir.StopToolUse}},
 		luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}},
 	)
 	t.Cleanup(func() { close(release) })

@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -59,7 +59,7 @@ var (
 // Holder is who holds a session's lease.
 type Holder struct {
 	Runner     string    `json:"runner"`
-	PID        int       `json:"pid,omitempty"`
+	PID        int       `json:"pid,omitzero"`
 	Host       string    `json:"host,omitempty"`
 	AcquiredAt time.Time `json:"acquired_at"`
 }
@@ -476,7 +476,7 @@ func CheckBatch(id string, last, afterSeq uint64, events []Event, stored func(fr
 		if e.Type == "" {
 			return false, fmt.Errorf("%w: event %s has no type", ErrInvalid, e.ID)
 		}
-		if !json.Valid(e.Payload) || !bytes.HasPrefix(bytes.TrimSpace(e.Payload), []byte("{")) {
+		if !e.Payload.IsValid(storedRead) || !bytes.HasPrefix(bytes.TrimSpace(e.Payload), []byte("{")) {
 			return false, fmt.Errorf("%w: event %s payload is not a JSON object", ErrInvalid, e.ID)
 		}
 		if e.Time.IsZero() {
@@ -511,11 +511,11 @@ func SameEvent(a, b Event) bool {
 		!a.Time.Equal(b.Time) || a.Turn != b.Turn || a.Step != b.Step || a.Subagent != b.Subagent {
 		return false
 	}
-	var ca, cb bytes.Buffer
-	if json.Compact(&ca, a.Payload) != nil || json.Compact(&cb, b.Payload) != nil {
+	ca, cb := jsontext.Value(bytes.Clone(a.Payload)), jsontext.Value(bytes.Clone(b.Payload))
+	if ca.Compact(storedRead) != nil || cb.Compact(storedRead) != nil {
 		return false
 	}
-	return bytes.Equal(ca.Bytes(), cb.Bytes())
+	return bytes.Equal(ca, cb)
 }
 
 // ApplyBatch updates the Session header from appended events: the last
@@ -721,7 +721,7 @@ type keptTombstone struct {
 type answeredTombstone struct {
 	Tombstone    bool   `json:"tombstone"`
 	ToolUseID    string `json:"tool_use_id"`
-	CostUSDMicro *int64 `json:"cost_usd_micro,omitempty"`
+	CostUSDMicro *int64 `json:"cost_usd_micro,omitzero"`
 }
 
 // Answers is the tool_use id of the call a tool.result or a
@@ -735,7 +735,7 @@ func (e Event) Answers() string {
 	var p struct {
 		ToolUseID string `json:"tool_use_id"`
 	}
-	if json.Unmarshal(e.Payload, &p) != nil {
+	if Unmarshal(e.Payload, &p) != nil {
 		return ""
 	}
 	return p.ToolUseID
@@ -745,7 +745,7 @@ func (e Event) Answers() string {
 // each once.
 func (e Event) Blobs() []Digest {
 	var v any
-	if json.Unmarshal(e.Payload, &v) != nil {
+	if Unmarshal(e.Payload, &v) != nil {
 		return nil
 	}
 	var out []Digest

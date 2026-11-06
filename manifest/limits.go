@@ -61,12 +61,12 @@ func RenameSubagentLimits(stream []byte) (Renamed, error) {
 		if len(problems) > 0 {
 			return Renamed{}, newError(CodeInvalidManifest, len(trees), problems)
 		}
-		spec, err := session.Marshal(ob.agent.Spec)
+		spec, err := session.MarshalDigested(ob.agent.Spec)
 		if err != nil {
 			return Renamed{}, fmt.Errorf("manifest: render stored document %d: %w", i+1, err)
 		}
 		ob.agent.Status.Digest = string(session.DigestOf(spec))
-		b, err := session.Marshal(ob.agent)
+		b, err := session.MarshalDigested(ob.agent)
 		if err != nil {
 			return Renamed{}, fmt.Errorf("manifest: render stored document %d: %w", i+1, err)
 		}

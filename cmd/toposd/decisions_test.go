@@ -5,7 +5,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -54,7 +55,7 @@ func (d *decisionService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Subject  string `json:"subject"`
 		ActionID string `json:"action_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&k)
+	_ = json.UnmarshalRead(r.Body, &k)
 	d.mu.Lock()
 	d.reqs = append(d.reqs, decisionRequest{Path: r.URL.Path, Bearer: r.Header.Get("Authorization"), Org: k.Org, Subject: k.Subject, Action: k.ActionID})
 	failing := d.failing
@@ -67,7 +68,7 @@ func (d *decisionService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	_ = json.MarshalWrite(w, map[string]any{
 		"verdict": "ask", "approve": 0.5, "uncertainty": 1, "audit_rate": 0.05, "source": "learned/1",
 		"thresholds": map[string]float64{"allow_above": 0.9, "block_below": 0.25},
 		"reason":     "No answers from this person yet.",
@@ -148,7 +149,7 @@ func TestServeAsksTheDecisionServiceWithItsBearer(t *testing.T) {
 // call the rules leave open waits for the person when the decision
 // service does not answer, and the failure is logged.
 func TestHostedCallWaitsWhenTheDecisionServiceFails(t *testing.T) {
-	bash := luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_bash", Name: "bash", Args: json.RawMessage(`{"command":"make deploy"}`)}}}, StopReason: ir.StopToolUse}}
+	bash := luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_bash", Name: "bash", Args: jsontext.Value(`{"command":"make deploy"}`)}}}, StopReason: ir.StopToolUse}}
 	vars, _, _ := hostedStubs(t, bash)
 	svc := newDecisionService(t)
 	svc.failing = true
@@ -228,7 +229,7 @@ func TestTheDeciderKeysByTheConfiguredOrganization(t *testing.T) {
 		}
 		s := session.Session{ID: "ses_1", Org: "acme", Agent: session.AgentRef{ID: "agent_1"}, Initiator: session.Sender{Subject: "https://issuer.example|usr_1", Kind: session.SenderPerson}}
 		_, out, err := d.Decide(t.Context(), harness.Call{Policy: harness.Policy{Mode: harness.ModeProgressive}, Session: s, ToolUseID: "toolu_1", Name: "bash",
-			Props: tools.Properties{Effect: tools.EffectWrite}, Input: json.RawMessage(`{"command":"make"}`), MachineKind: machine.KindCella})
+			Props: tools.Properties{Effect: tools.EffectWrite}, Input: jsontext.Value(`{"command":"make"}`), MachineKind: machine.KindCella})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -9,9 +9,9 @@
 package runnerapi
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -144,7 +144,7 @@ type Token struct {
 // written as text.
 type FailoverRequest struct {
 	Generation int64             `json:"generation"`
-	Standing   *session.ModelRef `json:"standing,omitempty"`
+	Standing   *session.ModelRef `json:"standing,omitzero"`
 	Failed     session.ModelRef  `json:"failed"`
 	Reason     string            `json:"reason,omitempty"`
 	Detail     string            `json:"detail,omitempty"`
@@ -174,8 +174,8 @@ type TitleAnswer struct {
 // proposal, a wake's set the wake, and its cancel the call's id.
 type TriggersRequest struct {
 	Generation int64            `json:"generation"`
-	Proposal   *runner.Proposal `json:"proposal,omitempty"`
-	Wake       *runner.Wake     `json:"wake,omitempty"`
+	Proposal   *runner.Proposal `json:"proposal,omitzero"`
+	Wake       *runner.Wake     `json:"wake,omitzero"`
 	ToolUseID  string           `json:"tool_use_id,omitempty"`
 }
 
@@ -185,7 +185,7 @@ type TriggersRequest struct {
 // check answers nothing.
 type TriggersAnswer struct {
 	Triggers []runner.ListedTrigger `json:"triggers,omitempty"`
-	Trigger  *runner.ListedTrigger  `json:"trigger,omitempty"`
+	Trigger  *runner.ListedTrigger  `json:"trigger,omitzero"`
 	Canceled string                 `json:"canceled,omitempty"`
 }
 
@@ -202,8 +202,8 @@ type ConversationsRequest struct {
 // its scope held more, and a read with the file and its text.
 type ConversationsAnswer struct {
 	Files []memory.ConversationFile `json:"files,omitempty"`
-	More  bool                      `json:"more,omitempty"`
-	File  *memory.ConversationFile  `json:"file,omitempty"`
+	More  bool                      `json:"more,omitzero"`
+	File  *memory.ConversationFile  `json:"file,omitzero"`
 	Text  string                    `json:"text,omitempty"`
 }
 
@@ -952,14 +952,21 @@ func write(w http.ResponseWriter, code string, status int, msg string) {
 	httpjson.WriteError(w, status, httpjson.Error{Code: code, Message: msg})
 }
 
+// requestRead reads a runner's request: unknown members are refused, and
+// the events it carries hold model and process output, so duplicate members
+// and bytes that are not UTF-8 are read as the log stores them.
+var requestRead = json.JoinOptions(
+	json.RejectUnknownMembers(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
 func decode(r *http.Request, v any) error {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	if err := json.Unmarshal(b, v, requestRead); err != nil {
 		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "the body does not decode: " + err.Error()}
 	}
 	return nil

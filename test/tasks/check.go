@@ -6,7 +6,8 @@ package tasks
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -303,7 +304,7 @@ type Input struct {
 // assertion, counted from 1, and its kind.
 type Verdict struct {
 	Pass      bool   `json:"pass"`
-	Assertion int    `json:"assertion,omitempty"`
+	Assertion int    `json:"assertion,omitzero"`
 	Kind      string `json:"kind,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 }
@@ -381,7 +382,7 @@ func (q *QuestionCheck) eval(calls []Call) string {
 	}
 	for i, c := range asked {
 		var in session.QuestionInput
-		if err := json.Unmarshal(c.Input, &in); err != nil {
+		if err := json.Unmarshal(c.Input, &in, userFile); err != nil {
 			return fmt.Sprintf("question call %d: the input does not decode: %v", i+1, err)
 		}
 		for j, question := range in.Questions {
@@ -519,10 +520,10 @@ func (f *FileCheck) eval(in Input) (string, error) {
 			return "", err
 		}
 		var g, w any
-		if err := json.Unmarshal(want, &w); err != nil {
+		if err := json.Unmarshal(want, &w, userFile); err != nil {
 			return "", fmt.Errorf("%s: %w", f.JSONEqualsFile, err)
 		}
-		if err := json.Unmarshal(b, &g); err != nil {
+		if err := json.Unmarshal(b, &g, userFile); err != nil {
 			return fmt.Sprintf("%s is not JSON: %v", f.Path, err), nil
 		}
 		if !reflect.DeepEqual(g, w) {
@@ -687,7 +688,7 @@ type Call struct {
 	Thread  string
 	ID      string
 	Name    string
-	Input   json.RawMessage
+	Input   jsontext.Value
 	Outcome string
 	Text    string
 }
@@ -739,8 +740,8 @@ func (c *CallCheck) matches(call Call) bool {
 	if (c.Thread == "root" && call.Thread != "") || (c.Thread == "sub" && call.Thread == "") {
 		return false
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(call.Input, &fields) != nil {
+	var fields map[string]jsontext.Value
+	if json.Unmarshal(call.Input, &fields, userFile) != nil {
 		return len(c.Input) == 0
 	}
 	for name, m := range c.Input {
@@ -753,7 +754,7 @@ func (c *CallCheck) matches(call Call) bool {
 }
 
 // holds applies a matcher to one input field.
-func (m Matcher) holds(raw json.RawMessage, present bool) bool {
+func (m Matcher) holds(raw jsontext.Value, present bool) bool {
 	if m.Present != nil && *m.Present != present {
 		return false
 	}
@@ -771,7 +772,7 @@ func (m Matcher) holds(raw json.RawMessage, present bool) bool {
 		return false
 	}
 	var s string
-	isString := json.Unmarshal(raw, &s) == nil
+	isString := json.Unmarshal(raw, &s, userFile) == nil
 	if (m.Matches != "" || m.Contains != "" || m.MinLength > 0) && !isString {
 		return false
 	}
@@ -780,13 +781,13 @@ func (m Matcher) holds(raw json.RawMessage, present bool) bool {
 }
 
 // sameJSON compares a JSON value with a YAML value by their JSON forms.
-func sameJSON(raw json.RawMessage, v any) bool {
+func sameJSON(raw jsontext.Value, v any) bool {
 	var got any
-	if json.Unmarshal(raw, &got) != nil {
+	if json.Unmarshal(raw, &got, userFile) != nil {
 		return false
 	}
-	g, gerr := json.Marshal(got)
-	w, werr := json.Marshal(v)
+	g, gerr := json.Marshal(got, json.Deterministic(true))
+	w, werr := json.Marshal(v, json.Deterministic(true))
 	return gerr == nil && werr == nil && bytes.Equal(g, w)
 }
 
@@ -825,7 +826,7 @@ func (t *TodoCheck) eval(calls []Call) string {
 		var in struct {
 			Todos []todoItem `json:"todos"`
 		}
-		if json.Unmarshal(c.Input, &in) == nil {
+		if json.Unmarshal(c.Input, &in, userFile) == nil {
 			lists = append(lists, in.Todos)
 		}
 	}

@@ -6,7 +6,8 @@ package harness
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -79,7 +80,7 @@ type fakeTool struct {
 
 func (f *fakeTool) Definition() tools.Definition {
 	schema := cmp.Or(f.schema, `{"type":"object","properties":{"text":{"type":"string"},"command":{"type":"string"}},"additionalProperties":false}`)
-	return tools.Definition{Name: f.name, Description: "a test tool", InputSchema: json.RawMessage(schema)}
+	return tools.Definition{Name: f.name, Description: "a test tool", InputSchema: jsontext.Value(schema)}
 }
 func (f *fakeTool) Properties() tools.Properties { return f.props }
 func (f *fakeTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
@@ -251,7 +252,7 @@ func (e *env) events(ctx context.Context, typ session.Type) []session.Event {
 func text(s string) ir.Block { return ir.Block{Type: ir.BlockText, Text: s} }
 
 func call(id, name, args string) ir.Block {
-	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: json.RawMessage(args)}}
+	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: jsontext.Value(args)}}
 }
 
 func reply(stop ir.StopReason, blocks ...ir.Block) luxstub.Reply {
@@ -787,11 +788,11 @@ func TestAnInterruptStopsAtTheNextStep(t *testing.T) {
 func TestResumeClosesACallWithNoResult(t *testing.T) {
 	e := setup(t, nil)
 	ctx := t.Context()
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_lost", Name: "bash", Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_lost", Name: "bash", Input: jsontext.Value(`{}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_lost", Name: "bash", Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_lost", Name: "bash", Args: jsontext.Value(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1048,11 +1049,11 @@ func TestResumeRunsARepeatableCallAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := t.Context()
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: "memory_sync", Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_s", Name: "memory_sync", Args: jsontext.Value(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_s", Name: "memory_sync", Input: json.RawMessage(`{"text":"x"}`), Verdict: "allow", Repeatable: true}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_s", Name: "memory_sync", Input: jsontext.Value(`{"text":"x"}`), Verdict: "allow", Repeatable: true}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1129,11 +1130,11 @@ func TestAConfirmedCallAnEarlierRunnerMayHaveStarted(t *testing.T) {
 func TestAConfirmedCallForAToolThatIsGone(t *testing.T) {
 	e := setup(t, func(c *Config) { c.Machine = fakeMachine{kind: machine.KindHost} })
 	ctx := t.Context()
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_old", Name: "retired", Input: json.RawMessage(`{}`), Verdict: "ask"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_old", Name: "retired", Input: jsontext.Value(`{}`), Verdict: "ask"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_old", Name: "retired", Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_old", Name: "retired", Args: jsontext.Value(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1299,7 +1300,7 @@ func TestATurnRefusesALogItCannotFold(t *testing.T) {
 	}
 	r.log.last = s.LastSeq
 	noSecret := func(req *ir.Request) error {
-		b, err := json.Marshal(req)
+		b, err := json.Marshal(req, models.ToProvider)
 		if err != nil {
 			return err
 		}

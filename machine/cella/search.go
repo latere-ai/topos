@@ -5,7 +5,7 @@ package cella
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -33,7 +33,7 @@ func (m *Machine) Search(ctx context.Context, q machine.SearchRequest) (machine.
 		return machine.SearchResult{}, err
 	}
 	q.Path = t.abs
-	body, err := json.Marshal(q)
+	body, err := json.Marshal(q, toHelper)
 	if err != nil {
 		return machine.SearchResult{}, fmt.Errorf("machine: encode the search: %w", err)
 	}

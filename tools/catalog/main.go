@@ -19,7 +19,8 @@ package main
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -136,7 +137,7 @@ func run(luxDir, servedPath, previousPath, orPath, date, out string) error {
 		if err != nil {
 			return err
 		}
-		if err := json.Unmarshal(b, &previous); err != nil {
+		if err := json.Unmarshal(b, &previous, models.FromProvider); err != nil {
 			return fmt.Errorf("%s: %w", previousPath, err)
 		}
 	}
@@ -160,7 +161,7 @@ func run(luxDir, servedPath, previousPath, orPath, date, out string) error {
 	c.Models = append(c.Models, added...)
 	c.Models = append(c.Models, free...)
 	slices.SortFunc(c.Models, func(a, b models.Entry) int { return strings.Compare(a.Name, b.Name) })
-	b, err := json.MarshalIndent(c, "", "  ")
+	b, err := json.Marshal(c, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -177,7 +178,7 @@ func readOpenRouter(path string) (map[string]openRouterModel, []models.Entry, er
 	var list struct {
 		Data []openRouterModel `json:"data"`
 	}
-	if err := json.Unmarshal(b, &list); err != nil {
+	if err := json.Unmarshal(b, &list, models.FromProvider); err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 	windows := map[string]openRouterModel{}
@@ -290,7 +291,7 @@ func readServed(path string) ([]servedModel, error) {
 	var list struct {
 		Data []servedModel `json:"data"`
 	}
-	if err := json.Unmarshal(b, &list); err != nil {
+	if err := json.Unmarshal(b, &list, models.FromProvider); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return list.Data, nil

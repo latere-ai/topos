@@ -17,7 +17,8 @@ package proposal
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -53,7 +54,7 @@ const (
 var actions = []string{ActionList, ActionPropose, ActionChange, ActionPause, ActionResume, ActionDelete}
 
 // schema is the tool's input, its bounds read from their constants.
-var schema = json.RawMessage(fmt.Sprintf(`{
+var schema = jsontext.Value(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "action": {"type": "string", "enum": [%q, %q, %q, %q, %q, %q], "description": "list to read the triggers the person holds of you; propose to offer a new one; change, resume or delete one of them, which waits for the person's answer; pause one, which runs at once."},
@@ -145,41 +146,53 @@ func (*Tool) Properties() tools.Properties { return tools.Properties{Effect: too
 
 // fields is a call's input as the model writes it.
 type fields struct {
-	Action   string          `json:"action"`
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Ask      string          `json:"ask"`
-	Why      string          `json:"why"`
-	Schedule string          `json:"schedule"`
-	TimeZone string          `json:"timeZone"`
-	On       json.RawMessage `json:"on"`
-	Notify   string          `json:"notify"`
+	Action   string         `json:"action"`
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Ask      string         `json:"ask"`
+	Why      string         `json:"why"`
+	Schedule string         `json:"schedule"`
+	TimeZone string         `json:"timeZone"`
+	On       jsontext.Value `json:"on"`
+	Notify   string         `json:"notify"`
 	// PerWeekUSD is the weekly allowance in USD as the model writes it,
 	// read as a decimal (spec 087).
-	PerWeekUSD json.Number `json:"perWeekUsd"`
+	PerWeekUSD jsontext.Value `json:"perWeekUsd"`
 }
+
+// modelInput reads what the model writes, which this package does not
+// produce: duplicate members, bytes that are not UTF-8 and member names in
+// any letter case are read, and a member no field names is refused.
+var modelInput = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+	json.RejectUnknownMembers(true),
+)
 
 // decode reads a call's input as the server reads it, the call's id
 // beside it.
-func decode(id string, raw json.RawMessage) (runner.Proposal, error) {
+func decode(id string, raw jsontext.Value) (runner.Proposal, error) {
 	var f fields
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
+	if err := json.Unmarshal(raw, &f, modelInput); err != nil {
 		return runner.Proposal{}, err
 	}
 	p := runner.Proposal{ToolUseID: id, Action: f.Action, ID: f.ID, Name: f.Name, Ask: f.Ask, Why: f.Why, Schedule: f.Schedule, TimeZone: f.TimeZone, Notify: f.Notify}
-	if f.PerWeekUSD != "" {
-		micro, err := models.ParsePrice(f.PerWeekUSD.String())
+	if amount := bytes.TrimSpace(f.PerWeekUSD); len(amount) > 0 && f.PerWeekUSD.Kind() != 'n' {
+		text := string(amount)
+		if f.PerWeekUSD.Kind() == '"' {
+			if err := json.Unmarshal(amount, &text, modelInput); err != nil {
+				return runner.Proposal{}, fmt.Errorf("perWeekUsd is %s; it is a USD amount above zero with at most six digits after the point, such as 0.40", amount)
+			}
+		}
+		micro, err := models.ParsePrice(text)
 		if err != nil || micro <= 0 {
-			return runner.Proposal{}, fmt.Errorf("perWeekUsd is %s; it is a USD amount above zero with at most six digits after the point, such as 0.40", f.PerWeekUSD)
+			return runner.Proposal{}, fmt.Errorf("perWeekUsd is %s; it is a USD amount above zero with at most six digits after the point, such as 0.40", text)
 		}
 		p.PerWeekUSDMicro = new(int64(micro))
 	}
 	if len(f.On) > 0 && !bytes.Equal(bytes.TrimSpace(f.On), []byte("null")) {
-		on := json.NewDecoder(bytes.NewReader(f.On))
-		on.DisallowUnknownFields()
-		if err := on.Decode(&p.On); err != nil {
+		if err := json.Unmarshal(f.On, &p.On, modelInput); err != nil {
 			return runner.Proposal{}, fmt.Errorf("on: %w", err)
 		}
 	}

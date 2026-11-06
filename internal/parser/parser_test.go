@@ -6,7 +6,7 @@ package parser
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -131,7 +131,7 @@ func (s *stub) serve(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusOK
 		}
 		w.WriteHeader(status)
-		if err := json.NewEncoder(w).Encode(v); err != nil {
+		if err := json.MarshalWrite(w, v); err != nil {
 			s.t.Error(err)
 		}
 	case r.Method == http.MethodGet && len(segs) >= 2:
@@ -182,7 +182,7 @@ func (s *stub) serve(w http.ResponseWriter, r *http.Request) {
 			envelope(w, http.StatusNotFound, "not_found")
 			return
 		}
-		if err := json.NewEncoder(w).Encode(out); err != nil {
+		if err := json.MarshalWrite(w, out); err != nil {
 			s.t.Error(err)
 		}
 	default:

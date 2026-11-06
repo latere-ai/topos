@@ -5,7 +5,7 @@ package mcpstub
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"io"
 	"net/http"
 	"strings"
@@ -48,7 +48,7 @@ func modern(method string) map[string]string {
 // decodes a base64 name, answers an unknown method and tool and a bad
 // cursor with JSON-RPC errors, and records what it received.
 func TestTheStubHoldsTheTransport(t *testing.T) {
-	s := New(t, Options{Admit: func(b string) bool { return b == "t" }, Tools: []Tool{{Name: "名前", InputSchema: json.RawMessage(`{}`), Answer: func(json.RawMessage) any { return map[string]any{} }}}})
+	s := New(t, Options{Admit: func(b string) bool { return b == "t" }, Tools: []Tool{{Name: "名前", InputSchema: jsontext.Value(`{}`), Answer: func(jsontext.Value) any { return map[string]any{} }}}})
 	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{` + meta + `}}`
 	if code, _ := post(t, s, list, map[string]string{"Authorization": "Bearer other"}); code != http.StatusUnauthorized {
 		t.Fatalf("a wrong bearer: %d", code)

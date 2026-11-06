@@ -13,7 +13,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -120,18 +121,38 @@ func NewClient(url string, token func(context.Context) (string, error), hc *http
 	return &Client{url: url, token: token, http: hc, version: version}
 }
 
+// foreignJSON reads what a server writes, which this package does not
+// produce: duplicate members, bytes that are not UTF-8 and member names in
+// any letter case are read, not refused.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
+// outboundJSON writes a request to a server this package does not own:
+// members in a fixed order so a request is the same bytes each time, a nil
+// list or object as null, and the raw arguments of a call as they came.
+var outboundJSON = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
 // response is a JSON-RPC response.
 type response struct {
-	ID     json.RawMessage `json:"id"`
-	Result json.RawMessage `json:"result"`
-	Error  *RPCError       `json:"error"`
+	ID     jsontext.Value `json:"id"`
+	Result jsontext.Value `json:"result"`
+	Error  *RPCError      `json:"error"`
 }
 
 // call sends one request and answers its result: in the current revision
 // until the server shows it speaks an earlier one, and in that revision's
 // session after. name is the request's Mcp-Name, header its further
 // headers.
-func (c *Client) call(ctx context.Context, method string, params map[string]any, name string, header http.Header) (json.RawMessage, error) {
+func (c *Client) call(ctx context.Context, method string, params map[string]any, name string, header http.Header) (jsontext.Value, error) {
 	c.mu.Lock()
 	legacy := c.legacy
 	c.mu.Unlock()
@@ -158,7 +179,7 @@ func (c *Client) call(ctx context.Context, method string, params map[string]any,
 }
 
 // modern sends a request of the current revision.
-func (c *Client) modern(ctx context.Context, method string, params map[string]any, name string, header http.Header) (json.RawMessage, error) {
+func (c *Client) modern(ctx context.Context, method string, params map[string]any, name string, header http.Header) (jsontext.Value, error) {
 	p := maps.Clone(params)
 	if p == nil {
 		p = map[string]any{}
@@ -181,7 +202,7 @@ func (c *Client) modern(ctx context.Context, method string, params map[string]an
 }
 
 // earlier sends a request of the earlier revision, in its session.
-func (c *Client) earlier(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+func (c *Client) earlier(ctx context.Context, method string, params map[string]any) (jsontext.Value, error) {
 	c.mu.Lock()
 	id, version := c.sessionID, c.negotiated
 	c.mu.Unlock()
@@ -218,7 +239,7 @@ func (c *Client) initialize(ctx context.Context) error {
 	var init struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
-	if err := json.Unmarshal(res, &init); err != nil || init.ProtocolVersion == "" {
+	if err := json.Unmarshal(res, &init, foreignJSON); err != nil || init.ProtocolVersion == "" {
 		return fmt.Errorf("mcp: initialize answered no protocol version: %s", snippet(res))
 	}
 	c.mu.Lock()
@@ -247,7 +268,7 @@ func (c *Client) initialize(ctx context.Context) error {
 // send posts one request and reads its answer; modern is whether the
 // request is of the current revision, whose 400 may say the server speaks
 // an earlier one.
-func (c *Client) send(ctx context.Context, method string, params map[string]any, h http.Header, modern bool) (json.RawMessage, error) {
+func (c *Client) send(ctx context.Context, method string, params map[string]any, h http.Header, modern bool) (jsontext.Value, error) {
 	req, err := c.request(ctx, map[string]any{"jsonrpc": "2.0", "id": c.ids.Add(1), "method": method, "params": params}, h)
 	if err != nil {
 		return nil, err
@@ -263,7 +284,7 @@ func (c *Client) send(ctx context.Context, method string, params map[string]any,
 // request is a POST of body with the transport's headers, h and the
 // bearer, its id in the context of the request for answer to match.
 func (c *Client) request(ctx context.Context, body map[string]any, h http.Header) (*http.Request, error) {
-	b, err := json.Marshal(body)
+	b, err := json.Marshal(body, outboundJSON)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: encode the request: %w", err)
 	}
@@ -297,7 +318,7 @@ func idOf(req *http.Request) string {
 
 // answer reads the answer to the request of id: one JSON object, or an
 // event stream read until the response that carries id.
-func (c *Client) answer(resp *http.Response, id string, modern bool) (json.RawMessage, error) {
+func (c *Client) answer(resp *http.Response, id string, modern bool) (jsontext.Value, error) {
 	body := io.LimitReader(resp.Body, MaxResponse)
 	switch {
 	case resp.StatusCode == http.StatusConflict:
@@ -308,7 +329,7 @@ func (c *Client) answer(resp *http.Response, id string, modern bool) (json.RawMe
 			return nil, fmt.Errorf("mcp: read the answer: %w", err)
 		}
 		var r response
-		if json.Unmarshal(b, &r) == nil && r.Error != nil && r.Error.Code >= minModernCode && r.Error.Code <= maxModernCode {
+		if json.Unmarshal(b, &r, foreignJSON) == nil && r.Error != nil && r.Error.Code >= minModernCode && r.Error.Code <= maxModernCode {
 			return nil, r.Error
 		}
 		return nil, errLegacy
@@ -321,7 +342,7 @@ func (c *Client) answer(resp *http.Response, id string, modern bool) (json.RawMe
 		if r, err = readStream(body, id); err != nil {
 			return nil, err
 		}
-	} else if err := json.NewDecoder(body).Decode(&r); err != nil {
+	} else if err := json.UnmarshalRead(body, &r, foreignJSON); err != nil {
 		return nil, fmt.Errorf("mcp: the answer is not a JSON-RPC response: %w", err)
 	}
 	if r.Error != nil {
@@ -360,7 +381,7 @@ func readStream(r io.Reader, id string) (response, error) {
 // to the request of id, and the response when they are.
 func answers(data []string, id string) (response, bool) {
 	var resp response
-	if json.Unmarshal([]byte(strings.Join(data, "\n")), &resp) != nil {
+	if json.Unmarshal([]byte(strings.Join(data, "\n")), &resp, foreignJSON) != nil {
 		return response{}, false
 	}
 	return resp, string(bytes.TrimSpace(resp.ID)) == id && (resp.Result != nil || resp.Error != nil)
@@ -383,7 +404,7 @@ func conflict(resp *http.Response) error {
 			} `json:"details"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(b, &e) == nil && e.Error.Code == CodeNotConnected {
+	if json.Unmarshal(b, &e, foreignJSON) == nil && e.Error.Code == CodeNotConnected {
 		d := e.Error.Details
 		return &NotConnected{Reason: d.Reason, State: d.State, Scopes: d.Scopes}
 	}

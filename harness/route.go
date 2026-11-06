@@ -5,13 +5,14 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"slices"
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/memory"
+	"latere.ai/x/topos/models"
 )
 
 // lineRunner is a memory machine that runs a command line itself when the
@@ -85,7 +86,7 @@ func (h *Harness) route(tool tools.Tool, input []byte, dir string) route {
 		Command    string `json:"command"`
 		Background bool   `json:"background"`
 	}
-	if err := json.Unmarshal(input, &in); err != nil {
+	if err := json.Unmarshal(input, &in, models.FromProvider); err != nil {
 		// A call the tool cannot decode is answered by the tool, which
 		// says why, on the machine any other call of it runs on.
 		return route{m: h.c.Machine}

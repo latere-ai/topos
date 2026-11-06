@@ -13,7 +13,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -250,7 +250,7 @@ func httpError(resp *http.Response, now time.Time) error {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(b, &body) == nil {
+	if json.Unmarshal(b, &body, models.FromProvider) == nil {
 		e.Type, e.Message = body.Type, body.Message
 		if body.Error != nil {
 			e.Type, e.Message = body.Error.Type, body.Error.Message

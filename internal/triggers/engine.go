@@ -17,7 +17,6 @@ package triggers
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -248,7 +247,7 @@ func (e *Engine) Fire(ctx context.Context, t store.Trigger, env *trigger.Envelop
 	now := e.o.Now().UTC()
 	f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Replica: e.o.Replica, Time: now, ReceivedAt: now}
 	if by != nil {
-		raw, err := json.Marshal(by)
+		raw, err := session.Marshal(by)
 		if err != nil {
 			return store.Firing{}, fmt.Errorf("triggers: the key that fired %s: %w", t.ID, err)
 		}
@@ -816,7 +815,7 @@ func firedBy(f store.Firing) (map[string]any, error) {
 		return nil, nil
 	}
 	var by map[string]any
-	if err := json.Unmarshal(f.FiredBy, &by); err != nil {
+	if err := session.Unmarshal(f.FiredBy, &by); err != nil {
 		return nil, fmt.Errorf("triggers: firing %s's key: %w", f.ID, err)
 	}
 	return by, nil
@@ -1089,7 +1088,7 @@ func (e *Engine) flush(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		var env *trigger.Envelope
 		if len(f.Envelope) > 0 {
 			env = &trigger.Envelope{}
-			if err := json.Unmarshal(f.Envelope, env); err != nil {
+			if err := session.Unmarshal(f.Envelope, env); err != nil {
 				return false, fmt.Errorf("triggers: firing %s's envelope: %w", f.ID, err)
 			}
 		}

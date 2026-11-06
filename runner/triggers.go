@@ -81,7 +81,7 @@ type Proposal struct {
 	// place, the delivered events the trigger fires on.
 	Schedule string        `json:"schedule"`
 	TimeZone string        `json:"time_zone"`
-	On       *v1.TriggerOn `json:"on,omitempty"`
+	On       *v1.TriggerOn `json:"on,omitzero"`
 	// Notify is v1.NotifyAlways or v1.NotifyJudged, empty for the
 	// default: always for a schedule, and judged for events when the agent
 	// names the notify tool (spec 086).
@@ -90,7 +90,7 @@ type Proposal struct {
 	// the agent's estimate of what its runs cost in a week (spec 087),
 	// applied as spec.budget.perWeek; nil for a propose that names none
 	// and for a change that keeps the stored one.
-	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitempty"`
+	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitzero"`
 }
 
 // Verb is p's action, TriggerPropose for none.
@@ -119,17 +119,17 @@ type ListedTrigger struct {
 	At          *time.Time        `json:"at,omitempty"`
 	Target      string            `json:"target,omitempty"`
 	TargetTitle string            `json:"target_title,omitempty"`
-	Suspended   bool              `json:"suspended,omitempty"`
+	Suspended   bool              `json:"suspended,omitzero"`
 	NextFireAt  *time.Time        `json:"next_fire_at,omitempty"`
-	Origin      *v1.TriggerOrigin `json:"origin,omitempty"`
+	Origin      *v1.TriggerOrigin `json:"origin,omitzero"`
 	// Held is set when the trigger's owner holds every trigger they own
 	// (spec 086): it fires nothing until they release them.
-	Held bool `json:"held,omitempty"`
+	Held bool `json:"held,omitzero"`
 	// PerWeekUSDMicro is the trigger's allowance and SpentUSDMicro its
 	// week's spend as the server last counted it (spec 087); nil for
 	// none.
-	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitempty"`
-	SpentUSDMicro   *int64 `json:"spent_usd_micro,omitempty"`
+	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitzero"`
+	SpentUSDMicro   *int64 `json:"spent_usd_micro,omitzero"`
 }
 
 // TriggerRefusal is a trigger question the server answered no: its

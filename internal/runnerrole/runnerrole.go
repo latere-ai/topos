@@ -14,7 +14,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -189,10 +190,18 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, co
 	return read(resp.Body)
 }
 
+// storedRead reads what the server answers: events whose payloads carry
+// model and process output, which may hold duplicate members or bytes that
+// are not UTF-8.
+var storedRead = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
 func (c *Client) json(ctx context.Context, method, path string, in, out any) error {
 	var body io.Reader
 	if in != nil {
-		b, err := json.Marshal(in)
+		b, err := session.Marshal(in)
 		if err != nil {
 			return err
 		}
@@ -201,7 +210,7 @@ func (c *Client) json(ctx context.Context, method, path string, in, out any) err
 	var read func(io.Reader) error
 	if out != nil {
 		read = func(r io.Reader) error {
-			if err := json.NewDecoder(r).Decode(out); err != nil {
+			if err := json.UnmarshalRead(r, out, storedRead); err != nil {
 				return fmt.Errorf("runnerrole: %s %s: %w", method, path, err)
 			}
 			return nil
@@ -283,7 +292,7 @@ func (c *Client) Watch(ctx context.Context, id string, fromSeq uint64) (<-chan s
 			sc.Buffer(make([]byte, 1<<20), 16<<20)
 			for sc.Scan() {
 				var e session.Event
-				if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+				if err := session.Unmarshal(sc.Bytes(), &e); err != nil {
 					return err
 				}
 				select {

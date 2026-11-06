@@ -90,11 +90,11 @@ type PublishMeta struct {
 	// Error is the host's code and sentence for a failed, canceled or
 	// refused deploy or release, and for a change of who can open the app
 	// that the host refused.
-	Error *PublishError `json:"error,omitempty"`
+	Error *PublishError `json:"error,omitzero"`
 	// Attached is true when the app is one an allow attached to the
 	// session, published from its checkout (spec 059); a result without
 	// it names an app the thread created, its own.
-	Attached bool `json:"attached,omitempty"`
+	Attached bool `json:"attached,omitzero"`
 }
 
 // The codes the publish tool refuses a call with before or instead of a

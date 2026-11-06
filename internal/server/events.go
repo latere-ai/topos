@@ -7,7 +7,8 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -97,8 +98,8 @@ func uncursorSeq(c string) (uint64, error) {
 
 // sendBody is the body of POST /sessions/{id}/events.
 type sendBody struct {
-	Type    session.Type    `json:"type"`
-	Payload json.RawMessage `json:"payload"`
+	Type    session.Type   `json:"type"`
+	Payload jsontext.Value `json:"payload"`
 }
 
 // sendEvent is POST /sessions/{id}/events: one user event, its sender
@@ -395,13 +396,11 @@ func closedBy(c session.Closing) string {
 }
 
 // strict decodes a payload refusing fields the type does not name.
-func strict(raw json.RawMessage, v any) error {
+func strict(raw jsontext.Value, v any) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		raw = json.RawMessage(`{}`)
+		raw = jsontext.Value(`{}`)
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	if err := json.Unmarshal(raw, v, json.RejectUnknownMembers(true)); err != nil {
 		return refuse(CodeInvalidRequest, "the payload does not decode: %v", err)
 	}
 	return nil

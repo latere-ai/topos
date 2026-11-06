@@ -4,7 +4,8 @@
 package proposal
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"strconv"
 	"strings"
@@ -35,29 +36,29 @@ func newWake(f *fakeTriggers) *Wake {
 func TestWakeBounds(t *testing.T) {
 	f := &fakeTriggers{}
 	w := newWake(f)
-	set := func(at string) json.RawMessage {
-		return json.RawMessage(`{"action":"set","at":"` + at + `","title":"Flight prices","note":"Look at the fare again."}`)
+	set := func(at string) jsontext.Value {
+		return jsontext.Value(`{"action":"set","at":"` + at + `","title":"Flight prices","note":"Look at the fare again."}`)
 	}
 	cases := map[string]struct {
-		input json.RawMessage
+		input jsontext.Value
 		want  string
 	}{
 		"too soon":                 {set(wakeNow.Add(trigger.MinWakeDelay - time.Minute).Format(time.RFC3339)), "(too_soon). The earliest a wake may be is " + wakeNow.Add(trigger.MinWakeDelay).Format(time.RFC3339)},
-		"too far ahead":            {json.RawMessage(`{"action":"set","after":"200h","title":"t","note":"n"}`), "(too_late). The latest a wake may be is " + wakeNow.Add(trigger.MaxWakeAhead).Format(time.RFC3339)},
+		"too far ahead":            {jsontext.Value(`{"action":"set","after":"200h","title":"t","note":"n"}`), "(too_late). The latest a wake may be is " + wakeNow.Add(trigger.MaxWakeAhead).Format(time.RFC3339)},
 		"after the session":        {set(wakeNow.Add(8 * 24 * time.Hour).Format(time.RFC3339)), "(too_late)"},
 		"no offset":                {set("2026-10-23T12:00:00"), "not an RFC 3339 time with an offset"},
-		"seconds":                  {json.RawMessage(`{"action":"set","after":"90s","title":"t","note":"n"}`), "in hours and minutes"},
-		"both at and after":        {json.RawMessage(`{"action":"set","at":"2026-10-23T12:00:00Z","after":"3h","title":"t","note":"n"}`), "at or after, one of them"},
-		"neither":                  {json.RawMessage(`{"action":"set","title":"t","note":"n"}`), "at or after, one of them"},
-		"no title":                 {json.RawMessage(`{"action":"set","after":"3h","note":"n"}`), "title is required"},
-		"a long title":             {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"` + strings.Repeat("x", trigger.MaxWakeTitle+1) + `"}`), "title is longer than"},
-		"a title of 2 lines":       {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"a\nb"}`), "title is one line"},
-		"a title with an override": {json.RawMessage(`{"action":"set","after":"3h","note":"n","title":"a\u202eb"}`), "title is one line"},
-		"no note":                  {json.RawMessage(`{"action":"set","after":"3h","title":"t"}`), "note is required"},
-		"a long note":              {json.RawMessage(`{"action":"set","after":"3h","title":"t","note":"` + strings.Repeat("x", trigger.MaxWakeNote+1) + `"}`), "note is longer than"},
-		"another action":           {json.RawMessage(`{"action":"snooze"}`), "it is set or cancel"},
-		"an unknown field":         {json.RawMessage(`{"action":"set","in":"3h"}`), "unknown field"},
-		"an input not object":      {json.RawMessage(`[]`), "cannot unmarshal"},
+		"seconds":                  {jsontext.Value(`{"action":"set","after":"90s","title":"t","note":"n"}`), "in hours and minutes"},
+		"both at and after":        {jsontext.Value(`{"action":"set","at":"2026-10-23T12:00:00Z","after":"3h","title":"t","note":"n"}`), "at or after, one of them"},
+		"neither":                  {jsontext.Value(`{"action":"set","title":"t","note":"n"}`), "at or after, one of them"},
+		"no title":                 {jsontext.Value(`{"action":"set","after":"3h","note":"n"}`), "title is required"},
+		"a long title":             {jsontext.Value(`{"action":"set","after":"3h","note":"n","title":"` + strings.Repeat("x", trigger.MaxWakeTitle+1) + `"}`), "title is longer than"},
+		"a title of 2 lines":       {jsontext.Value(`{"action":"set","after":"3h","note":"n","title":"a\nb"}`), "title is one line"},
+		"a title with an override": {jsontext.Value(`{"action":"set","after":"3h","note":"n","title":"a\u202eb"}`), "title is one line"},
+		"no note":                  {jsontext.Value(`{"action":"set","after":"3h","title":"t"}`), "note is required"},
+		"a long note":              {jsontext.Value(`{"action":"set","after":"3h","title":"t","note":"` + strings.Repeat("x", trigger.MaxWakeNote+1) + `"}`), "note is longer than"},
+		"another action":           {jsontext.Value(`{"action":"snooze"}`), "it is set or cancel"},
+		"an unknown field":         {jsontext.Value(`{"action":"set","in":"3h"}`), "unknown object member name"},
+		"an input not object":      {jsontext.Value(`[]`), "unmarshal"},
 	}
 	for name, c := range cases {
 		r := w.Check(tools.Call{ID: "toolu_1", Input: c.input})
@@ -72,13 +73,13 @@ func TestWakeBounds(t *testing.T) {
 		t.Fatalf("a refused set reached the server: %+v", f.wakes)
 	}
 	for _, in := range []string{string(set(wakeNow.Add(trigger.MinWakeDelay).Format(time.RFC3339))), `{"action":"set","after":"36h","title":"t","note":"n"}`, `{"action":"cancel"}`} {
-		if r := w.Check(tools.Call{ID: "toolu_1", Input: json.RawMessage(in)}); r != nil {
+		if r := w.Check(tools.Call{ID: "toolu_1", Input: jsontext.Value(in)}); r != nil {
 			t.Errorf("%s was refused: %+v", in, r)
 		}
 	}
 
 	// A set inside the bounds, the third in a row.
-	res, err := w.Run(t.Context(), tools.Call{ID: "toolu_s", Input: json.RawMessage(`{"action":"set","after":"90m","title":" Flight prices ","note":"Look at the fare again."}`), State: tools.State{Wakes: 2}})
+	res, err := w.Run(t.Context(), tools.Call{ID: "toolu_s", Input: jsontext.Value(`{"action":"set","after":"90m","title":" Flight prices ","note":"Look at the fare again."}`), State: tools.State{Wakes: 2}})
 	at := wakeNow.Add(90 * time.Minute)
 	if err != nil || res.Outcome != tools.OutcomeOK || res.WakeSet == nil || *res.WakeSet != (session.WakeSet{TriggerID: "trg_w", At: at, Title: "Flight prices", Note: "Look at the fare again.", Count: 3}) {
 		t.Fatalf("the set answered %+v, %v", res, err)
@@ -90,34 +91,34 @@ func TestWakeBounds(t *testing.T) {
 		t.Fatalf("the server was asked %+v", f.wakes)
 	}
 	f.refuse = &runner.TriggerRefusal{Code: "wakes_full", Message: "one person holds at most 20"}
-	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_r", Input: json.RawMessage(`{"action":"set","after":"3h","title":"t","note":"n"}`)}); err != nil || res.Outcome != tools.OutcomeError ||
+	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_r", Input: jsontext.Value(`{"action":"set","after":"3h","title":"t","note":"n"}`)}); err != nil || res.Outcome != tools.OutcomeError ||
 		!strings.Contains(res.Content[0].Text, "wakes_full: one person holds at most 20") || res.WakeSet != nil {
 		t.Fatalf("a refused set answered %+v, %v", res, err)
 	}
 	f.refuse, f.fail = nil, errors.New("the server is away")
-	if _, err := w.Run(t.Context(), tools.Call{ID: "toolu_f", Input: json.RawMessage(`{"action":"set","after":"3h","title":"t","note":"n"}`)}); err == nil {
+	if _, err := w.Run(t.Context(), tools.Call{ID: "toolu_f", Input: jsontext.Value(`{"action":"set","after":"3h","title":"t","note":"n"}`)}); err == nil {
 		t.Fatal("a set the server could not take was answered as a result")
 	}
 
 	// A cancel: of none, of the pending wake, refused, and failed.
 	f.fail = nil
-	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: json.RawMessage(`{"action":"cancel"}`)}); err != nil || res.WakeCleared != nil || res.Content[0].Text != prompts.Text(prompts.WakeNone) {
+	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: jsontext.Value(`{"action":"cancel"}`)}); err != nil || res.WakeCleared != nil || res.Content[0].Text != prompts.Text(prompts.WakeNone) {
 		t.Fatalf("a cancel of none answered %+v, %v", res, err)
 	}
 	f.pending = "trg_w"
-	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: json.RawMessage(`{"action":"cancel"}`)}); err != nil || res.WakeCleared == nil ||
+	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: jsontext.Value(`{"action":"cancel"}`)}); err != nil || res.WakeCleared == nil ||
 		*res.WakeCleared != (session.WakeCleared{TriggerID: "trg_w", Reason: session.WakeCanceled}) {
 		t.Fatalf("a cancel answered %+v, %v", res, err)
 	}
 	f.refuse = &runner.TriggerRefusal{Code: "forbidden"}
-	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: json.RawMessage(`{"action":"cancel"}`)}); err != nil || res.Outcome != tools.OutcomeError {
+	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: jsontext.Value(`{"action":"cancel"}`)}); err != nil || res.Outcome != tools.OutcomeError {
 		t.Fatalf("a refused cancel answered %+v, %v", res, err)
 	}
 	f.refuse, f.fail = nil, errors.New("away")
-	if _, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: json.RawMessage(`{"action":"cancel"}`)}); err == nil {
+	if _, err := w.Run(t.Context(), tools.Call{ID: "toolu_c", Input: jsontext.Value(`{"action":"cancel"}`)}); err == nil {
 		t.Fatal("a cancel the server could not take was answered as a result")
 	}
-	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_x", Input: json.RawMessage(`{`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
+	if res, err := w.Run(t.Context(), tools.Call{ID: "toolu_x", Input: jsontext.Value(`{`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
 		t.Fatalf("a call that does not read ran: %+v, %v", res, err)
 	}
 }
@@ -127,7 +128,7 @@ func TestWakeBounds(t *testing.T) {
 // cancel and no call that does not read is.
 func TestTheEleventhWakeWaitsForThePerson(t *testing.T) {
 	w := newWake(&fakeTriggers{})
-	set := json.RawMessage(`{"action":"set","after":"3h","title":"t","note":"n"}`)
+	set := jsontext.Value(`{"action":"set","after":"3h","title":"t","note":"n"}`)
 	if r := w.Confirm(tools.Call{Input: set, State: tools.State{Wakes: trigger.MaxWakesWithoutPerson - 1}}); r != "" {
 		t.Fatalf("the tenth wake is held %q", r)
 	}
@@ -136,7 +137,7 @@ func TestTheEleventhWakeWaitsForThePerson(t *testing.T) {
 		t.Fatalf("the eleventh wake is held %q", r)
 	}
 	for _, in := range []string{`{"action":"cancel"}`, `{`} {
-		if r := w.Confirm(tools.Call{Input: json.RawMessage(in), State: tools.State{Wakes: 20}}); r != "" {
+		if r := w.Confirm(tools.Call{Input: jsontext.Value(in), State: tools.State{Wakes: 20}}); r != "" {
 			t.Errorf("%s is held %q", in, r)
 		}
 	}

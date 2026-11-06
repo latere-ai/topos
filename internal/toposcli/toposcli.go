@@ -10,7 +10,8 @@ package toposcli
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -1001,9 +1002,9 @@ func (p *printer) event(e session.Event) {
 }
 
 // summarize is one line of a call's input for the progress output.
-func summarize(input json.RawMessage) string {
+func summarize(input jsontext.Value) string {
 	var in map[string]any
-	if json.Unmarshal(input, &in) != nil {
+	if json.Unmarshal(input, &in, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true)) != nil {
 		return ""
 	}
 	for _, k := range []string{"command", "path", "pattern", "url"} {
@@ -1036,7 +1037,7 @@ func (p *printer) finish(id string, o harness.Outcome, asked *session.Asked) {
 	}
 	switch p.output {
 	case "json":
-		b, err := json.Marshal(map[string]any{"session_id": id, "status": o.Status, "stop_reason": o.StopReason, "detail": o.Detail, "text": p.final, "pending": pending})
+		b, err := json.Marshal(map[string]any{"session_id": id, "status": o.Status, "stop_reason": o.StopReason, "detail": o.Detail, "text": p.final, "pending": pending}, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 		if err == nil {
 			p.env.stdout.println(string(b))
 		}

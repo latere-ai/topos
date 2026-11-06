@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"testing"
 
@@ -74,7 +74,7 @@ func TestASearchCostIsCounted(t *testing.T) {
 // that names it asks, and a call never opens a machine opened on demand.
 func TestWebSearchChangesNothing(t *testing.T) {
 	props := tools.WebSearch(nil).Properties()
-	input := json.RawMessage(`{"query":"go"}`)
+	input := jsontext.Value(`{"query":"go"}`)
 	risk := Score(tools.NameWebSearch, props, input, machine.KindCella, nil)
 	if risk.Score != 0 {
 		t.Fatalf("risk %+v", risk)

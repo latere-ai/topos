@@ -7,7 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"math"
@@ -33,7 +34,7 @@ func request(model string) ir.Request {
 		Model:     model,
 		System:    []ir.Block{{Type: ir.BlockText, Text: "You are a builder."}},
 		Messages:  []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "List the files."}}}},
-		Tools:     []ir.Tool{{Name: "bash", Description: "Run a command.", InputSchema: json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}`)}},
+		Tools:     []ir.Tool{{Name: "bash", Description: "Run a command.", InputSchema: jsontext.Value(`{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}`)}},
 		MaxTokens: &max,
 	}
 }
@@ -43,7 +44,7 @@ func reply() ir.Response {
 		Model: "m",
 		Blocks: []ir.Block{
 			{Type: ir.BlockText, Text: "Listing."},
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: json.RawMessage(`{"command":"ls"}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: jsontext.Value(`{"command":"ls"}`)}},
 		},
 		StopReason: ir.StopToolUse,
 		Usage:      ir.Usage{InputTokens: 120, OutputTokens: 30, CacheReadInputTokens: i64(40)},

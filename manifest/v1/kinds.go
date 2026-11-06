@@ -53,7 +53,7 @@ type TriggerSpec struct {
 	Schedule string `json:"schedule,omitempty"`
 	TimeZone string `json:"timeZone"`
 	// On selects the delivered events the trigger fires on.
-	On *TriggerOn `json:"on,omitempty"`
+	On *TriggerOn `json:"on,omitzero"`
 	// At is the one time a one-shot trigger fires, RFC 3339 with an
 	// offset; its firing spends the trigger, which the server then deletes
 	// (spec 086).
@@ -67,15 +67,15 @@ type TriggerSpec struct {
 	SkipIfActive *bool          `json:"skipIfActive"`
 	// MaxActive bounds the trigger's sessions active at once;
 	// trigger.DefaultMaxActive when unset.
-	MaxActive *int   `json:"maxActive,omitempty"`
+	MaxActive *int   `json:"maxActive,omitzero"`
 	MaxAge    string `json:"maxAge"`
 	Suspend   bool   `json:"suspend"`
 	// Budget is the trigger's weekly allowance (spec 087); nil for none.
-	Budget *TriggerBudget `json:"budget,omitempty"`
+	Budget *TriggerBudget `json:"budget,omitzero"`
 	// Reach names what the trigger's runs reach, which the authorizer
 	// maps, and whether a firing runs once per due scope (spec 095); nil
 	// for a trigger that runs as its agent does.
-	Reach *TriggerReach `json:"reach,omitempty"`
+	Reach *TriggerReach `json:"reach,omitzero"`
 }
 
 // TriggerReach is a trigger's reach (spec 095). Kind is a name the
@@ -133,7 +133,7 @@ type TriggerSession struct {
 	// Attended is the attended of each session a firing starts: its
 	// questions wait for the owner (spec 086). Ignored with Target, whose
 	// session keeps its own; false when unset.
-	Attended *bool `json:"attended,omitempty"`
+	Attended *bool `json:"attended,omitzero"`
 	// Notify is NotifyAlways or NotifyJudged; NotifyAlways when unset. A
 	// wake's turn is judged whatever it says.
 	Notify string `json:"notify,omitempty"`
@@ -141,11 +141,11 @@ type TriggerSession struct {
 	// starts begins on in place of its agent's (spec 089); a firing that
 	// continues an open session leaves that session's model as it is.
 	// Ignored with Target; nil for the agent's own.
-	Model     *SessionModel     `json:"model,omitempty"`
-	Machine   *SessionMachine   `json:"machine,omitempty"`
+	Model     *SessionModel     `json:"model,omitzero"`
+	Machine   *SessionMachine   `json:"machine,omitzero"`
 	Resources []SessionResource `json:"resources,omitempty"`
-	Budget    *Budget           `json:"budget,omitempty"`
-	Limits    *SessionLimits    `json:"limits,omitempty"`
+	Budget    *Budget           `json:"budget,omitzero"`
+	Limits    *SessionLimits    `json:"limits,omitzero"`
 	EndOnIdle *bool             `json:"endOnIdle"`
 }
 

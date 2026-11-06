@@ -4,8 +4,8 @@
 package trigger
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strconv"
@@ -134,7 +134,7 @@ func (t Template) Literal() bool {
 }
 
 // Values are what a template's paths name: each root's object, as JSON
-// decodes it with numbers kept as json.Number.
+// decodes it with numbers kept as jsontext.Value.
 type Values map[string]any
 
 // Render writes t with each placeholder replaced by the value its path
@@ -184,7 +184,7 @@ func Lookup(v Values, path []string) (string, bool) {
 		return "", false
 	case string:
 		return x, true
-	case json.Number:
+	case jsontext.Value:
 		return x.String(), true
 	case bool:
 		return strconv.FormatBool(x), true
@@ -197,13 +197,11 @@ func Lookup(v Values, path []string) (string, bool) {
 // compact is v as compact JSON, with HTML left unescaped, or nothing for
 // a value JSON cannot encode.
 func compact(v any) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	b, err := json.Marshal(v, json.Deterministic(true), jsontext.AllowInvalidUTF8(true), jsontext.AllowDuplicateNames(true))
+	if err != nil {
 		return ""
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	return string(b)
 }
 
 // Cut is s cut to MaxValueBytes at a character boundary with CutMark

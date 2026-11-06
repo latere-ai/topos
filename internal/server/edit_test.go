@@ -6,7 +6,8 @@ package server
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"slices"
@@ -454,7 +455,7 @@ func TestForkRoot(t *testing.T) {
 		t.Fatalf("roots %q and %q, want %s", child.Root, grandchild.Root, top.ID)
 	}
 	a := f.do(http.MethodGet, "/v1/sessions/"+top.ID, "alice", "")
-	var fields map[string]json.RawMessage
+	var fields map[string]jsontext.Value
 	a.decode(t, &fields)
 	if _, ok := fields["root"]; ok {
 		t.Fatalf("a session no fork made answers root %s", fields["root"])

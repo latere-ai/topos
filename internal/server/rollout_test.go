@@ -4,7 +4,7 @@
 package server
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"net/http"
 	"slices"
 	"testing"
@@ -106,8 +106,8 @@ func TestACreateRunsTheModelItNames(t *testing.T) {
 		t.Fatalf("create naming a model: %d %s", a.status, a.body)
 	}
 	var created struct {
-		ID    string          `json:"id"`
-		Model json.RawMessage `json:"model"`
+		ID    string         `json:"id"`
+		Model jsontext.Value `json:"model"`
 	}
 	a.decode(t, &created)
 	if want := `{"name":"` + sonnet + `","reasoning":"low"}`; string(created.Model) != want {

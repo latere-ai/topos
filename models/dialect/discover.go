@@ -5,7 +5,7 @@ package dialect
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,7 +41,7 @@ func Discover(ctx context.Context, client *http.Client, base string) (models.Doo
 		Name  string            `json:"name"`
 		Doors map[string]string `json:"doors"`
 	}
-	read := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, maxDiscovery)).Decode(&doc) == nil
+	read := resp.StatusCode == http.StatusOK && json.UnmarshalRead(io.LimitReader(resp.Body, maxDiscovery), &doc, models.FromProvider) == nil
 	if err := resp.Body.Close(); err != nil {
 		return nil, fmt.Errorf("models: discover %s: %w", base, err)
 	}

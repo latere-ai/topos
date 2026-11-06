@@ -5,12 +5,14 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -26,7 +28,7 @@ const ToolQuestion = session.ToolQuestion
 // bound stated from session's constants, so the schema cannot differ
 // from what the server checks an answer against. The API document shows
 // it as the input a question's agent.tool_use holds.
-var QuestionSchema = json.RawMessage(fmt.Sprintf(`{
+var QuestionSchema = jsontext.Value(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "questions": {
@@ -130,7 +132,7 @@ func checkQuestion(input []byte, asked bool) *tools.Result {
 		return &res
 	}
 	var in session.QuestionInput
-	if err := json.Unmarshal(input, &in); err != nil {
+	if err := json.Unmarshal(input, &in, models.FromProvider); err != nil {
 		// The registry validated the input against the schema, so this is
 		// an input that bypassed validation, answered all the same.
 		res := tools.Text(tools.OutcomeInvalidInput, prompts.Render(prompts.CallFailed, prompts.Data{"Error": err.Error()}))

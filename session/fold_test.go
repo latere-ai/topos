@@ -6,7 +6,8 @@ package session_test
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -67,7 +68,7 @@ func (b *logb) thread(parent, task string, turn int) string {
 
 func (b *logb) redact(id string) {
 	i := slices.IndexFunc(b.events, func(e session.Event) bool { return e.ID == id })
-	b.events[i].Payload = json.RawMessage(`{"tombstone":true}`)
+	b.events[i].Payload = jsontext.Value(`{"tombstone":true}`)
 	b.add(session.TypeEventRedacted, "", 0, session.EventRedacted{EventID: id, By: ada})
 }
 
@@ -79,7 +80,7 @@ var (
 func txt(s string) lux.Block { return lux.Block{Type: ir.BlockText, Text: s} }
 
 func use(id, name string) lux.Block {
-	return lux.Block{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: name, Args: json.RawMessage(`{"command":"ls"}`)}}
+	return lux.Block{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: name, Args: jsontext.Value(`{"command":"ls"}`)}}
 }
 
 func (b *logb) user(s session.Sender, text string, turn int) string {
@@ -97,7 +98,7 @@ func (b *logb) assistant(thread string, turn int, truncated bool, blocks ...lux.
 }
 
 func (b *logb) toolUse(thread string, turn int, id string) {
-	b.add(session.TypeAgentToolUse, thread, turn, session.AgentToolUse{ToolUseID: id, Name: "bash", Input: json.RawMessage(`{"command":"ls"}`), Verdict: "allow"})
+	b.add(session.TypeAgentToolUse, thread, turn, session.AgentToolUse{ToolUseID: id, Name: "bash", Input: jsontext.Value(`{"command":"ls"}`), Verdict: "allow"})
 }
 
 func (b *logb) result(thread string, turn int, id, out string) {
@@ -126,7 +127,7 @@ var foldCases = []struct {
 		b.assistant("", 1, false,
 			lux.Block{Type: ir.BlockThinking, Text: "compare the two schemas"},
 			lux.Block{Type: ir.BlockOpaque, Opaque: &lux.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning",
-				Raw: json.RawMessage(`{"encrypted_content":"gAAA\u003cb\u0026c\u003e","id":"rs_1","type":"reasoning"}`)}},
+				Raw: jsontext.Value(`{"encrypted_content":"gAAA\u003cb\u0026c\u003e","id":"rs_1","type":"reasoning"}`)}},
 			txt("Two steps."))
 		b.user(ada, "Go on.", 2)
 		return []string{""}
@@ -296,7 +297,7 @@ func foldAll(t *testing.T, events []session.Event, threads []string) ([]byte, er
 		}
 		out[th] = tr
 	}
-	b, err := json.MarshalIndent(out, "", "  ")
+	b, err := json.Marshal(out, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +465,7 @@ func TestFoldRejectsMalformed(t *testing.T) {
 		},
 		"undecodable payload": func(b *logb) {
 			b.user(ada, "x", 1)
-			b.events[0].Payload = json.RawMessage(`{"content":"not blocks"}`)
+			b.events[0].Payload = jsontext.Value(`{"content":"not blocks"}`)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

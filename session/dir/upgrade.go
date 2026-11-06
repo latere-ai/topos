@@ -5,7 +5,6 @@ package dir
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -177,7 +176,7 @@ func oldLine(body []byte) (line, *string, bool) {
 	var old struct {
 		Thread *string `json:"thread"`
 	}
-	if json.Unmarshal(body, &l) != nil || json.Unmarshal(body, &old) != nil {
+	if session.Unmarshal(body, &l) != nil || session.Unmarshal(body, &old) != nil {
 		return line{}, nil, false
 	}
 	return l, old.Thread, true

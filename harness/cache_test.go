@@ -4,7 +4,8 @@
 package harness
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func encodeTurn(t *testing.T, model string) []byte {
 	t.Helper()
 	msgs := []lux.Message{
 		{Role: ir.RoleUser, Blocks: []lux.Block{{Type: ir.BlockText, Text: "read a.txt"}}},
-		{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "t1", Name: "read", Args: json.RawMessage(`{"path":"a.txt"}`)}}}},
+		{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "t1", Name: "read", Args: jsontext.Value(`{"path":"a.txt"}`)}}}},
 		{Role: ir.RoleUser, Blocks: []lux.Block{{Type: ir.BlockToolResult, ToolResult: &lux.ToolResult{ToolUseID: "t1", Blocks: []lux.Block{{Type: ir.BlockText, Text: "contents"}}}}}},
 	}
 	req, err := buildRequest(requestParts{Model: model, System: []lux.Block{{Type: ir.BlockText, Text: "HARNESS"}}, Date: "Today is 2026-10-17.", Messages: msgs, MaxTokens: 100})
@@ -53,8 +54,8 @@ func TestATurnOnChatCompletionsKeepsItsBreakpoints(t *testing.T) {
 			body := encodeTurn(t, model)
 			var sent struct {
 				Messages []struct {
-					Role    string          `json:"role"`
-					Content json.RawMessage `json:"content"`
+					Role    string         `json:"role"`
+					Content jsontext.Value `json:"content"`
 				} `json:"messages"`
 			}
 			if err := json.Unmarshal(body, &sent); err != nil {

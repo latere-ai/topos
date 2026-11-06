@@ -35,8 +35,8 @@ const historySchema = `{
 // JSON is the input that makes the read, which an answer that stops
 // early closes with.
 type HistoryRead struct {
-	From      uint64 `json:"from,omitempty"`
-	To        uint64 `json:"to,omitempty"`
+	From      uint64 `json:"from,omitzero"`
+	To        uint64 `json:"to,omitzero"`
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Query     string `json:"query,omitempty"`
 }

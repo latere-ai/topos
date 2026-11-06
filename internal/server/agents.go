@@ -6,7 +6,7 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"slices"
@@ -360,9 +360,7 @@ func (c *call) confirmPermanent() error {
 		return refuse(CodeConfirmationRequired, "the body is empty")
 	}
 	var body archiveBody
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil {
+	if err := json.Unmarshal(b, &body, json.RejectUnknownMembers(true)); err != nil {
 		return refuse(CodeInvalidRequest, "the body does not decode: %v", err)
 	}
 	if !body.Permanent {

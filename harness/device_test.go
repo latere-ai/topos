@@ -4,7 +4,7 @@
 package harness
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -32,13 +32,13 @@ func TestDeviceScoresAsHost(t *testing.T) {
 		{"bash", `{"command":"git push origin main"}`, tools.EffectWrite, 0.7},
 		{"bash", `{"command":"rm -rf build"}`, tools.EffectWrite, 0.7},
 	} {
-		device := Score(c.name, props(c.effect), json.RawMessage(c.input), machine.KindDevice, nil)
-		host := Score(c.name, props(c.effect), json.RawMessage(c.input), machine.KindHost, nil)
+		device := Score(c.name, props(c.effect), jsontext.Value(c.input), machine.KindDevice, nil)
+		host := Score(c.name, props(c.effect), jsontext.Value(c.input), machine.KindHost, nil)
 		if device.Score != c.want || device.Score != host.Score {
 			t.Errorf("%s %s scores %v on a device and %v on a host, want %v for both", c.name, c.input, device.Score, host.Score, c.want)
 		}
 	}
-	write := json.RawMessage(`{"path":"main.go","content":"x"}`)
+	write := jsontext.Value(`{"path":"main.go","content":"x"}`)
 	low := session.Risk{Score: 0.1}
 	confirm := Policy{Mode: ModeConfirm}
 	if d := confirm.Decide("write", props(tools.EffectWrite), write, low, machine.KindDevice, nil); d.Verdict != VerdictAsk {
@@ -96,12 +96,12 @@ func TestDeviceScoresAsHost(t *testing.T) {
 // progressive on a host with a sandbox (spec 080).
 func TestADeviceDecidesProgressiveAsConfirm(t *testing.T) {
 	lax := Thresholds{FlagAt: 0.6, AskAt: 0.8, BlockAt: 0.95}
-	write := json.RawMessage(`{"path":"main.go","content":"x"}`)
-	build := json.RawMessage(`{"command":"make"}`)
+	write := jsontext.Value(`{"path":"main.go","content":"x"}`)
+	build := jsontext.Value(`{"command":"make"}`)
 	for _, p := range []Policy{{Mode: ModeProgressive}, {Mode: ModeProgressive, Thresholds: lax}} {
 		for _, c := range []struct {
 			name  string
-			input json.RawMessage
+			input jsontext.Value
 		}{{"write", write}, {"bash", build}} {
 			risk := Score(c.name, props(tools.EffectWrite), c.input, machine.KindDevice, nil)
 			if d := p.Decide(c.name, props(tools.EffectWrite), c.input, risk, machine.KindDevice, nil); d.Verdict != VerdictAsk {
@@ -118,14 +118,14 @@ func TestADeviceDecidesProgressiveAsConfirm(t *testing.T) {
 		p          Policy
 		name       string
 		effect     tools.Effect
-		input      json.RawMessage
+		input      jsontext.Value
 		remembered []string
 		want       Verdict
 	}{
-		"a read":                  {p, "read", tools.EffectRead, json.RawMessage(`{"path":"main.go"}`), nil, VerdictAllow},
+		"a read":                  {p, "read", tools.EffectRead, jsontext.Value(`{"path":"main.go"}`), nil, VerdictAllow},
 		"always_allow":            {Policy{Mode: ModeProgressive, AlwaysAllow: []string{"write"}}, "write", tools.EffectWrite, write, nil, VerdictAllow},
 		"a remembered pattern":    {p, "bash", tools.EffectWrite, build, []string{"bash(make*)"}, VerdictAllow},
-		"another bash":            {p, "bash", tools.EffectWrite, json.RawMessage(`{"command":"rm -rf build"}`), []string{"bash(make*)"}, VerdictAsk},
+		"another bash":            {p, "bash", tools.EffectWrite, jsontext.Value(`{"command":"rm -rf build"}`), []string{"bash(make*)"}, VerdictAsk},
 		"a write in plan":         {Policy{Mode: ModePlan}, "write", tools.EffectWrite, write, nil, VerdictBlock},
 		"a write in confirm":      {Policy{Mode: ModeConfirm}, "write", tools.EffectWrite, write, nil, VerdictAsk},
 		"a remembered in confirm": {Policy{Mode: ModeConfirm}, "bash", tools.EffectWrite, build, []string{"bash(make*)"}, VerdictAllow},

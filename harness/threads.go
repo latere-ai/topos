@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -103,8 +104,8 @@ func (t *turn) resolve(name string, input []byte) (string, []byte) {
 	if _, held := t.reg.Get(now); !held {
 		return name, input
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(input, &fields) != nil || fields == nil {
+	var fields map[string]jsontext.Value
+	if json.Unmarshal(input, &fields, models.FromProvider) != nil || fields == nil {
 		return now, input
 	}
 	for before, after := range renamedInputs[name] {
@@ -115,7 +116,7 @@ func (t *turn) resolve(name string, input []byte) (string, []byte) {
 		delete(fields, before)
 		fields[after] = v
 	}
-	out, err := json.Marshal(fields)
+	out, err := json.Marshal(fields, models.ToProvider)
 	if err != nil {
 		return now, input
 	}
@@ -291,7 +292,7 @@ func (a advisorTool) Definition() tools.Definition {
 	return tools.Definition{
 		Name:        ToolAdvisor,
 		Description: prompts.Text(prompts.ToolAdvisor),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"question":{"type":"string"}},"additionalProperties":false}`),
+		InputSchema: jsontext.Value(`{"type":"object","properties":{"question":{"type":"string"}},"additionalProperties":false}`),
 	}
 }
 
@@ -303,7 +304,7 @@ func (a advisorTool) Run(ctx context.Context, c tools.Call) (tools.Result, error
 	var in struct {
 		Question string `json:"question"`
 	}
-	if err := json.Unmarshal(c.Input, &in); err != nil {
+	if err := json.Unmarshal(c.Input, &in, models.FromProvider); err != nil {
 		return tools.Result{}, err
 	}
 	return a.t.advise(ctx, c.ID, in.Question)
@@ -433,14 +434,14 @@ func (s agentTool) Definition() tools.Definition {
 		names = append(names, n)
 	}
 	slices.Sort(names)
-	enum, err := json.Marshal(names)
+	enum, err := json.Marshal(names, models.ToProvider)
 	if err != nil {
 		enum = []byte("[]")
 	}
 	return tools.Definition{
 		Name:        ToolAgent,
 		Description: prompts.Text(prompts.ToolAgent),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"subagent":{"type":"string","enum":` + string(enum) + `},"task":{"type":"string","minLength":1},"isolation":{"type":"string","enum":["shared","worktree"]},"tools":{"type":"array","items":{"type":"string"}},"budget":{"type":"number","minimum":0}},"required":["subagent","task"],"additionalProperties":false}`),
+		InputSchema: jsontext.Value(`{"type":"object","properties":{"subagent":{"type":"string","enum":` + string(enum) + `},"task":{"type":"string","minLength":1},"isolation":{"type":"string","enum":["shared","worktree"]},"tools":{"type":"array","items":{"type":"string"}},"budget":{"type":"number","minimum":0}},"required":["subagent","task"],"additionalProperties":false}`),
 	}
 }
 
@@ -455,7 +456,7 @@ func (s agentTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) 
 		Isolation string   `json:"isolation"`
 		Tools     []string `json:"tools"`
 	}
-	if err := json.Unmarshal(c.Input, &in); err != nil {
+	if err := json.Unmarshal(c.Input, &in, models.FromProvider); err != nil {
 		return tools.Result{}, err
 	}
 	return s.t.spawn(ctx, c.ID, in.Subagent, in.Task, in.Isolation, in.Tools)
@@ -469,7 +470,7 @@ func (m sendMessageTool) Definition() tools.Definition {
 	return tools.Definition{
 		Name:        ToolSendMessage,
 		Description: prompts.Text(prompts.ToolSendMessage),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"to":{"type":"string","minLength":1},"message":{"type":"string","minLength":1},"end":{"type":"boolean"}},"required":["to","message"],"additionalProperties":false}`),
+		InputSchema: jsontext.Value(`{"type":"object","properties":{"to":{"type":"string","minLength":1},"message":{"type":"string","minLength":1},"end":{"type":"boolean"}},"required":["to","message"],"additionalProperties":false}`),
 	}
 }
 
@@ -483,7 +484,7 @@ func (m sendMessageTool) Run(ctx context.Context, c tools.Call) (tools.Result, e
 		Message string `json:"message"`
 		End     bool   `json:"end"`
 	}
-	if err := json.Unmarshal(c.Input, &in); err != nil {
+	if err := json.Unmarshal(c.Input, &in, models.FromProvider); err != nil {
 		return tools.Result{}, err
 	}
 	return m.t.message(ctx, c.ID, in.To, in.Message, in.End)

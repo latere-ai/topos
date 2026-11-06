@@ -5,7 +5,7 @@ package luxstub
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"io"
 	"net/http"
@@ -224,7 +224,7 @@ func TestAKeyIsAnsweredForTheModelsItSelects(t *testing.T) {
 }
 
 func TestAResponsesReasoningItemStreamsAsTheProviderSendsIt(t *testing.T) {
-	raw := json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"weigh it"}],"encrypted_content":"gAAAA-stub"}`)
+	raw := jsontext.Value(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"weigh it"}],"encrypted_content":"gAAAA-stub"}`)
 	s := New(t)
 	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{
 		{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: raw}},
@@ -262,7 +262,7 @@ func TestAResponsesReasoningItemStreamsAsTheProviderSendsIt(t *testing.T) {
 	if opaque == nil || !strings.Contains(string(opaque.Raw), `"encrypted_content":"gAAAA-stub"`) {
 		t.Fatalf("opaque %+v", opaque)
 	}
-	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`[`)}}}}})
+	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`[`)}}}}})
 	if code, body := post(t, s.URL()+PathResponses, `{"model":"m","stream":true,"input":"hi"}`); code != http.StatusOK || strings.Contains(body, "response.completed") {
 		t.Fatalf("an unreadable reasoning item: %d %s", code, body)
 	}
@@ -271,7 +271,7 @@ func TestAResponsesReasoningItemStreamsAsTheProviderSendsIt(t *testing.T) {
 func TestARedactedThinkingBlockStreamsAsTheMessagesAPISendsIt(t *testing.T) {
 	s := New(t)
 	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{
-		{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{}`)}},
+		{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`{}`)}},
 		{Type: ir.BlockRedactedThinking, Redacted: "r1"},
 		{Type: ir.BlockText, Text: "done"},
 	}}})

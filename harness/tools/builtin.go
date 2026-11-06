@@ -4,10 +4,12 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -63,11 +65,11 @@ type pathTool struct{ *builtin }
 // Paths answers the call's path as its input writes it, "" for one that
 // names none, which acts in the working directory; an input that does not
 // decode names none.
-func (t pathTool) Paths(input json.RawMessage) []string {
+func (t pathTool) Paths(input jsontext.Value) []string {
 	var in struct {
 		Path string `json:"path"`
 	}
-	if json.Unmarshal(input, &in) != nil {
+	if json.Unmarshal(input, &in, models.FromProvider) != nil {
 		return []string{""}
 	}
 	return []string{in.Path}
@@ -75,7 +77,7 @@ func (t pathTool) Paths(input json.RawMessage) []string {
 
 func newBuiltin(name, description, schema string, props Properties, run func(context.Context, *builtin, Call) (Result, error)) *builtin {
 	return &builtin{
-		def:   Definition{Name: name, Description: description, InputSchema: json.RawMessage(schema)},
+		def:   Definition{Name: name, Description: description, InputSchema: jsontext.Value(schema)},
 		props: props,
 		run:   run,
 	}
@@ -87,22 +89,59 @@ func newBuiltin(name, description, schema string, props Properties, run func(con
 func (b *builtin) decode(c Call, v any) *Result {
 	in := c.Input
 	if len(strings.TrimSpace(string(in))) == 0 {
-		in = json.RawMessage("{}")
+		in = jsontext.Value("{}")
 	}
-	if err := json.Unmarshal(in, v); err != nil {
+	err := json.Unmarshal(in, v, models.FromProvider)
+	if err != nil {
 		problem := "/: not valid input"
-		var te *json.UnmarshalTypeError
-		if errors.As(err, &te) {
-			got := te.Value
-			if got == "bool" {
-				got = "boolean"
+		if se, ok := errors.AsType[*json.SemanticError](err); ok && se.GoType != nil && in.IsValid(models.FromProvider) {
+			at := string(se.JSONPointer)
+			if at == "" {
+				at = "/"
 			}
-			problem = fmt.Sprintf("/%s: expected %s, got %s", strings.ReplaceAll(te.Field, ".", "/"), jsonKind(te.Type), got)
+			got := kindName(se.JSONKind)
+			if want := jsonKind(se.GoType); se.JSONKind == '0' && (want == "integer" || want == "number") {
+				if num, ok := numberAt(in, se.ByteOffset); ok {
+					got += " " + num
+				}
+			}
+			problem = fmt.Sprintf("%s: expected %s, got %s", at, jsonKind(se.GoType), got)
 		}
 		res := Text(OutcomeInvalidInput, invalidInput(b.def.Name, problem))
 		return &res
 	}
 	return nil
+}
+
+// numberAt is the number that starts at offset in input, as it was written.
+func numberAt(input []byte, offset int64) (string, bool) {
+	if offset < 0 || offset >= int64(len(input)) {
+		return "", false
+	}
+	v, err := jsontext.NewDecoder(bytes.NewReader(input[offset:])).ReadValue()
+	if err != nil {
+		return "", false
+	}
+	return string(v), true
+}
+
+// kindName names the JSON type of a value by its first byte.
+func kindName(k jsontext.Kind) string {
+	switch k {
+	case '"':
+		return "string"
+	case '0':
+		return "number"
+	case 't', 'f':
+		return "boolean"
+	case '[':
+		return "array"
+	case '{':
+		return "object"
+	case 'n':
+		return "null"
+	}
+	return "value"
 }
 
 // jsonKind names a Go type by the JSON type that decodes into it.

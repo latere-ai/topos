@@ -28,7 +28,7 @@ import (
 type updateBody struct {
 	Model    *modelChange       `json:"model"`
 	Policy   *policyChange      `json:"policy"`
-	Title    *string            `json:"title,omitempty"`
+	Title    *string            `json:"title,omitzero"`
 	Metadata map[string]*string `json:"metadata,omitempty"`
 }
 
@@ -56,9 +56,9 @@ var modes = []string{v1.ModePlan, v1.ModeConfirm, v1.ModeProgressive}
 // which is read through every v0.x release; a body that names both names
 // one level.
 type modelChange struct {
-	Name      *string `json:"name,omitempty"`
-	Reasoning *string `json:"reasoning,omitempty"`
-	Effort    *string `json:"effort,omitempty"`
+	Name      *string `json:"name,omitzero"`
+	Reasoning *string `json:"reasoning,omitzero"`
+	Effort    *string `json:"effort,omitzero"`
 }
 
 // check refuses a change that names neither member, a name that is not

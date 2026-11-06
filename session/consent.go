@@ -65,11 +65,11 @@ const (
 // does not own, and anyone at all. A boundary nobody knows is nil, never
 // false.
 type Crosses struct {
-	Machine      *bool `json:"machine,omitempty"`
-	Remote       *bool `json:"remote,omitempty"`
-	Network      *bool `json:"network,omitempty"`
-	Organization *bool `json:"organization,omitempty"`
-	Public       *bool `json:"public,omitempty"`
+	Machine      *bool `json:"machine,omitzero"`
+	Remote       *bool `json:"remote,omitzero"`
+	Network      *bool `json:"network,omitzero"`
+	Organization *bool `json:"organization,omitzero"`
+	Public       *bool `json:"public,omitzero"`
 }
 
 // Empty reports whether no boundary is known.
@@ -104,7 +104,7 @@ func (c Crosses) Wider(o Crosses) Crosses {
 // a path, a host, a ref, an app's slug or other text of the call's input.
 type CallScope struct {
 	Undo        string   `json:"undo,omitempty"`
-	Crosses     *Crosses `json:"crosses,omitempty"`
+	Crosses     *Crosses `json:"crosses,omitzero"`
 	TargetClass string   `json:"target_class,omitempty"`
 	TargetKind  string   `json:"target_kind,omitempty"`
 	Contact     string   `json:"contact,omitempty"`

@@ -4,7 +4,7 @@
 package arch
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net"
 	"os"
 	"path/filepath"

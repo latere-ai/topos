@@ -4,7 +4,7 @@
 package session
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"slices"
 	"strings"
@@ -68,7 +68,7 @@ func TestEventBlobsAndOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if OrphanBlobs(plain, nil) != nil || (Event{Payload: json.RawMessage(`nope`)}).Blobs() != nil {
+	if OrphanBlobs(plain, nil) != nil || (Event{Payload: jsontext.Value(`nope`)}).Blobs() != nil {
 		t.Fatal("blobs from an event that names none")
 	}
 }
@@ -77,7 +77,7 @@ func TestNewEventRejectsUnencodable(t *testing.T) {
 	if _, err := NewEvent(TypeUserMessage, map[string]any{"f": func() {}}, t0); err == nil {
 		t.Fatal("encoded a func")
 	}
-	e := Event{ID: "evt_x", Type: TypeUserMessage, Payload: json.RawMessage(`[]`)}
+	e := Event{ID: "evt_x", Type: TypeUserMessage, Payload: jsontext.Value(`[]`)}
 	var p UserMessage
 	if err := e.Decode(&p); err == nil {
 		t.Fatal("decoded an array into an object")
@@ -143,7 +143,7 @@ func TestCheckBatchValidatesEvents(t *testing.T) {
 		"repeated id": func(b *[]Event) { e := (*b)[0]; e.Seq = 2; *b = append(*b, e) },
 		"no type":     func(b *[]Event) { (*b)[0].Type = "" },
 		"no time":     func(b *[]Event) { (*b)[0].Time = time.Time{} },
-		"bad payload": func(b *[]Event) { (*b)[0].Payload = json.RawMessage(`{`) },
+		"bad payload": func(b *[]Event) { (*b)[0].Payload = jsontext.Value(`{`) },
 	} {
 		batch := []Event{good()}
 		mut(&batch)
@@ -167,14 +167,14 @@ func TestSameEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	spaced := e
-	spaced.Payload = json.RawMessage(" {\"sender\" : {\"subject\":\"\",\"kind\":\"\"},\"content\":null} ")
+	spaced.Payload = jsontext.Value(" {\"sender\" : {\"subject\":\"\",\"kind\":\"\"},\"content\":[]} ")
 	if !SameEvent(e, spaced) {
 		t.Fatal("whitespace made events differ")
 	}
 	moved := e
 	moved.Turn = 9
 	bad := e
-	bad.Payload = json.RawMessage(`{`)
+	bad.Payload = jsontext.Value(`{`)
 	if SameEvent(e, moved) || SameEvent(e, bad) {
 		t.Fatal("different events compare equal")
 	}
@@ -426,7 +426,7 @@ func TestARedactedResultKeepsItsCall(t *testing.T) {
 	}
 	old := ev(TypeToolResult, ToolResult{ToolUseID: "toolu_1"})
 	old.Payload = slices.Clone(tombstone)
-	if old.Answers() != "" || (Event{Type: TypeToolResult, Payload: json.RawMessage(`[`)}).Answers() != "" {
+	if old.Answers() != "" || (Event{Type: TypeToolResult, Payload: jsontext.Value(`[`)}).Answers() != "" {
 		t.Fatal("a tombstone without an id, or a payload that does not decode, names a call")
 	}
 	ask := ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "toolu_1", Verdict: "ask"})
@@ -457,10 +457,10 @@ func TestAwaitingAndRedactable(t *testing.T) {
 		ev(TypeUserToolResult, UserToolResult{ToolUseID: "resulted"}),
 		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "closed", Verdict: "ask"}),
 		ev(TypeToolResult, ToolResult{ToolUseID: "closed"}),
-		{Type: TypeAgentToolUse, Payload: json.RawMessage(`[`)},
-		{Type: TypeUserToolConfirmation, Payload: json.RawMessage(`[`)},
-		{Type: TypeUserToolResult, Payload: json.RawMessage(`[`)},
-		{Type: TypeToolResult, Payload: json.RawMessage(`[`)},
+		{Type: TypeAgentToolUse, Payload: jsontext.Value(`[`)},
+		{Type: TypeUserToolConfirmation, Payload: jsontext.Value(`[`)},
+		{Type: TypeUserToolResult, Payload: jsontext.Value(`[`)},
+		{Type: TypeToolResult, Payload: jsontext.Value(`[`)},
 	}
 	redacted := ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "gone", Verdict: "ask"})
 	redacted.Payload = slices.Clone(tombstone)

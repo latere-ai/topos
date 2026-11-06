@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -17,6 +18,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/luxstub"
 )
@@ -200,7 +202,7 @@ func TestQuestionSchemaFollowsTheConstants(t *testing.T) {
 			}
 		}
 	}
-	if err := json.Unmarshal(QuestionSchema, &s); err != nil {
+	if err := json.Unmarshal(QuestionSchema, &s, json.MatchCaseInsensitiveNames(true)); err != nil {
 		t.Fatal(err)
 	}
 	q, o := s.Properties.Questions, s.Properties.Questions.Items.Properties.Options
@@ -232,7 +234,7 @@ func TestQuestionSchemaFollowsTheConstants(t *testing.T) {
 	// of the given lengths, in a script that takes several bytes a
 	// character, since the bounds count characters.
 	type sizes struct{ questions, options, header, question, label, description, lines, columns int }
-	build := func(z sizes) json.RawMessage {
+	build := func(z sizes) jsontext.Value {
 		rep := func(n int) string { return strings.Repeat("é", n) }
 		in := session.QuestionInput{Questions: []session.Question{}}
 		for i := range z.questions {
@@ -257,7 +259,7 @@ func TestQuestionSchemaFollowsTheConstants(t *testing.T) {
 	if _, bad := reg.Validate(ToolQuestion, build(atBounds)); bad != nil {
 		t.Fatalf("a call at every bound is refused: %s", bad.Content[0].Text)
 	}
-	if _, bad := reg.Validate(ToolQuestion, json.RawMessage(twoQuestions)); bad != nil {
+	if _, bad := reg.Validate(ToolQuestion, jsontext.Value(twoQuestions)); bad != nil {
 		t.Fatalf("the example is refused: %s", bad.Content[0].Text)
 	}
 	for name, c := range map[string]struct {
@@ -283,7 +285,7 @@ func TestQuestionSchemaFollowsTheConstants(t *testing.T) {
 			t.Errorf("%s: %+v, want %q", name, bad, c.want)
 		}
 	}
-	if _, bad := reg.Validate(ToolQuestion, json.RawMessage(`{"questions":[{"header":"A","question":"B?","options":[{"label":"x","description":"d"},{"label":"y","description":"d","other":true}]}]}`)); bad == nil {
+	if _, bad := reg.Validate(ToolQuestion, jsontext.Value(`{"questions":[{"header":"A","question":"B?","options":[{"label":"x","description":"d"},{"label":"y","description":"d","other":true}]}]}`)); bad == nil {
 		t.Error("an option with a field the schema does not name is accepted")
 	}
 }
@@ -420,7 +422,7 @@ func TestAQuestionWaitsForItsAnswer(t *testing.T) {
 			if err := e.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil {
 				t.Fatal(err)
 			}
-			if use.Name != ToolQuestion || use.Verdict != string(VerdictAllow) || use.Risk == nil || use.Risk.Score != 0 || use.Mode != string(mode) || !json.Valid(use.Input) {
+			if use.Name != ToolQuestion || use.Verdict != string(VerdictAllow) || use.Risk == nil || use.Risk.Score != 0 || use.Mode != string(mode) || !use.Input.IsValid() {
 				t.Fatalf("agent.tool_use %+v", use)
 			}
 			var in session.QuestionInput
@@ -631,7 +633,7 @@ func TestAnAnswerIsRenderedOnce(t *testing.T) {
 			t.Fatalf("result %+v, meta %+v", res, meta)
 		}
 		for _, r := range e.stub.Requests() {
-			if b, err := json.Marshal(r.Request); err != nil || strings.Contains(string(b), "hunter2") {
+			if b, err := json.Marshal(r.Request, models.ToProvider); err != nil || strings.Contains(string(b), "hunter2") {
 				t.Fatalf("a request holds the redacted words: %v", err)
 			}
 		}
@@ -986,11 +988,11 @@ func TestAForkAcrossAnOpenQuestion(t *testing.T) {
 	t.Run("an open call of a session nobody attends", func(t *testing.T) {
 		e := asking(t, false)
 		ctx := t.Context()
-		msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_q", Name: ToolQuestion, Args: json.RawMessage(twoQuestions)}}}}, StopReason: ir.StopToolUse}, t0)
+		msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_q", Name: ToolQuestion, Args: jsontext.Value(twoQuestions)}}}}, StopReason: ir.StopToolUse}, t0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_q", Name: ToolQuestion, Input: json.RawMessage(twoQuestions), Verdict: "allow"}, t0)
+		use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_q", Name: ToolQuestion, Input: jsontext.Value(twoQuestions), Verdict: "allow"}, t0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1015,11 +1017,11 @@ func TestQuestionResultsAreNeverCleared(t *testing.T) {
 	ctx := t.Context()
 	e.send(ctx, "Plan.")
 	id := "toolu_q"
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: ToolQuestion, Args: json.RawMessage(twoQuestions)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: ToolQuestion, Args: jsontext.Value(twoQuestions)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: ToolQuestion, Input: json.RawMessage(twoQuestions), Verdict: "allow"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: ToolQuestion, Input: jsontext.Value(twoQuestions), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}

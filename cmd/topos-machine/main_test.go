@@ -8,7 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"io/fs"
@@ -301,5 +301,27 @@ func TestTheWalkMode(t *testing.T) {
 	var stderr bytes.Buffer
 	if code := run(t.Context(), []string{"walk"}, strings.NewReader(""), io.Discard, &stderr); code != 2 {
 		t.Errorf("walk with no root: exit %d", code)
+	}
+}
+
+// TestABodyWithBytesThatAreNotUTF8: an error message or a path that holds
+// them is written with the replacement character, not dropped as a failed
+// answer.
+func TestABodyWithBytesThatAreNotUTF8(t *testing.T) {
+	var b bytes.Buffer
+	w := &frameWriter{w: &b}
+	if err := w.json(frameFail, errorBody{Kind: kindOther, Message: "no file \xff here"}); err != nil {
+		t.Fatal(err)
+	}
+	_, payload, err := readFrame(&b)
+	if err != nil || !strings.Contains(string(payload), "no file \uFFFD here") {
+		t.Fatalf("frame = %q, %v", payload, err)
+	}
+	var out bytes.Buffer
+	if code := answer(&out, response{Error: &errorBody{Kind: kindOther, Message: "bad \xfe name"}}); code != 0 {
+		t.Fatalf("an answer with such bytes: exit %d", code)
+	}
+	if want := "bad \uFFFD name\"}}\n"; !strings.HasSuffix(out.String(), want) {
+		t.Fatalf("the answer is %q, want it to end %q", out.String(), want)
 	}
 }

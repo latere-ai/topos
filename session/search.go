@@ -386,7 +386,7 @@ func (q Query) Matches(text string) bool {
 // Fragment is a piece of an excerpt, Match on a piece the query matched.
 type Fragment struct {
 	Text  string `json:"text"`
-	Match bool   `json:"match,omitempty"`
+	Match bool   `json:"match,omitzero"`
 }
 
 // Excerpt is the part of text around its first match of q, at most

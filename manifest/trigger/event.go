@@ -5,9 +5,11 @@ package trigger
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,14 +25,14 @@ const MaxEventID = 200
 // the producer's id for this delivery, unique per Product, which a
 // server deduplicates on.
 type Envelope struct {
-	ID       string          `json:"id"`
-	Product  string          `json:"product"`
-	Verb     string          `json:"verb"`
-	Resource string          `json:"resource"`
-	Actor    string          `json:"actor,omitempty"`
-	Subject  string          `json:"subject,omitempty"`
-	Time     time.Time       `json:"time"`
-	Payload  json.RawMessage `json:"payload,omitempty"`
+	ID       string         `json:"id"`
+	Product  string         `json:"product"`
+	Verb     string         `json:"verb"`
+	Resource string         `json:"resource"`
+	Actor    string         `json:"actor,omitempty"`
+	Subject  string         `json:"subject,omitempty"`
+	Time     time.Time      `json:"time"`
+	Payload  jsontext.Value `json:"payload,omitzero"`
 }
 
 // Check refuses an envelope that lacks a required field, whose id is
@@ -69,15 +71,87 @@ func (e Envelope) Value() (map[string]any, error) {
 		"actor": e.Actor, "subject": e.Subject, "time": e.Time.UTC().Format(time.RFC3339Nano),
 	}
 	if p := bytes.TrimSpace(e.Payload); len(p) > 0 {
-		dec := json.NewDecoder(bytes.NewReader(p))
-		dec.UseNumber()
-		var payload any
-		if err := dec.Decode(&payload); err != nil {
+		payload, err := decodeTree(p)
+		if err != nil {
 			return nil, fmt.Errorf("the envelope's payload does not decode: %w", err)
 		}
 		v["payload"] = payload
 	}
 	return v, nil
+}
+
+// foreignJSON reads JSON a producer outside this system wrote: duplicate
+// names and invalid UTF-8 are accepted, the last duplicate winning.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
+// decodeTree decodes one JSON value into maps, lists, strings, booleans
+// and nil, with every number kept as the digits it was written with, a
+// jsontext.Value. Text after the value is an error.
+func decodeTree(raw []byte) (any, error) {
+	dec := jsontext.NewDecoder(bytes.NewReader(raw), foreignJSON)
+	v, err := readTree(dec)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.ReadToken(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("there is text after the first JSON value")
+	}
+	return v, nil
+}
+
+func readTree(dec *jsontext.Decoder) (any, error) {
+	switch dec.PeekKind() {
+	case '{':
+		if _, err := dec.ReadToken(); err != nil {
+			return nil, err
+		}
+		m := map[string]any{}
+		for dec.PeekKind() != '}' {
+			k, err := dec.ReadToken()
+			if err != nil {
+				return nil, err
+			}
+			key := k.String()
+			v, err := readTree(dec)
+			if err != nil {
+				return nil, err
+			}
+			m[key] = v
+		}
+		_, err := dec.ReadToken()
+		return m, err
+	case '[':
+		if _, err := dec.ReadToken(); err != nil {
+			return nil, err
+		}
+		list := []any{}
+		for dec.PeekKind() != ']' {
+			v, err := readTree(dec)
+			if err != nil {
+				return nil, err
+			}
+			list = append(list, v)
+		}
+		_, err := dec.ReadToken()
+		return list, err
+	case '0':
+		v, err := dec.ReadValue()
+		return jsontext.Value(bytes.Clone(v)), err
+	}
+	tok, err := dec.ReadToken()
+	if err != nil {
+		return nil, err
+	}
+	switch tok.Kind() {
+	case '"':
+		return tok.String(), nil
+	case 't', 'f':
+		return tok.Bool(), nil
+	}
+	return nil, nil
 }
 
 // Matches reports whether the event e selects falls inside on: its

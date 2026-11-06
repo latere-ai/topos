@@ -4,7 +4,7 @@
 package manifest
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 
@@ -82,7 +82,7 @@ func TestAPatternNamingSpawnMatchesAgent(t *testing.T) {
 	}
 	props := tools.Properties{Parallel: true, Effect: tools.EffectNone}
 	for _, name := range []string{harness.ToolAgent, harness.ToolSendMessage} {
-		if d := c.Policy.Decide(name, props, json.RawMessage(`{}`), session.Risk{}, "", nil); d.Verdict != harness.VerdictAsk {
+		if d := c.Policy.Decide(name, props, jsontext.Value(`{}`), session.Risk{}, "", nil); d.Verdict != harness.VerdictAsk {
 			t.Errorf("a call of %s is decided %s, want ask", name, d.Verdict)
 		}
 	}

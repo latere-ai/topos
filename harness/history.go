@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -142,7 +143,7 @@ func historyMatches(entries []session.HistoryEntry, query string, from, to uint6
 func readsOn(entries []session.HistoryEntry, from func(session.HistoryEntry) tools.HistoryRead) ([]string, error) {
 	out := make([]string, len(entries)+1)
 	for i := 1; i < len(entries); i++ {
-		b, err := json.Marshal(from(entries[i]))
+		b, err := json.Marshal(from(entries[i]), models.ToProvider)
 		if err != nil {
 			return nil, fmt.Errorf("harness: the input that reads on: %w", err)
 		}

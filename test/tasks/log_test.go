@@ -4,7 +4,7 @@
 package tasks
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +49,7 @@ func TestReadLogReadsEachLine(t *testing.T) {
 		{"", "holds no event"},
 		{"\n\n", "holds no event"},
 		{`{"type":"user.message"`, "line 1"},
-		{`{"type":"user.message","id":"evt_1","payload":{}}`, `unknown field "id"`},
+		{`{"type":"user.message","id":"evt_1","payload":{}}`, `unknown object member name "id"`},
 		{"\n" + `{"type":"user.shout","payload":{}}`, `line 2: "user.shout" is not an event type`},
 		{`{"type":"user.message","payload":[1]}`, "not a JSON object"},
 		{`{"type":"user.message"}`, "not a JSON object"},
@@ -210,5 +210,20 @@ func TestATitledTaskEndsIdleAndNamesItsSession(t *testing.T) {
 	evs := readEvents(t, res)
 	if last := evs[len(evs)-1]; last.Type != session.TypeTitleChanged || session.Purpose(evs[len(evs)-2]) != session.PurposeTitle {
 		t.Fatalf("the log ends %s after %s", last.Type, evs[len(evs)-2].Type)
+	}
+}
+
+// TestAFileAPersonWroteIsReadAsWritten: a log line with a repeated member,
+// a member name in another letter case or bytes that are not UTF-8 is
+// read, and an unknown member is still refused.
+func TestAFileAPersonWroteIsReadAsWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.jsonl")
+	body := `{"TYPE":"user.message","type":"user.message","payload":{"text":"a` + "\xff" + `"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := readLog(path, "/w", "", time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC))
+	if err != nil || len(evs) != 1 || evs[0].Type != session.TypeUserMessage {
+		t.Fatalf("read %+v, %v", evs, err)
 	}
 }

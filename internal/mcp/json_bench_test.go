@@ -5,7 +5,8 @@ package mcp
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,7 +63,7 @@ func BenchmarkJSONRPCCallResultDecode(b *testing.B) {
 					b.Fatal(err)
 				}
 				var r Result
-				if err := json.Unmarshal(res, &r); err != nil {
+				if err := json.Unmarshal(res, &r, foreignJSON); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -87,7 +88,7 @@ func BenchmarkJSONRPCStreamDecode(b *testing.B) {
 					b.Fatal(err)
 				}
 				var r Result
-				if err := json.Unmarshal(res, &r); err != nil {
+				if err := json.Unmarshal(res, &r, foreignJSON); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -107,7 +108,7 @@ func BenchmarkJSONRPCToolListDecode(b *testing.B) {
 		b.Run(s.name, func(b *testing.B) {
 			list := make([]Tool, s.tools)
 			for i := range list {
-				list[i] = Tool{Name: fmt.Sprintf("issue_tool_%03d", i), Description: "Creates, updates or searches the issues of a project in the tracker and answers the matching ones.", InputSchema: json.RawMessage(benchSchema)}
+				list[i] = Tool{Name: fmt.Sprintf("issue_tool_%03d", i), Description: "Creates, updates or searches the issues of a project in the tracker and answers the matching ones.", InputSchema: jsontext.Value(benchSchema)}
 			}
 			body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 3, "result": map[string]any{"tools": list}})
 			if err != nil {
@@ -124,7 +125,7 @@ func BenchmarkJSONRPCToolListDecode(b *testing.B) {
 					Tools      []Tool `json:"tools"`
 					NextCursor string `json:"nextCursor"`
 				}
-				if err := json.Unmarshal(res, &page); err != nil {
+				if err := json.Unmarshal(res, &page, foreignJSON); err != nil {
 					b.Fatal(err)
 				}
 				if len(page.Tools) != s.tools {
@@ -138,7 +139,7 @@ func BenchmarkJSONRPCToolListDecode(b *testing.B) {
 // BenchmarkJSONToolSchemaHeaderParamsDecode is a listed tool's input
 // schema read for its x-mcp-header marks, once per tool a session loads.
 func BenchmarkJSONToolSchemaHeaderParamsDecode(b *testing.B) {
-	raw := json.RawMessage(benchSchema)
+	raw := jsontext.Value(benchSchema)
 	b.ReportAllocs()
 	b.SetBytes(int64(len(raw)))
 	for b.Loop() {

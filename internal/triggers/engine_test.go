@@ -5,7 +5,7 @@ package triggers
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"strings"
@@ -193,7 +193,7 @@ func (r *rig) put(name, spec string) store.Trigger {
 }
 
 func (r *rig) env(id, resource string) *trigger.Envelope {
-	return &trigger.Envelope{ID: id, Product: "github", Verb: "issue.opened", Resource: resource, Time: r.clock.Now(), Payload: json.RawMessage(`{"n":1}`)}
+	return &trigger.Envelope{ID: id, Product: "github", Verb: "issue.opened", Resource: resource, Time: r.clock.Now(), Payload: jsontext.Value(`{"n":1}`)}
 }
 
 func (r *rig) fire(t store.Trigger, env *trigger.Envelope, outcome string) store.Firing {

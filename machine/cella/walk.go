@@ -5,7 +5,7 @@ package cella
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -32,7 +32,7 @@ func (m *Machine) Walk(ctx context.Context, q machine.WalkRequest) (machine.Walk
 	if err != nil {
 		return machine.WalkResult{}, err
 	}
-	body, err := json.Marshal(q)
+	body, err := json.Marshal(q, toHelper)
 	if err != nil {
 		return machine.WalkResult{}, fmt.Errorf("machine: encode the walk: %w", err)
 	}

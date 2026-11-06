@@ -5,7 +5,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"net/http"
 	"slices"
@@ -362,7 +362,7 @@ func TestARefusedWakeLeavesItsSession(t *testing.T) {
 		t.Fatalf("the header before the wake: %+v", h.Wake)
 	}
 	resets := due.Add(6 * time.Hour)
-	limits := json.RawMessage(`{"resets_at":"` + resets.Format(time.RFC3339) + `"}`)
+	limits := jsontext.Value(`{"resets_at":"` + resets.Format(time.RFC3339) + `"}`)
 	reason := "proactive_share_spent"
 	w.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		if req.Action == authorizer.ActionSessionSend {

@@ -5,7 +5,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"io/fs"
@@ -30,7 +31,7 @@ func search(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 		return fail(stderr, "search <root>")
 	}
 	var q machine.SearchRequest
-	if err := json.NewDecoder(stdin).Decode(&q); err != nil {
+	if err := json.UnmarshalDecode(jsontext.NewDecoder(stdin), &q); err != nil {
 		return answer(stdout, response{Error: &errorBody{Kind: kindOther, Message: "machine: the search request: " + err.Error()}})
 	}
 	r, rel, err := rooted(args[0], q.Path)

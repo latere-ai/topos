@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,11 +27,11 @@ func (e *env) history(ctx context.Context, sizes ...int) {
 	for _, n := range sizes {
 		id := fmt.Sprintf("toolu_h%02d", e.hist)
 		e.hist++
-		msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: "echo", Args: json.RawMessage(`{"text":"x"}`)}}}}, StopReason: ir.StopToolUse}, t0)
+		msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: "echo", Args: jsontext.Value(`{"text":"x"}`)}}}}, StopReason: ir.StopToolUse}, t0)
 		if err != nil {
 			e.t.Fatal(err)
 		}
-		use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: "echo", Input: json.RawMessage(`{"text":"x"}`), Verdict: "allow"}, t0)
+		use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: "echo", Input: jsontext.Value(`{"text":"x"}`), Verdict: "allow"}, t0)
 		if err != nil {
 			e.t.Fatal(err)
 		}
@@ -186,11 +186,11 @@ func TestTodoResultsAreNeverCleared(t *testing.T) {
 	ctx := t.Context()
 	e.send(ctx, "Plan.")
 	id := "toolu_todo"
-	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: "todo", Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: id, Name: "todo", Args: jsontext.Value(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: "todo", Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: "todo", Input: jsontext.Value(`{}`), Verdict: "allow"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}

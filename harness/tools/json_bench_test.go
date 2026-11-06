@@ -4,9 +4,12 @@
 package tools
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"strings"
 	"testing"
+
+	"latere.ai/x/topos/models"
 )
 
 // benchRegistry is the registry of the built-in tools, as a session offers
@@ -43,9 +46,9 @@ func BenchmarkJSONToolInputValidate(b *testing.B) {
 			var in []byte
 			var err error
 			if s.n == 0 {
-				in, err = json.Marshal(map[string]any{"path": "session/event.go", "offset": 120, "limit": 80})
+				in, err = json.Marshal(map[string]any{"path": "session/event.go", "offset": 120, "limit": 80}, models.ToProvider)
 			} else {
-				in, err = json.Marshal(map[string]any{"path": "internal/server/generated.go", "content": benchProse(s.n)})
+				in, err = json.Marshal(map[string]any{"path": "internal/server/generated.go", "content": benchProse(s.n)}, models.ToProvider)
 			}
 			if err != nil {
 				b.Fatal(err)
@@ -53,7 +56,7 @@ func BenchmarkJSONToolInputValidate(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(in)))
 			for b.Loop() {
-				if _, res := r.Validate(s.tool, json.RawMessage(in)); res != nil {
+				if _, res := r.Validate(s.tool, jsontext.Value(in)); res != nil {
 					b.Fatal("refused")
 				}
 			}
@@ -69,7 +72,7 @@ func BenchmarkJSONToolInputInvalidValidate(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(in)))
 	for b.Loop() {
-		if _, res := r.Validate(NameWrite, json.RawMessage(in)); res == nil {
+		if _, res := r.Validate(NameWrite, jsontext.Value(in)); res == nil {
 			b.Fatal("accepted")
 		}
 	}
@@ -80,14 +83,14 @@ func BenchmarkJSONToolInputInvalidValidate(b *testing.B) {
 func BenchmarkJSONToolDefinitionsMarshal(b *testing.B) {
 	r := benchRegistry(b)
 	defs := r.Definitions()
-	enc, err := json.Marshal(defs)
+	enc, err := json.Marshal(defs, models.ToProvider)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.SetBytes(int64(len(enc)))
 	for b.Loop() {
-		if _, err := json.Marshal(defs); err != nil {
+		if _, err := json.Marshal(defs, models.ToProvider); err != nil {
 			b.Fatal(err)
 		}
 	}

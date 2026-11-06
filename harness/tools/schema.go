@@ -5,7 +5,8 @@ package tools
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"latere.ai/x/topos/models"
 )
 
 // Schema is a compiled JSON Schema over the keywords spec 005 names.
@@ -44,14 +47,12 @@ var typeNames = []string{"object", "array", "string", "number", "integer", "bool
 // CompileSchema compiles a tool's input schema. An empty schema accepts
 // any object. A keyword outside the supported set is refused, so a
 // constraint is never silently skipped.
-func CompileSchema(raw json.RawMessage) (*Schema, error) {
+func CompileSchema(raw jsontext.Value) (*Schema, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return &Schema{}, nil
 	}
-	var v any
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	if err := dec.Decode(&v); err != nil {
+	v, err := DecodeTree(raw)
+	if err != nil {
 		return nil, fmt.Errorf("not JSON: %w", err)
 	}
 	return compile(v, "")
@@ -119,7 +120,7 @@ func compile(v any, at string) (*Schema, error) {
 		case "const":
 			s.constant, s.hasConst = canonical(val), true
 		case "minimum", "maximum":
-			n, ok := val.(json.Number)
+			n, ok := val.(jsontext.Value)
 			if !ok {
 				return nil, fmt.Errorf("%s/%s: not a number", pointer(at), k)
 			}
@@ -133,7 +134,7 @@ func compile(v any, at string) (*Schema, error) {
 				s.maximum = f
 			}
 		case "minLength", "maxLength", "minItems", "maxItems":
-			n, ok := val.(json.Number)
+			n, ok := val.(jsontext.Value)
 			i, ierr := strconv.Atoi(string(n))
 			if !ok || ierr != nil || i < 0 {
 				return nil, fmt.Errorf("%s/%s: not a non-negative integer", pointer(at), k)
@@ -211,7 +212,7 @@ func (s *Schema) setType(v any, at string) error {
 	return nil
 }
 
-// Validate returns the problems of v, a value decoded with UseNumber, as
+// Validate returns the problems of v, a value DecodeTree decoded, as
 // "<JSON pointer>: <problem>" lines.
 func (s *Schema) Validate(v any) []string {
 	var out []string
@@ -282,7 +283,7 @@ func (s *Schema) validate(v any, at string, out *[]string) {
 		if s.pattern != nil && !s.pattern.MatchString(x) {
 			add("does not match the pattern %s", s.pattern)
 		}
-	case json.Number:
+	case jsontext.Value:
 		f, _, err := big.ParseFloat(x.String(), 10, 128, big.ToNearestEven)
 		if err == nil {
 			if s.minimum != nil && f.Cmp(s.minimum) < 0 {
@@ -312,14 +313,14 @@ func (s *Schema) validate(v any, at string, out *[]string) {
 func hasType(v any, t string) bool {
 	switch t {
 	case "integer":
-		n, ok := v.(json.Number)
+		n, ok := v.(jsontext.Value)
 		if !ok {
 			return false
 		}
 		f, _, err := big.ParseFloat(n.String(), 10, 128, big.ToNearestEven)
 		return err == nil && f.IsInt()
 	case "number":
-		_, ok := v.(json.Number)
+		_, ok := v.(jsontext.Value)
 		return ok
 	}
 	return typeOf(v) == t
@@ -333,7 +334,7 @@ func typeOf(v any) string {
 		return "array"
 	case string:
 		return "string"
-	case json.Number:
+	case jsontext.Value:
 		return "number"
 	case bool:
 		return "boolean"
@@ -345,7 +346,7 @@ func typeOf(v any) string {
 
 // canonical renders a decoded value as compact JSON with sorted keys.
 func canonical(v any) []byte {
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, models.ToProvider)
 	if err != nil {
 		return nil
 	}
@@ -382,18 +383,16 @@ var keywords = []string{"type", "properties", "required", "additionalProperties"
 // tool whose schema uses one is offered with it ignored (spec 021), and
 // the model reads the schema the validator holds the call to. A schema
 // that is not JSON is an error.
-func ReduceSchema(raw json.RawMessage) (json.RawMessage, bool, error) {
+func ReduceSchema(raw jsontext.Value) (jsontext.Value, bool, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return raw, false, nil
 	}
-	var v any
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	if err := dec.Decode(&v); err != nil {
+	v, err := DecodeTree(raw)
+	if err != nil {
 		return nil, false, fmt.Errorf("not JSON: %w", err)
 	}
 	cut := false
-	out, err := json.Marshal(reduce(v, &cut))
+	out, err := json.Marshal(reduce(v, &cut), models.ToProvider)
 	if err != nil {
 		return nil, false, err
 	}

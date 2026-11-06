@@ -5,7 +5,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"io/fs"
@@ -98,7 +99,7 @@ func builtinTool(t *testing.T, name string) Tool {
 // run calls a tool and fails the test on a Go error.
 func run(ctx context.Context, t *testing.T, tool Tool, m machine.Machine, st State, input string) Result {
 	t.Helper()
-	res, err := tool.Run(ctx, Call{ID: "toolu_1", Input: json.RawMessage(input), Machine: m, State: st})
+	res, err := tool.Run(ctx, Call{ID: "toolu_1", Input: jsontext.Value(input), Machine: m, State: st})
 	if err != nil {
 		t.Fatalf("%s %s: %v", tool.Definition().Name, input, err)
 	}
@@ -142,7 +143,7 @@ func (th *thread) call(ctx context.Context, t *testing.T, tool Tool, m machine.M
 
 func (th *thread) record(t *testing.T, res Result) {
 	t.Helper()
-	var meta json.RawMessage
+	var meta jsontext.Value
 	if res.Meta != nil {
 		b, err := json.Marshal(res.Meta)
 		if err != nil {

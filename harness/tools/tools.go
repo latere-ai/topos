@@ -9,7 +9,7 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -28,9 +28,9 @@ import (
 
 // Definition is what the model sees of a tool.
 type Definition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema jsontext.Value `json:"input_schema"`
 }
 
 // Effect is what a tool can change; it feeds the risk features of spec
@@ -150,13 +150,13 @@ type ReachTarget struct {
 // path is under /memory/ on the session's memory machine, and opens no
 // other machine for it.
 type Pather interface {
-	Paths(input json.RawMessage) []string
+	Paths(input jsontext.Value) []string
 }
 
 // Call is one call of a tool.
 type Call struct {
 	ID      string
-	Input   json.RawMessage
+	Input   jsontext.Value
 	Machine machine.Machine
 	// State is the thread's tool state as its log records it.
 	State State
@@ -225,10 +225,10 @@ type Meta struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Size is the length in bytes of the file a write or an edit left,
 	// which a client shows beside the file it offers to open (spec 044).
-	Size *int64 `json:"size,omitempty"`
+	Size *int64 `json:"size,omitzero"`
 	// Dir is the directory bash ended in.
 	Dir      string `json:"dir,omitempty"`
-	ExitCode *int   `json:"exit_code,omitempty"`
+	ExitCode *int   `json:"exit_code,omitzero"`
 	// Todos is the thread's todo list after a todo call. omitzero keeps
 	// an emptied list, [], apart from a meta that has no list.
 	Todos []Todo `json:"todos,omitzero"`
@@ -241,21 +241,21 @@ type Meta struct {
 	Refusal string `json:"refusal,omitempty"`
 	// Publish is a publish call's record (spec 043): the session's app,
 	// the commit, and where its preview or release stands.
-	Publish *session.PublishMeta `json:"publish,omitempty"`
+	Publish *session.PublishMeta `json:"publish,omitzero"`
 	// Parse is the parse of a PDF read read through a parsing service
 	// (spec 082), beside the file's path and digest.
-	Parse *ParseMeta `json:"parse,omitempty"`
+	Parse *ParseMeta `json:"parse,omitzero"`
 	// Notice is a notify call's record (spec 086), which the session's
 	// header folds as its latest notice.
-	Notice *session.NoticeMeta `json:"notice,omitempty"`
+	Notice *session.NoticeMeta `json:"notice,omitzero"`
 	// Memory is a write's or an edit's change of a file in a memory
 	// folder (spec 093), which a client shows as a memory saved or
 	// forgotten.
-	Memory *MemoryMeta `json:"memory,omitempty"`
+	Memory *MemoryMeta `json:"memory,omitzero"`
 	// Refused is how many of a subagent's calls did not run in the run
 	// whose final text is an agent or send_message call's result, because
 	// a rule or the person refused them (spec 101); zero for none.
-	Refused int `json:"refused,omitempty"`
+	Refused int `json:"refused,omitzero"`
 }
 
 // MemoryMeta is one change of a memory folder's file: the folder's name,
@@ -335,7 +335,7 @@ func StateOf(events []session.Event, thread string) State {
 			continue
 		}
 		var m Meta
-		if json.Unmarshal(p.Meta, &m) != nil {
+		if session.Unmarshal(p.Meta, &m) != nil {
 			continue
 		}
 		if m.Path != "" {
@@ -560,20 +560,20 @@ func (r *Registry) Definitions() []Definition {
 // Validate checks a call before it is scored (spec 005): a known name and
 // an input that matches the tool's schema. A failing call gets the
 // result the model sees instead of running.
-func (r *Registry) Validate(name string, input json.RawMessage) (Tool, *Result) {
+func (r *Registry) Validate(name string, input jsontext.Value) (Tool, *Result) {
 	t, ok := r.Get(name)
 	if !ok {
 		res := Text(OutcomeUnknownTool, prompts.Render(prompts.RegistryUnknownTool, prompts.Data{"Name": name, "Available": strings.Join(r.Names(), ", ")}))
 		return nil, &res
 	}
 	var v any
-	dec := json.NewDecoder(bytes.NewReader(input))
-	dec.UseNumber()
 	if len(bytes.TrimSpace(input)) == 0 {
 		v = map[string]any{}
-	} else if err := dec.Decode(&v); err != nil || !atEOF(dec) {
+	} else if tree, err := DecodeTree(input); err != nil {
 		res := Text(OutcomeInvalidInput, invalidJSON(name, input, err))
 		return nil, &res
+	} else {
+		v = tree
 	}
 	if _, isObj := v.(map[string]any); !isObj {
 		res := Text(OutcomeInvalidInput, invalidInput(name, "/: the input is not an object"))
@@ -600,14 +600,13 @@ const InvalidJSONExcerpt = 200
 
 // invalidJSON is the result text of a call whose arguments are not one
 // JSON value: what is wrong, and the start of the text the model sent,
-// so the model can send the call again. err is the decoder's error, nil
-// when the text holds more after its first value.
+// so the model can send the call again. err is the decoder's error.
 func invalidJSON(tool string, input []byte, err error) string {
 	problem := "there is more text after the first JSON value"
 	switch {
 	case errors.Is(err, io.ErrUnexpectedEOF):
 		problem = "the text ends before the JSON value does"
-	case err != nil:
+	case err != nil && !errors.Is(err, errTrailing):
 		problem = err.Error()
 	}
 	return prompts.Render(prompts.RegistryInvalidJSON, prompts.Data{"Tool": tool, "Problem": problem, "Excerpt": excerpt(input)})
@@ -629,13 +628,6 @@ func excerpt(input []byte) string {
 		s = string([]rune(s)[:InvalidJSONExcerpt])
 	}
 	return s
-}
-
-// atEOF reports whether dec has nothing left but whitespace, so an input
-// with data after its object is refused.
-func atEOF(dec *json.Decoder) bool {
-	_, err := dec.Token()
-	return errors.Is(err, io.EOF)
 }
 
 // sortedKeys is the keys of m in order, for deterministic output.

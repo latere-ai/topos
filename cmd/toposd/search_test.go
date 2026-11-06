@@ -4,7 +4,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,7 +23,7 @@ import (
 // searches is a reply that calls web_search, and found one that ends the
 // turn once the result it reads holds want.
 func searches(id string) luxstub.Reply {
-	return luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "web_search", Args: json.RawMessage(`{"query":"go release"}`)}}}, StopReason: ir.StopToolUse}}
+	return luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "web_search", Args: jsontext.Value(`{"query":"go release"}`)}}}, StopReason: ir.StopToolUse}}
 }
 
 func found(want, said string) luxstub.Reply {
@@ -56,7 +57,7 @@ func TestASessionSearchesWithItsOwnKey(t *testing.T) {
 			Query      string `json:"query"`
 			MaxResults int    `json:"max_results"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Query != "go release" || in.MaxResults != 5 {
+		if err := json.UnmarshalRead(r.Body, &in); err != nil || in.Query != "go release" || in.MaxResults != 5 {
 			t.Errorf("the search service read %+v, %v", in, err)
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -4,7 +4,7 @@
 package trigger
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +14,7 @@ import (
 
 func TestTheFilterMatchesEachField(t *testing.T) {
 	e := Envelope{ID: "1", Product: "github", Verb: "pull_request.opened", Resource: "o/r#9", Time: time.Now(),
-		Payload: json.RawMessage(`{"action":"opened","pull_request":{"base":{"ref":"main"},"draft":false,"number":9,"labels":[]}}`)}
+		Payload: jsontext.Value(`{"action":"opened","pull_request":{"base":{"ref":"main"},"draft":false,"number":9,"labels":[]}}`)}
 	cases := []struct {
 		name string
 		on   v1.TriggerOn
@@ -41,19 +41,19 @@ func TestTheFilterMatchesEachField(t *testing.T) {
 		}
 	}
 	bad := e
-	bad.Payload = json.RawMessage(`{"action":`)
+	bad.Payload = jsontext.Value(`{"action":`)
 	if _, err := Matches(v1.TriggerOn{Product: "github", Verbs: []string{"*"}, Match: []v1.TriggerMatch{{Path: "payload.action", In: []string{"*"}}}}, bad); err == nil {
 		t.Fatal("a payload that does not decode matched")
 	}
 }
 
 func TestAnEnvelopeIsChecked(t *testing.T) {
-	ok := Envelope{ID: "1", Product: "github", Verb: "push", Resource: "o/r", Time: time.Now(), Payload: json.RawMessage(`{"a":1}`)}
+	ok := Envelope{ID: "1", Product: "github", Verb: "push", Resource: "o/r", Time: time.Now(), Payload: jsontext.Value(`{"a":1}`)}
 	if err := ok.Check(); err != nil {
 		t.Fatal(err)
 	}
 	null := ok
-	null.Payload = json.RawMessage(`null`)
+	null.Payload = jsontext.Value(`null`)
 	if err := null.Check(); err != nil {
 		t.Fatalf("a null payload is no payload: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestAnEnvelopeIsChecked(t *testing.T) {
 		"no id, verb, time":    {Product: "github", Resource: "o/r"},
 		"at most 200":          {ID: strings.Repeat("x", MaxEventID+1), Product: "github", Verb: "push", Resource: "o/r", Time: time.Now()},
 		"lowercase":            {ID: "1", Product: "GitHub", Verb: "push", Resource: "o/r", Time: time.Now()},
-		"payload is an object": {ID: "1", Product: "github", Verb: "push", Resource: "o/r", Time: time.Now(), Payload: json.RawMessage(`[1]`)},
+		"payload is an object": {ID: "1", Product: "github", Verb: "push", Resource: "o/r", Time: time.Now(), Payload: jsontext.Value(`[1]`)},
 	} {
 		if err := e.Check(); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%+v: %v, want %q", e, err, want)

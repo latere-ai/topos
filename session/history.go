@@ -5,7 +5,7 @@ package session
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"slices"
 	"strings"
 	"time"
@@ -262,11 +262,11 @@ func resultText(blocks []lux.Block, path string) string {
 // pictureFrom is the path a result's meta names, the file a file tool
 // read; empty for a meta that names none or that does not decode, whose
 // picture is then shown without a path.
-func pictureFrom(meta json.RawMessage) string {
+func pictureFrom(meta jsontext.Value) string {
 	var m struct {
 		Path string `json:"path"`
 	}
-	if len(meta) == 0 || json.Unmarshal(meta, &m) != nil {
+	if len(meta) == 0 || Unmarshal(meta, &m) != nil {
 		return ""
 	}
 	return m.Path

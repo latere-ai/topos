@@ -5,7 +5,7 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"io"
 	"io/fs"
@@ -38,7 +38,7 @@ const model = "builder-model"
 type echo struct{}
 
 func (echo) Definition() tools.Definition {
-	return tools.Definition{Name: "echo", Description: "echo", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	return tools.Definition{Name: "echo", Description: "echo", InputSchema: jsontext.Value(`{"type":"object"}`)}
 }
 func (echo) Properties() tools.Properties {
 	return tools.Properties{Parallel: true, Effect: tools.EffectRead}
@@ -169,7 +169,7 @@ func TestDriveAttachesTheMachineAndRunsATurn(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
 	f.stub.Script(model,
-		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "echo", Args: json.RawMessage(`{}`)}}),
+		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "echo", Args: jsontext.Value(`{}`)}}),
 		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
 	)
 	f.message(ctx, "Echo.")
@@ -780,7 +780,7 @@ type blocker struct {
 }
 
 func (blocker) Definition() tools.Definition {
-	return tools.Definition{Name: "long", Description: "runs long", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	return tools.Definition{Name: "long", Description: "runs long", InputSchema: jsontext.Value(`{"type":"object"}`)}
 }
 func (blocker) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectRead} }
 func (b blocker) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
@@ -817,7 +817,7 @@ func TestAnInterruptCancelsARunningCall(t *testing.T) {
 		return c, err
 	}
 	ctx := t.Context()
-	f.stub.Script(model, reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_l", Name: "long", Args: json.RawMessage(`{}`)}}), reply(ir.Block{Type: ir.BlockText, Text: "never"}))
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_l", Name: "long", Args: jsontext.Value(`{}`)}}), reply(ir.Block{Type: ir.BlockText, Text: "never"}))
 	f.message(ctx, "Go.")
 	start := time.Now()
 	out, err := f.r.Drive(ctx, f.s.ID)

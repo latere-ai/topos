@@ -50,7 +50,7 @@ type WakeCleared struct {
 	TriggerID string  `json:"trigger_id"`
 	Reason    string  `json:"reason"`
 	ToolUseID string  `json:"tool_use_id,omitempty"`
-	Sender    *Sender `json:"sender,omitempty"`
+	Sender    *Sender `json:"sender,omitzero"`
 	Refusal   string  `json:"refusal,omitempty"`
 }
 

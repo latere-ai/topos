@@ -4,8 +4,8 @@
 package proposal
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -128,7 +128,7 @@ func Routine(p runner.Proposal) (routine.Fields, error) {
 // writes, and for events no routine expresses the same manifest with the
 // filter as its on and the SDK's EventMessage, the ask and the event
 // after it, as its message.
-func Manifest(agent, name string, p runner.Proposal) (json.RawMessage, error) {
+func Manifest(agent, name string, p runner.Proposal) (jsontext.Value, error) {
 	f, err := Routine(p)
 	if err != nil {
 		return nil, err
@@ -174,11 +174,9 @@ func writeNotify(session map[string]any, notify string) {
 // edit decodes a trigger manifest, lets fn change its spec and its
 // session in place, and writes it again without its status. Numbers stay
 // as they were written.
-func edit(doc json.RawMessage, fn func(spec, session map[string]any)) (json.RawMessage, error) {
-	m := map[string]any{}
-	dec := json.NewDecoder(bytes.NewReader(doc))
-	dec.UseNumber()
-	if err := dec.Decode(&m); err != nil {
+func edit(doc jsontext.Value, fn func(spec, session map[string]any)) (jsontext.Value, error) {
+	m, err := objectTree(doc)
+	if err != nil {
 		return nil, fmt.Errorf("proposal: the trigger is not a JSON object: %w", err)
 	}
 	delete(m, "status")
@@ -192,7 +190,51 @@ func edit(doc json.RawMessage, fn func(spec, session map[string]any)) (json.RawM
 		spec["session"] = session
 	}
 	fn(spec, session)
-	return json.Marshal(m)
+	return json.Marshal(m, json.Deterministic(true))
+}
+
+// objectTree reads a JSON object as nested maps, so edit can reach the
+// members that are objects. Lists become lists of the same kind, and every
+// other value stays as the text it was written in, so a number keeps its
+// digits and every object is written with sorted members.
+func objectTree(doc jsontext.Value) (map[string]any, error) {
+	var members map[string]jsontext.Value
+	if err := json.Unmarshal(doc, &members); err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(members))
+	for k, v := range members {
+		t, err := valueTree(v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = t
+	}
+	return out, nil
+}
+
+// valueTree is objectTree for one member: an object is a map, a list is a
+// list of trees, and anything else is kept as written.
+func valueTree(v jsontext.Value) (any, error) {
+	switch v.Kind() {
+	case '{':
+		return objectTree(v)
+	case '[':
+		var items []jsontext.Value
+		if err := json.Unmarshal(v, &items); err != nil {
+			return nil, err
+		}
+		out := make([]any, len(items))
+		for i, it := range items {
+			t, err := valueTree(it)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = t
+		}
+		return out, nil
+	}
+	return v, nil
 }
 
 // Changed is the manifest a change, a pause or a resume applies to the
@@ -205,8 +247,8 @@ func edit(doc json.RawMessage, fn func(spec, session map[string]any)) (json.RawM
 // fires at one time or at a list of times (spec 090) is no routine the
 // SDK's Fields express, whatever its name and labels, so its document is
 // written as any other trigger's.
-func Changed(agent string, stored *v1.Trigger, p runner.Proposal) (json.RawMessage, error) {
-	doc, err := json.Marshal(stored)
+func Changed(agent string, stored *v1.Trigger, p runner.Proposal) (jsontext.Value, error) {
+	doc, err := json.Marshal(stored, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +264,7 @@ func Changed(agent string, stored *v1.Trigger, p runner.Proposal) (json.RawMessa
 }
 
 // changedRoutine writes p over the fields f of the routine named name.
-func changedRoutine(agent, name string, doc json.RawMessage, f routine.Fields, p runner.Proposal) (json.RawMessage, error) {
+func changedRoutine(agent, name string, doc jsontext.Value, f routine.Fields, p runner.Proposal) (jsontext.Value, error) {
 	if p.Name != "" {
 		f.Title = p.Name
 	}
@@ -266,7 +308,7 @@ func changedRoutine(agent, name string, doc json.RawMessage, f routine.Fields, p
 // changedTrigger writes p into a trigger that is no routine: its name as
 // its displayName and its sessions' title, its ask as its message, its
 // schedule or its filter, and its suspension.
-func changedTrigger(doc json.RawMessage, stored *v1.Trigger, p runner.Proposal) (json.RawMessage, error) {
+func changedTrigger(doc jsontext.Value, stored *v1.Trigger, p runner.Proposal) (jsontext.Value, error) {
 	title := ""
 	if p.Name != "" {
 		t, err := routine.CheckTitle(p.Name)
@@ -326,15 +368,13 @@ func changedTrigger(doc json.RawMessage, stored *v1.Trigger, p runner.Proposal) 
 
 // editWithMeta is edit with the metadata's displayName set to title, when
 // title is not empty.
-func editWithMeta(doc json.RawMessage, title string, fn func(spec, session map[string]any)) (json.RawMessage, error) {
+func editWithMeta(doc jsontext.Value, title string, fn func(spec, session map[string]any)) (jsontext.Value, error) {
 	body, err := edit(doc, fn)
 	if err != nil || title == "" {
 		return body, err
 	}
-	m := map[string]any{}
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	if err := dec.Decode(&m); err != nil {
+	m, err := objectTree(body)
+	if err != nil {
 		return nil, err
 	}
 	meta, ok := m["metadata"].(map[string]any)
@@ -342,5 +382,5 @@ func editWithMeta(doc json.RawMessage, title string, fn func(spec, session map[s
 		return nil, errors.New("proposal: the trigger's metadata is not an object")
 	}
 	meta["displayName"] = title
-	return json.Marshal(m)
+	return json.Marshal(m, json.Deterministic(true))
 }

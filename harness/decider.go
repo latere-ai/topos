@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"slices"
 
 	"latere.ai/x/pkg/verdict"
@@ -24,7 +24,7 @@ type Call struct {
 	ToolUseID string
 	Name      string
 	Props     tools.Properties
-	Input     json.RawMessage
+	Input     jsontext.Value
 	// MachineKind is the kind of the machine the call runs on.
 	MachineKind string
 	// Remembered are the session's own allow patterns, from confirmations

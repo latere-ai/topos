@@ -5,7 +5,8 @@ package harness
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -178,14 +180,14 @@ var networkPrograms = regexp.MustCompile(`(^|[\s;&|(])(curl|wget|ssh|scp|rsync|g
 
 // Score is the rule-feature risk of one call (spec 012): a fetch of one of
 // the egress hosts scores lower.
-func Score(name string, props tools.Properties, input json.RawMessage, machineKind string, egress []string) session.Risk {
+func Score(name string, props tools.Properties, input jsontext.Value, machineKind string, egress []string) session.Risk {
 	return score(name, props, input, machineKind, func(host string) bool { return slices.Contains(egress, host) })
 }
 
 // score is Score with the hosts a fetch scores lower for named by named:
 // the agent's egress hosts, or every host inside the session's network
 // (spec 052).
-func score(name string, props tools.Properties, input json.RawMessage, machineKind string, named func(host string) bool) session.Risk {
+func score(name string, props tools.Properties, input jsontext.Value, machineKind string, named func(host string) bool) session.Risk {
 	r := session.Risk{Source: RiskSource}
 	host := machineKind != machine.KindCella
 	switch {
@@ -200,7 +202,7 @@ func score(name string, props tools.Properties, input json.RawMessage, machineKi
 		var in struct {
 			Command string `json:"command"`
 		}
-		if json.Unmarshal(input, &in) == nil && networkPrograms.MatchString(in.Command) {
+		if json.Unmarshal(input, &in, models.FromProvider) == nil && networkPrograms.MatchString(in.Command) {
 			r.Score, r.Features = 0.7, append(r.Features, "command:network_or_delete")
 		}
 	case props.Effect == tools.EffectWrite:
@@ -236,7 +238,7 @@ func memoryRisk() session.Risk {
 // for that in plan; in plan a read is allowed and a change blocked, as
 // every change is; and allowed otherwise, since the person reviews and
 // removes every memory through the installation.
-func (p Policy) decideMemory(name string, props tools.Properties, input json.RawMessage, machineKind string) Decision {
+func (p Policy) decideMemory(name string, props tools.Properties, input jsontext.Value, machineKind string) Decision {
 	mode := ModeOn(p.Mode, machineKind)
 	readOnly := props.Effect == tools.EffectNone || props.Effect == tools.EffectRead
 	rule, listed := matchPattern(p.AlwaysConfirm, name, patternSubject(name, input))
@@ -261,11 +263,11 @@ func (p Policy) decideMemory(name string, props tools.Properties, input json.Raw
 // fetchHost is the host a web_fetch's URL names, lowercased, without its
 // port or the user information before it; empty for an input that names
 // no http or https URL with a host.
-func fetchHost(input json.RawMessage) string {
+func fetchHost(input jsontext.Value) string {
 	var in struct {
 		URL string `json:"url"`
 	}
-	if json.Unmarshal(input, &in) != nil {
+	if json.Unmarshal(input, &in, models.FromProvider) != nil {
 		return ""
 	}
 	u, err := url.Parse(strings.TrimSpace(in.URL))
@@ -321,7 +323,7 @@ type Decision struct {
 // On a person's own computer progressive decides as confirm (spec 080):
 // a call that reads runs, and any other asks unless always_allow names it
 // or the person allowed it earlier in the session.
-func (p Policy) Decide(name string, props tools.Properties, input json.RawMessage, risk session.Risk, machineKind string, remembered []string) Decision {
+func (p Policy) Decide(name string, props tools.Properties, input jsontext.Value, risk session.Risk, machineKind string, remembered []string) Decision {
 	mode := ModeOn(p.Mode, machineKind)
 	readOnly := props.Effect == tools.EffectNone || props.Effect == tools.EffectRead
 	subject := patternSubject(name, input)
@@ -376,12 +378,12 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 
 // patternSubject is what a pattern's glob matches for a call: the
 // command of bash, the path of a file tool, domain:<host> for web_fetch.
-func patternSubject(name string, input json.RawMessage) string {
+func patternSubject(name string, input jsontext.Value) string {
 	var in struct {
 		Command string `json:"command"`
 		Path    string `json:"path"`
 	}
-	if json.Unmarshal(input, &in) != nil {
+	if json.Unmarshal(input, &in, models.FromProvider) != nil {
 		return ""
 	}
 	switch name {

@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -30,9 +31,9 @@ const Prefix = "mcp__"
 
 // Tool is one tool a server lists.
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema jsontext.Value `json:"inputSchema"`
 }
 
 // ListTools lists the server's tools, following nextCursor for at most
@@ -53,7 +54,7 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 			Tools      []Tool `json:"tools"`
 			NextCursor string `json:"nextCursor"`
 		}
-		if err := json.Unmarshal(res, &page); err != nil {
+		if err := json.Unmarshal(res, &page, foreignJSON); err != nil {
 			return nil, fmt.Errorf("mcp: tools/list answered %s: %w", snippet(res), err)
 		}
 		out = append(out, page.Tools...)
@@ -66,10 +67,10 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 
 // Result is a tools/call's result.
 type Result struct {
-	ResultType        string          `json:"resultType"`
-	Content           []Content       `json:"content"`
-	StructuredContent json.RawMessage `json:"structuredContent"`
-	IsError           bool            `json:"isError"`
+	ResultType        string         `json:"resultType"`
+	Content           []Content      `json:"content"`
+	StructuredContent jsontext.Value `json:"structuredContent"`
+	IsError           bool           `json:"isError"`
 }
 
 // Content is one item of a result's content.
@@ -88,16 +89,16 @@ type Content struct {
 
 // CallTool calls the server's tool name with args, the headers header
 // adds beside the transport's own.
-func (c *Client) CallTool(ctx context.Context, name string, args json.RawMessage, header http.Header) (Result, error) {
+func (c *Client) CallTool(ctx context.Context, name string, args jsontext.Value, header http.Header) (Result, error) {
 	if len(bytes.TrimSpace(args)) == 0 {
-		args = json.RawMessage(`{}`)
+		args = jsontext.Value(`{}`)
 	}
 	res, err := c.call(ctx, "tools/call", map[string]any{"name": name, "arguments": args}, name, header)
 	if err != nil {
 		return Result{}, err
 	}
 	var r Result
-	if err := json.Unmarshal(res, &r); err != nil {
+	if err := json.Unmarshal(res, &r, foreignJSON); err != nil {
 		return Result{}, fmt.Errorf("mcp: tools/call answered %s: %w", snippet(res), err)
 	}
 	return r, nil
@@ -247,12 +248,12 @@ type headerParam struct {
 // false when a mark breaks the transport's rules: an empty or non-token
 // name, one named twice, one on a property of no primitive type, or one
 // not reachable through properties alone.
-func headerParams(raw json.RawMessage) ([]headerParam, bool) {
+func headerParams(raw jsontext.Value) ([]headerParam, bool) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, true
 	}
 	var root any
-	if err := json.Unmarshal(raw, &root); err != nil {
+	if err := json.Unmarshal(raw, &root, foreignJSON); err != nil {
 		return nil, false
 	}
 	var out []headerParam
@@ -316,35 +317,43 @@ func tchar(c byte) bool {
 // headersFor are the Mcp-Param headers of a call's arguments: each marked
 // argument with a value of a primitive type, encoded as the transport
 // says; an absent or null one is omitted.
-func headersFor(params []headerParam, args json.RawMessage) http.Header {
+func headersFor(params []headerParam, args jsontext.Value) http.Header {
 	if len(params) == 0 {
 		return nil
 	}
-	var root map[string]any
-	dec := json.NewDecoder(bytes.NewReader(args))
-	dec.UseNumber()
-	if dec.Decode(&root) != nil {
+	var root map[string]jsontext.Value
+	if json.Unmarshal(args, &root, foreignJSON) != nil {
 		return nil
 	}
 	h := http.Header{}
 	for _, p := range params {
-		var v any = root
-		for _, k := range p.path {
-			m, ok := v.(map[string]any)
-			if !ok {
-				v = nil
+		if len(p.path) == 0 {
+			continue
+		}
+		v, ok := root[p.path[0]]
+		for _, k := range p.path[1:] {
+			var m map[string]jsontext.Value
+			if !ok || json.Unmarshal(v, &m, foreignJSON) != nil {
+				ok = false
 				break
 			}
-			v = m[k]
+			v, ok = m[k]
 		}
+		if !ok {
+			continue
+		}
+		// A number is passed on as written: its digits are never read as
+		// a float.
 		var s string
-		switch x := v.(type) {
-		case string:
+		switch v = bytes.TrimSpace(v); v.Kind() {
+		case '"':
+			var x string
+			if json.Unmarshal(v, &x, foreignJSON) != nil {
+				continue
+			}
 			s = headerValue(x)
-		case json.Number:
-			s = x.String()
-		case bool:
-			s = fmt.Sprint(x)
+		case '0', 't', 'f':
+			s = string(v)
 		default:
 			continue
 		}

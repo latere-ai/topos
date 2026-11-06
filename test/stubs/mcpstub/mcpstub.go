@@ -15,7 +15,8 @@ package mcpstub
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,11 +38,11 @@ const (
 // the call's result object for its arguments, sent after a progress
 // notification on an event stream when Stream is set.
 type Tool struct {
-	Name        string                         `json:"name"`
-	Description string                         `json:"description,omitempty"`
-	InputSchema json.RawMessage                `json:"inputSchema"`
-	Answer      func(args json.RawMessage) any `json:"-"`
-	Stream      bool                           `json:"-"`
+	Name        string                        `json:"name"`
+	Description string                        `json:"description,omitempty"`
+	InputSchema jsontext.Value                `json:"inputSchema"`
+	Answer      func(args jsontext.Value) any `json:"-"`
+	Stream      bool                          `json:"-"`
 	// NotConnected answers a call 409 connection_not_connected with this
 	// reason, as a connection service does when the other service asks
 	// for more than the person granted; empty answers it.
@@ -122,13 +123,13 @@ func (s *Server) EndSessions() {
 
 // message is a JSON-RPC request or notification.
 type message struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
+	ID     jsontext.Value `json:"id"`
+	Method string         `json:"method"`
 	Params struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-		Cursor    string          `json:"cursor"`
-		Meta      map[string]any  `json:"_meta"`
+		Name      string         `json:"name"`
+		Arguments jsontext.Value `json:"arguments"`
+		Cursor    string         `json:"cursor"`
+		Meta      map[string]any `json:"_meta"`
 	} `json:"params"`
 }
 

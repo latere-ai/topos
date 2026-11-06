@@ -5,7 +5,7 @@ package arcastub
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"strings"
@@ -339,10 +339,11 @@ func TestTheStubServesMemory(t *testing.T) {
 	s.Put("o", "files/mx/e.md", Object{Data: []byte("e")})
 	var page struct {
 		Entries []struct {
-			Path, Checksum string
-		}
-		Prefixes   []string
-		NextCursor string `json:"next_cursor"`
+			Path     string `json:"path"`
+			Checksum string `json:"checksum"`
+		} `json:"entries"`
+		Prefixes   []string `json:"prefixes"`
+		NextCursor string   `json:"next_cursor"`
 	}
 	c, _, b = do(t, http.MethodGet, s.URL()+"/files/o/files/m?list=1&limit=1", nil, bearer)
 	if c != http.StatusOK || json.Unmarshal(b, &page) != nil || len(page.Entries) != 1 || page.Entries[0].Path != "files/m/a.md" || page.NextCursor != "files/m/a.md" {

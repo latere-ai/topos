@@ -4,10 +4,10 @@
 package server
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -92,33 +92,31 @@ type createBody struct {
 	Message   string            `json:"message,omitempty"`
 	Title     string            `json:"title,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
-	Budget    *createBudget     `json:"budget,omitempty"`
-	Limits    *createLimits     `json:"limits,omitempty"`
-	Capture   *session.Capture  `json:"capture,omitempty"`
-	EndOnIdle bool              `json:"end_on_idle,omitempty"`
+	Budget    *createBudget     `json:"budget,omitzero"`
+	Limits    *createLimits     `json:"limits,omitzero"`
+	Capture   *session.Capture  `json:"capture,omitzero"`
+	EndOnIdle bool              `json:"end_on_idle,omitzero"`
 	// Attended declares that a person answers the session's questions,
 	// through a client that shows them (spec 039).
-	Attended  bool            `json:"attended,omitempty"`
-	Machine   json.RawMessage `json:"machine,omitempty"`
-	Resources json.RawMessage `json:"resources,omitempty"`
+	Attended  bool           `json:"attended,omitzero"`
+	Machine   jsontext.Value `json:"machine,omitzero"`
+	Resources jsontext.Value `json:"resources,omitzero"`
 	// Rollout is the id of the rollout the session is one run of, the
 	// caller's key for its run (spec 077).
 	Rollout string `json:"rollout,omitempty"`
 	// Model is the model and the reasoning level the session runs from
 	// its first request in place of its agent's, run as named (spec 077,
 	// R3).
-	Model *modelChange `json:"model,omitempty"`
+	Model *modelChange `json:"model,omitzero"`
 }
 
 // repositories reads a create's resources and checks them.
-func repositories(raw json.RawMessage) ([]session.Resource, error) {
+func repositories(raw jsontext.Value) ([]session.Resource, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	var rs []session.Resource
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&rs); err != nil {
+	if err := json.Unmarshal(raw, &rs, json.RejectUnknownMembers(true)); err != nil {
 		return nil, refuse(CodeInvalidRequest, "resources is a list of {type, url, ref}: %v", err)
 	}
 	return rs, checkRepositories(rs)
@@ -197,14 +195,12 @@ type createMachine struct {
 // requestedMachine reads a create's machine: nil for none, which runs on
 // the agent's, and a device otherwise. Any other kind is refused, since
 // a session's machine of any other kind is its agent's.
-func requestedMachine(raw json.RawMessage) (*session.Machine, error) {
+func requestedMachine(raw jsontext.Value) (*session.Machine, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	var m createMachine
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&m); err != nil {
+	if err := json.Unmarshal(raw, &m, json.RejectUnknownMembers(true)); err != nil {
 		return nil, refuse(CodeInvalidRequest, "machine is {kind, environment, workdir}: %v", err)
 	}
 	if m.Kind != session.MachineDevice {
@@ -217,7 +213,7 @@ func requestedMachine(raw json.RawMessage) (*session.Machine, error) {
 }
 
 type createBudget struct {
-	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
+	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitzero"`
 }
 
 type createLimits struct {

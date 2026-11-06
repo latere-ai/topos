@@ -14,7 +14,7 @@ package postgres
 import (
 	"context"
 	"embed"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -334,7 +334,7 @@ type sessionRow struct {
 // replica of an earlier release rewrote the body without it (spec 056).
 func (r sessionRow) decode() (session.Session, error) {
 	var sess session.Session
-	if err := json.Unmarshal([]byte(r.Body), &sess); err != nil {
+	if err := session.Unmarshal([]byte(r.Body), &sess); err != nil {
 		return session.Session{}, fmt.Errorf("%w: a session row: %w", session.ErrCorrupt, err)
 	}
 	if sess.Root == "" && r.Root != nil {
@@ -736,7 +736,7 @@ func scanEvents(rows pgx.Rows, id string) ([]session.Event, error) {
 			rows.Close()
 			return nil, fmt.Errorf("postgres: read an event of %s: %w", id, err)
 		}
-		e.Seq, e.SessionID, e.Type, e.Payload = uint64(seq), id, session.Type(typ), json.RawMessage(payload)
+		e.Seq, e.SessionID, e.Type, e.Payload = uint64(seq), id, session.Type(typ), jsontext.Value(payload)
 		e.Time = e.Time.UTC()
 		out = append(out, e)
 	}
@@ -927,7 +927,7 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 // holderOf reads the recorded holder of a held lease.
 func holderOf(raw *string) session.Holder {
 	var h session.Holder
-	if raw != nil && json.Unmarshal([]byte(*raw), &h) == nil {
+	if raw != nil && session.Unmarshal([]byte(*raw), &h) == nil {
 		return h
 	}
 	return session.Holder{}

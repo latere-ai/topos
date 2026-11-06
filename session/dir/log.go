@@ -6,7 +6,6 @@ package dir
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +21,7 @@ import (
 // acknowledged.
 type line struct {
 	session.Event
-	Batch int `json:"batch,omitempty"`
+	Batch int `json:"batch,omitzero"`
 }
 
 // encodeBatch renders a batch as the bytes of one write.
@@ -75,7 +74,7 @@ func scanLog(r io.Reader) (logScan, error) {
 		out.total += int64(len(b))
 		if len(b) > 0 && b[len(b)-1] == '\n' {
 			var l line
-			if derr := json.Unmarshal(b, &l); derr != nil {
+			if derr := session.Unmarshal(b, &l); derr != nil {
 				if bad == nil {
 					bad = fmt.Errorf("%w: undecodable line at byte %d: %w", session.ErrCorrupt, out.size+pendingBytes, derr)
 				}
@@ -188,7 +187,7 @@ func boundary(b []byte) (int, uint64, bool) {
 			Batch int    `json:"batch"`
 		}
 		end := off + j + 1
-		if json.Unmarshal(b[off:end], &l) == nil && l.Batch > 0 {
+		if session.Unmarshal(b[off:end], &l) == nil && l.Batch > 0 {
 			return end, l.Seq, true
 		}
 		off = end

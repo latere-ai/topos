@@ -6,7 +6,8 @@ package server
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"os"
 	"slices"
@@ -269,7 +270,7 @@ func TestEveryAnswerNamesTheLevelReasoning(t *testing.T) {
 	// A change stored before the rename, as v0.16.0 wrote it.
 	before := f.header(s.ID).LastSeq
 	old := session.Event{ID: session.NewID(session.PrefixEvent), Type: session.TypeModelChanged, Time: time.Now().UTC(),
-		Payload: json.RawMessage(`{"by":{"subject":"service:authorizer","kind":"service"},"old":{"name":"claude-haiku-4-5","effort":"medium"},"new":{"name":"claude-haiku-4-5","effort":"minimal"}}`)}
+		Payload: jsontext.Value(`{"by":{"subject":"service:authorizer","kind":"service"},"old":{"name":"claude-haiku-4-5","effort":"medium"},"new":{"name":"claude-haiku-4-5","effort":"minimal"}}`)}
 	batch := []session.Event{old}
 	session.Stamp(s.ID, before, batch)
 	if _, err := f.sessions.Append(t.Context(), s.ID, before, batch); err != nil {
@@ -544,7 +545,7 @@ func TestARefusedSendSaysWhenItOpensAgain(t *testing.T) {
 	reason := "rate_limited"
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		if req.Action == authorizer.ActionSessionSend {
-			return authz.Decision{Reason: reason, Limits: json.RawMessage(`{"resets_at":"2026-10-06T00:00:00Z"}`)}, nil
+			return authz.Decision{Reason: reason, Limits: jsontext.Value(`{"resets_at":"2026-10-06T00:00:00Z"}`)}, nil
 		}
 		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
 	}

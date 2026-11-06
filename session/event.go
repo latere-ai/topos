@@ -4,7 +4,7 @@
 package session
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"time"
 
@@ -91,23 +91,23 @@ type Event struct {
 	SessionID string    `json:"session_id"`
 	Type      Type      `json:"type"`
 	Time      time.Time `json:"time"`
-	Turn      int       `json:"turn,omitempty"`
-	Step      int       `json:"step,omitempty"`
+	Turn      int       `json:"turn,omitzero"`
+	Step      int       `json:"step,omitzero"`
 	// Subagent is the id of the subagent whose conversation the event
 	// belongs to, empty for the session's own (spec 013).
-	Subagent string          `json:"subagent,omitempty"`
-	Payload  json.RawMessage `json:"payload"`
+	Subagent string         `json:"subagent,omitempty"`
+	Payload  jsontext.Value `json:"payload"`
 }
 
 // tombstone is the payload a redacted event keeps.
-var tombstone = json.RawMessage(`{"tombstone":true}`)
+var tombstone = jsontext.Value(`{"tombstone":true}`)
 
 // Redacted reports whether the event's payload was replaced by redaction.
 func (e Event) Redacted() bool {
 	var p struct {
 		Tombstone bool `json:"tombstone"`
 	}
-	return json.Unmarshal(e.Payload, &p) == nil && p.Tombstone
+	return Unmarshal(e.Payload, &p) == nil && p.Tombstone
 }
 
 // NewEvent returns an event of the given type with a fresh id and the
@@ -123,7 +123,7 @@ func NewEvent(t Type, payload any, now time.Time) (Event, error) {
 
 // Decode unmarshals the event's payload into v.
 func (e Event) Decode(v any) error {
-	if err := json.Unmarshal(e.Payload, v); err != nil {
+	if err := Unmarshal(e.Payload, v); err != nil {
 		return fmt.Errorf("session: decode %s payload of %s: %w", e.Type, e.ID, err)
 	}
 	return nil
@@ -143,7 +143,7 @@ type UserMessage struct {
 	FiringID    string       `json:"firing_id,omitempty"`
 	// Wake is set on the message of a session's own wake firing, whose
 	// content is the note the agent left itself (spec 086).
-	Wake *MessageWake `json:"wake,omitempty"`
+	Wake *MessageWake `json:"wake,omitzero"`
 	// Notify is NotifyJudged on the message of a firing of a trigger whose
 	// session.notify is judged, which leaves it to the agent to say whether
 	// the turn brought something to the person (spec 086); empty for every
@@ -152,11 +152,11 @@ type UserMessage struct {
 	// Spend is the week of the trigger a firing's look counts toward, on
 	// the message of a firing that counts toward one (spec 087); nil on
 	// every other message.
-	Spend *MessageSpend `json:"spend,omitempty"`
+	Spend *MessageSpend `json:"spend,omitzero"`
 	// SendNow asks that a message sent while a turn runs be read at once:
 	// running commands move to the background and what still runs after
 	// a grace is cut (spec 098). It changes nothing on an idle session.
-	SendNow bool `json:"send_now,omitempty"`
+	SendNow bool `json:"send_now,omitzero"`
 }
 
 // UserInterrupt is the payload of user.interrupt.
@@ -180,9 +180,9 @@ type UserToolConfirmation struct {
 	// details, whether the client showed the decision service's
 	// suggestion first, and where they answered. A client sets each it can
 	// measure and leaves out each it cannot; none holds text.
-	AnswerMS        *int64 `json:"answer_ms,omitempty"`
-	DetailsOpened   *bool  `json:"details_opened,omitempty"`
-	SuggestionShown *bool  `json:"suggestion_shown,omitempty"`
+	AnswerMS        *int64 `json:"answer_ms,omitzero"`
+	DetailsOpened   *bool  `json:"details_opened,omitzero"`
+	SuggestionShown *bool  `json:"suggestion_shown,omitzero"`
 	Surface         string `json:"surface,omitempty"`
 }
 
@@ -197,7 +197,7 @@ type UserToolResult struct {
 	Sender    Sender      `json:"sender"`
 	ToolUseID string      `json:"tool_use_id"`
 	Content   []lux.Block `json:"content"`
-	IsError   bool        `json:"is_error,omitempty"`
+	IsError   bool        `json:"is_error,omitzero"`
 }
 
 // AgentMessage is the payload of agent.message.
@@ -205,7 +205,7 @@ type AgentMessage struct {
 	Message        lux.Message   `json:"message"`
 	StopReason     ir.StopReason `json:"stop_reason"`
 	Request        string        `json:"request,omitempty"`
-	Truncated      bool          `json:"truncated,omitempty"`
+	Truncated      bool          `json:"truncated,omitzero"`
 	ContinuationOf string        `json:"continuation_of,omitempty"`
 }
 
@@ -235,7 +235,7 @@ type Suggestion struct {
 	// the thresholds; a split ask's answers can agree or disagree. A
 	// service that predates them sends neither, and an event written
 	// before Topos kept them has neither.
-	EvidenceRatio *float64 `json:"evidence_ratio,omitempty"`
+	EvidenceRatio *float64 `json:"evidence_ratio,omitzero"`
 	AskKind       string   `json:"ask_kind,omitempty"`
 }
 
@@ -248,26 +248,26 @@ type SuggestionThresholds struct {
 
 // AgentToolUse is the payload of agent.tool_use.
 type AgentToolUse struct {
-	ToolUseID  string          `json:"tool_use_id"`
-	Name       string          `json:"name"`
-	Input      json.RawMessage `json:"input"`
-	Risk       *Risk           `json:"risk,omitempty"`
-	Verdict    string          `json:"verdict"`
-	Reason     string          `json:"reason,omitempty"`
-	Mode       string          `json:"mode,omitempty"`
-	Client     bool            `json:"client,omitempty"`
-	Repeatable bool            `json:"repeatable,omitempty"`
+	ToolUseID  string         `json:"tool_use_id"`
+	Name       string         `json:"name"`
+	Input      jsontext.Value `json:"input"`
+	Risk       *Risk          `json:"risk,omitzero"`
+	Verdict    string         `json:"verdict"`
+	Reason     string         `json:"reason,omitempty"`
+	Mode       string         `json:"mode,omitempty"`
+	Client     bool           `json:"client,omitzero"`
+	Repeatable bool           `json:"repeatable,omitzero"`
 	// ReviewProbability is the probability, fixed before the call ran,
 	// that a person sees it (spec 037); nil on an event written before it.
-	ReviewProbability *float64 `json:"review_probability,omitempty"`
+	ReviewProbability *float64 `json:"review_probability,omitzero"`
 	// Draw is the uniform draw the call's review used, made once.
-	Draw *float64 `json:"draw,omitempty"`
+	Draw *float64 `json:"draw,omitzero"`
 	// Suggestion is a decision service's suggestion, when one was asked.
-	Suggestion *Suggestion `json:"suggestion,omitempty"`
+	Suggestion *Suggestion `json:"suggestion,omitzero"`
 	// Attended is whether a person began the call's turn: false on a turn
 	// a trigger's message began, which nobody watches (spec 087); nil on
 	// an event written before it.
-	Attended *bool `json:"attended,omitempty"`
+	Attended *bool `json:"attended,omitzero"`
 	// DecidedBy is the layer that decided the call, one of [Decided]
 	// (spec 012); empty on an event written before it.
 	DecidedBy string `json:"decided_by,omitempty"`
@@ -287,7 +287,7 @@ type AgentToolUse struct {
 	// Scope is the reach the call was decided on (spec 101), appended with
 	// its decision and so before it waits for a person; nil on an event
 	// written before it.
-	Scope *CallScope `json:"scope,omitempty"`
+	Scope *CallScope `json:"scope,omitzero"`
 }
 
 // Spill names where the rest of a capped tool output went.
@@ -303,14 +303,14 @@ type Spill struct {
 // web search's (spec 047), which the session's spend counts beside its
 // model requests; nil for a call that cost nothing.
 type ToolResult struct {
-	ToolUseID    string          `json:"tool_use_id"`
-	Content      []lux.Block     `json:"content"`
-	IsError      bool            `json:"is_error,omitempty"`
-	Outcome      string          `json:"outcome,omitempty"`
-	DurationMS   int64           `json:"duration_ms,omitempty"`
-	Spill        *Spill          `json:"spill,omitempty"`
-	Meta         json.RawMessage `json:"meta,omitempty"`
-	CostUSDMicro *int64          `json:"cost_usd_micro,omitempty"`
+	ToolUseID    string         `json:"tool_use_id"`
+	Content      []lux.Block    `json:"content"`
+	IsError      bool           `json:"is_error,omitzero"`
+	Outcome      string         `json:"outcome,omitempty"`
+	DurationMS   int64          `json:"duration_ms,omitzero"`
+	Spill        *Spill         `json:"spill,omitzero"`
+	Meta         jsontext.Value `json:"meta,omitzero"`
+	CostUSDMicro *int64         `json:"cost_usd_micro,omitzero"`
 }
 
 // SubagentStarted is the payload of subagent.started. The event's id is
@@ -327,7 +327,7 @@ type SubagentStarted struct {
 	Depth     int      `json:"depth"`
 	Model     string   `json:"model,omitempty"`
 	Tools     []string `json:"tools,omitempty"`
-	Budget    *Budget  `json:"budget,omitempty"`
+	Budget    *Budget  `json:"budget,omitzero"`
 	// Ignored are the fields of the agent the thread names that it does
 	// not use, since a thread acts with the session's credentials and
 	// machine (spec 013): identity, permissions, model.credential,
@@ -339,8 +339,8 @@ type SubagentStarted struct {
 type SubagentEnded struct {
 	Reason       string     `json:"reason"`
 	FinalText    string     `json:"final_text,omitempty"`
-	Usage        *lux.Usage `json:"usage,omitempty"`
-	CostUSDMicro *int64     `json:"cost_usd_micro,omitempty"`
+	Usage        *lux.Usage `json:"usage,omitzero"`
+	CostUSDMicro *int64     `json:"cost_usd_micro,omitzero"`
 }
 
 // SubagentMessage is the payload of subagent.message; the event's
@@ -366,8 +366,8 @@ const (
 // ContextCompacted is the payload of context.compacted.
 type ContextCompacted struct {
 	Kind       string   `json:"kind"`
-	FromSeq    uint64   `json:"from_seq,omitempty"`
-	ToSeq      uint64   `json:"to_seq,omitempty"`
+	FromSeq    uint64   `json:"from_seq,omitzero"`
+	ToSeq      uint64   `json:"to_seq,omitzero"`
 	ToolUseIDs []string `json:"tool_use_ids,omitempty"`
 	Summary    string   `json:"summary,omitempty"`
 	Cause      string   `json:"cause,omitempty"`
@@ -377,8 +377,8 @@ type ContextCompacted struct {
 	// with the same text. It is absent on a summary asked with the first
 	// version, the only one before the field existed.
 	Prompt       string `json:"prompt,omitempty"`
-	TokensBefore int64  `json:"tokens_before,omitempty"`
-	TokensAfter  int64  `json:"tokens_after,omitempty"`
+	TokensBefore int64  `json:"tokens_before,omitzero"`
+	TokensAfter  int64  `json:"tokens_after,omitzero"`
 }
 
 // ModelRequest is the payload of model.request.
@@ -390,16 +390,16 @@ type ModelRequest struct {
 	PromptVersion string        `json:"prompt_version,omitempty"`
 	ToolsSHA256   string        `json:"tools_sha256,omitempty"`
 	RequestSHA256 string        `json:"request_sha256,omitempty"`
-	RequestBytes  int64         `json:"request_bytes,omitempty"`
+	RequestBytes  int64         `json:"request_bytes,omitzero"`
 	RequestBlob   Digest        `json:"request_blob,omitempty"`
 	ResponseBlob  Digest        `json:"response_blob,omitempty"`
-	Usage         *lux.Usage    `json:"usage,omitempty"`
-	CostUSDMicro  *int64        `json:"cost_usd_micro,omitempty"`
+	Usage         *lux.Usage    `json:"usage,omitzero"`
+	CostUSDMicro  *int64        `json:"cost_usd_micro,omitzero"`
 	CostSource    string        `json:"cost_source,omitempty"`
-	LatencyMS     int64         `json:"latency_ms,omitempty"`
-	FirstTokenMS  int64         `json:"first_token_ms,omitempty"`
+	LatencyMS     int64         `json:"latency_ms,omitzero"`
+	FirstTokenMS  int64         `json:"first_token_ms,omitzero"`
 	StopReason    ir.StopReason `json:"stop_reason,omitempty"`
-	Attempts      int           `json:"attempts,omitempty"`
+	Attempts      int           `json:"attempts,omitzero"`
 	// Outcome is ok, error, canceled, escalated: a response that stopped
 	// at a max_tokens below the model's output limit, whose request was
 	// sent again at the limit (spec 005), or a title's that spent its
@@ -410,22 +410,22 @@ type ModelRequest struct {
 	Outcome string `json:"outcome"`
 	Error   string `json:"error,omitempty"`
 	// MaxTokens is the max_tokens the request asked.
-	MaxTokens int64    `json:"max_tokens,omitempty"`
+	MaxTokens int64    `json:"max_tokens,omitzero"`
 	Loss      []string `json:"loss,omitempty"`
 	// FoldSeq is the log's last sequence when the request was built:
 	// the request is the fold of the events through it, which a replay
 	// folds again (spec 007).
-	FoldSeq uint64 `json:"fold_seq,omitempty"`
+	FoldSeq uint64 `json:"fold_seq,omitzero"`
 	// NamesReads is set on every request built since spec 098: the
 	// waiting messages it read are the ones a messages.read names. A
 	// request without it read every message its FoldSeq covers.
-	NamesReads bool `json:"names_reads,omitempty"`
+	NamesReads bool `json:"names_reads,omitzero"`
 	// Reminder is the text the request carried after the fold of its log,
 	// which no event holds: the harness's word to the model that its
 	// last response wrote a call as text (spec 062). A replay renders it
 	// again from the prompt and the tool named. Absent on every other
 	// request.
-	Reminder *Reminder `json:"reminder,omitempty"`
+	Reminder *Reminder `json:"reminder,omitzero"`
 	// Purpose is what a request beside the session's threads was for:
 	// PurposeTitle, the question of whether the session's title still
 	// names its conversation (spec 083), whose PromptVersion names the
@@ -436,7 +436,7 @@ type ModelRequest struct {
 	// Context is what the request held of the model's input window (spec
 	// 087); nil on a request beside the conversation, a title's, and on
 	// one written before it.
-	Context *ContextReport `json:"context,omitempty"`
+	Context *ContextReport `json:"context,omitzero"`
 }
 
 // ContextReport is how full a request left its model's input window
@@ -493,7 +493,7 @@ func Purpose(e Event) string {
 	var p struct {
 		Purpose string `json:"purpose"`
 	}
-	if json.Unmarshal(e.Payload, &p) != nil {
+	if Unmarshal(e.Payload, &p) != nil {
 		return ""
 	}
 	return p.Purpose
@@ -534,8 +534,8 @@ type SessionStatus struct {
 	Status     Status         `json:"status"`
 	StopReason StopReason     `json:"stop_reason,omitempty"`
 	Detail     string         `json:"detail,omitempty"`
-	Runner     *RunnerRef     `json:"runner,omitempty"`
-	Checkpoint *CheckpointRef `json:"checkpoint,omitempty"`
+	Runner     *RunnerRef     `json:"runner,omitzero"`
+	Checkpoint *CheckpointRef `json:"checkpoint,omitzero"`
 	// Outcome is OutcomeNotified or OutcomeQuiet on the status that closes
 	// a turn a trigger's message began, idle or ended completed under
 	// end_on_idle, and empty on every other (spec 086).
@@ -658,7 +658,7 @@ const MaxRestoreNames = 100
 // after the copy was saved.
 type Restore struct {
 	Source          string        `json:"source"`
-	Copy            *RestoreCopy  `json:"copy,omitempty"`
+	Copy            *RestoreCopy  `json:"copy,omitzero"`
 	Files           int           `json:"files"`
 	Bytes           int64         `json:"bytes"`
 	Unverified      int           `json:"unverified"`
@@ -680,9 +680,9 @@ type Restore struct {
 type RestoreCopy struct {
 	Files        int           `json:"files"`
 	Bytes        int64         `json:"bytes"`
-	Turn         int           `json:"turn,omitempty"`
-	Inherited    bool          `json:"inherited,omitempty"`
-	Skipped      int           `json:"skipped,omitempty"`
+	Turn         int           `json:"turn,omitzero"`
+	Inherited    bool          `json:"inherited,omitzero"`
+	Skipped      int           `json:"skipped,omitzero"`
 	SkippedFiles []OmittedFile `json:"skipped_files,omitempty"`
 	Failed       string        `json:"failed,omitempty"`
 }
@@ -722,8 +722,8 @@ type SessionMachine struct {
 	Instructions []Instructions        `json:"instructions,omitempty"`
 	Skills       []Skill               `json:"skills,omitempty"`
 	Repositories []DeliveredRepository `json:"repositories,omitempty"`
-	Checkpoint   *CheckpointRef        `json:"checkpoint,omitempty"`
-	Restore      *Restore              `json:"restore,omitempty"`
+	Checkpoint   *CheckpointRef        `json:"checkpoint,omitzero"`
+	Restore      *Restore              `json:"restore,omitzero"`
 }
 
 // SessionMachineWaiting is the payload of session.machine_waiting (spec
@@ -749,7 +749,7 @@ const (
 type SessionError struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
-	Retryable bool   `json:"retryable,omitempty"`
+	Retryable bool   `json:"retryable,omitzero"`
 	Detail    string `json:"detail,omitempty"`
 }
 
@@ -767,11 +767,11 @@ type MemoryAttached struct {
 // the scope's permission entries; Until is a time, "end_of_turn", or
 // empty for a standing change.
 type ScopeChanged struct {
-	By     Sender            `json:"by"`
-	Old    []json.RawMessage `json:"old"`
-	New    []json.RawMessage `json:"new"`
-	Reason string            `json:"reason,omitempty"`
-	Until  string            `json:"until,omitempty"`
+	By     Sender           `json:"by"`
+	Old    []jsontext.Value `json:"old"`
+	New    []jsontext.Value `json:"new"`
+	Reason string           `json:"reason,omitempty"`
+	Until  string           `json:"until,omitempty"`
 }
 
 // ModelChanged is the payload of session.model_changed: the model the
@@ -870,7 +870,7 @@ func Mode(s Session, events []Event) (string, bool) {
 type SessionResumed struct {
 	By              Sender `json:"by"`
 	Reason          string `json:"reason,omitempty"`
-	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
+	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitzero"`
 }
 
 // MemorySynced is the payload of memory.synced.
@@ -894,6 +894,6 @@ type EventRedacted struct {
 type SessionRewound struct {
 	ToTurn     int            `json:"to_turn"`
 	Checkpoint CheckpointRef  `json:"checkpoint"`
-	Saved      *CheckpointRef `json:"saved,omitempty"`
+	Saved      *CheckpointRef `json:"saved,omitzero"`
 	By         Sender         `json:"by"`
 }

@@ -5,7 +5,8 @@ package hosted
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -408,7 +409,7 @@ func calls(uses ...ir.ToolUse) luxstub.Reply {
 // same drive once the computer is back, on the sandbox it had (spec 080).
 func TestADeviceAsksItsOwnerOnceATurn(t *testing.T) {
 	read := func(id, p string) ir.ToolUse {
-		return ir.ToolUse{ID: id, Name: "read", Args: json.RawMessage(`{"path":"` + p + `"}`)}
+		return ir.ToolUse{ID: id, Name: "read", Args: jsontext.Value(`{"path":"` + p + `"}`)}
 	}
 	run := func(id, command string) ir.ToolUse {
 		args, err := json.Marshal(map[string]string{"command": command})

@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -123,7 +124,7 @@ func newWorktree(ctx context.Context, o ClaimOptions) (Checkout, error) {
 	if err != nil {
 		return Checkout{}, err
 	}
-	record, err := json.Marshal(worktree{Checkout: top, Base: base})
+	record, err := json.Marshal(worktree{Checkout: top, Base: base}, jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return Checkout{}, err
 	}
@@ -158,7 +159,7 @@ func ReleaseCheckout(ctx context.Context, workdir, session string, environ []str
 		return false, fmt.Errorf("machine: read the worktree record: %w", err)
 	}
 	var wt worktree
-	if err := json.Unmarshal(raw, &wt); err != nil {
+	if err := json.Unmarshal(raw, &wt, jsontext.AllowInvalidUTF8(true)); err != nil {
 		return false, fmt.Errorf("machine: the worktree record of %s: %w", workdir, err)
 	}
 	status, _, err := gitOutput(ctx, workdir, environ, "status", "--porcelain")

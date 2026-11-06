@@ -5,7 +5,8 @@ package models
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -404,7 +405,7 @@ func TestAccumulatorSettlesEveryCallsArguments(t *testing.T) {
 	start := func(i int, id string, head string) ir.Event {
 		tu := &ir.ToolUse{ID: id, Name: "bash"}
 		if head != "" {
-			tu.Args = json.RawMessage(head)
+			tu.Args = jsontext.Value(head)
 		}
 		return ir.Event{Type: ir.EventBlockStart, Index: i, Block: &ir.Block{Type: ir.BlockToolUse, ToolUse: tu}}
 	}

@@ -6,7 +6,8 @@ package proposal
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"slices"
 	"strconv"
@@ -88,7 +89,7 @@ func (f *fakeTriggers) CancelWake(_ context.Context, id string) (string, error) 
 const weekly = `{"action":"propose","name":"Weekly sign-ups","ask":"Count last week's sign-ups.","why":"Every Monday at 9:00, Berlin time, I count last week's sign-ups.","schedule":"0 9 * * 1","timeZone":"Europe/Berlin"}`
 
 // with is weekly with one field replaced.
-func with(t *testing.T, key string, v any) json.RawMessage {
+func with(t *testing.T, key string, v any) jsontext.Value {
 	t.Helper()
 	var m map[string]any
 	if err := json.Unmarshal([]byte(weekly), &m); err != nil {
@@ -112,24 +113,24 @@ func with(t *testing.T, key string, v any) json.RawMessage {
 func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
 	tool := New(&fakeTriggers{}, nil)
 	cases := map[string]struct {
-		input json.RawMessage
+		input jsontext.Value
 		want  string
 	}{
-		"no action":            {json.RawMessage(`{}`), "action"},
-		"another action":       {json.RawMessage(`{"action":"archive","id":"trg_1"}`), "action"},
-		"an unknown field":     {json.RawMessage(`{"action":"list","when":"now"}`), "unknown field"},
-		"an unknown on field":  {with(t, "on", map[string]any{"product": "mail", "verbs": []string{"received"}, "every": true}), "unknown field"},
+		"no action":            {jsontext.Value(`{}`), "action"},
+		"another action":       {jsontext.Value(`{"action":"archive","id":"trg_1"}`), "action"},
+		"an unknown field":     {jsontext.Value(`{"action":"list","when":"now"}`), "unknown object member name"},
+		"an unknown on field":  {with(t, "on", map[string]any{"product": "mail", "verbs": []string{"received"}, "every": true}), "unknown object member name"},
 		"schedule and on":      {with(t, "on", map[string]any{"product": "mail", "verbs": []string{"received"}}), "not both"},
-		"an on of no verb":     {json.RawMessage(`{"action":"propose","name":"n","ask":"a","why":"w","on":{"product":"mail","verbs":[]}}`), "on.verbs"},
-		"a change of no id":    {json.RawMessage(`{"action":"change","name":"n","why":"w"}`), "trigger's id"},
-		"a change of nothing":  {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w"}`), "names what it changes"},
-		"a change of no why":   {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","name":"n"}`), "why is required"},
-		"a change to both":     {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","schedule":"0 9 * * 1","timeZone":"UTC","on":{"product":"mail","verbs":["received"]}}`), "not both"},
-		"a change's bad name":  {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","name":"a\nb"}`), "not one short line"},
-		"a change's schedule":  {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","schedule":"*/5 * * * *","timeZone":"UTC"}`), "not one a routine runs on"},
-		"a pause of no why":    {json.RawMessage(`{"action":"pause","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`), "why is required"},
-		"a delete of no id":    {json.RawMessage(`{"action":"delete"}`), "trigger's id"},
-		"no action at all":     {json.RawMessage(`{"id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`), "action is required"},
+		"an on of no verb":     {jsontext.Value(`{"action":"propose","name":"n","ask":"a","why":"w","on":{"product":"mail","verbs":[]}}`), "on.verbs"},
+		"a change of no id":    {jsontext.Value(`{"action":"change","name":"n","why":"w"}`), "trigger's id"},
+		"a change of nothing":  {jsontext.Value(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w"}`), "names what it changes"},
+		"a change of no why":   {jsontext.Value(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","name":"n"}`), "why is required"},
+		"a change to both":     {jsontext.Value(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","schedule":"0 9 * * 1","timeZone":"UTC","on":{"product":"mail","verbs":["received"]}}`), "not both"},
+		"a change's bad name":  {jsontext.Value(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","name":"a\nb"}`), "not one short line"},
+		"a change's schedule":  {jsontext.Value(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","schedule":"*/5 * * * *","timeZone":"UTC"}`), "not one a routine runs on"},
+		"a pause of no why":    {jsontext.Value(`{"action":"pause","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`), "why is required"},
+		"a delete of no id":    {jsontext.Value(`{"action":"delete"}`), "trigger's id"},
+		"no action at all":     {jsontext.Value(`{"id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`), "action is required"},
 		"no why":               {with(t, "why", nil), "why is required"},
 		"a long why":           {with(t, "why", strings.Repeat("x", trigger.MaxPurposeLength+1)), "why is longer"},
 		"no time zone":         {with(t, "timeZone", nil), "timeZone is required"},
@@ -153,7 +154,7 @@ func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
 		`{"action":"pause","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"Away."}`,
 		`{"action":"resume","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`,
 		`{"action":"delete","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`} {
-		if r := tool.Check(tools.Call{ID: "toolu_1", Input: json.RawMessage(in)}); r != nil {
+		if r := tool.Check(tools.Call{ID: "toolu_1", Input: jsontext.Value(in)}); r != nil {
 			t.Errorf("%s was refused: %+v", in, r)
 		}
 	}
@@ -166,27 +167,27 @@ func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
 func TestEveryProposalWaitsForItsPerson(t *testing.T) {
 	f := &fakeTriggers{}
 	tool := New(f, nil)
-	if r := tool.Confirm(tools.Call{Input: json.RawMessage(weekly)}); r != confirmPropose {
+	if r := tool.Confirm(tools.Call{Input: jsontext.Value(weekly)}); r != confirmPropose {
 		t.Fatalf("a proposal is held %q", r)
 	}
-	if r := tool.Confirm(tools.Call{Input: json.RawMessage(`{"action":"list"}`)}); r != "" {
+	if r := tool.Confirm(tools.Call{Input: jsontext.Value(`{"action":"list"}`)}); r != "" {
 		t.Fatalf("a list is held %q", r)
 	}
-	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_1", Input: json.RawMessage(weekly)}); r != nil {
+	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_1", Input: jsontext.Value(weekly)}); r != nil {
 		t.Fatalf("a proposal the server takes answered %+v", r)
 	}
 	if len(f.checked) != 1 || f.checked[0].ToolUseID != "toolu_1" || f.checked[0].Schedule != "0 9 * * 1" || f.checked[0].TimeZone != "Europe/Berlin" {
 		t.Fatalf("the server was asked %+v", f.checked)
 	}
-	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)}); r != nil || len(f.checked) != 1 {
+	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_l", Input: jsontext.Value(`{"action":"list"}`)}); r != nil || len(f.checked) != 1 {
 		t.Fatalf("a list was probed: %+v", r)
 	}
 	f.fail = errors.New("the server is away")
-	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_2", Input: json.RawMessage(weekly)}); r != nil {
+	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_2", Input: jsontext.Value(weekly)}); r != nil {
 		t.Fatalf("a proposal the server could not be asked about answered %+v", r)
 	}
 	f.fail, f.refuse = nil, &runner.TriggerRefusal{Code: "proposals_full", Message: "the person holds as many as they may"}
-	r := tool.Probe(t.Context(), tools.Call{ID: "toolu_3", Input: json.RawMessage(weekly)})
+	r := tool.Probe(t.Context(), tools.Call{ID: "toolu_3", Input: jsontext.Value(weekly)})
 	if r == nil || r.Outcome != tools.OutcomeInvalidInput || !strings.Contains(r.Content[0].Text, "proposals_full") || !strings.Contains(r.Content[0].Text, "were not asked") {
 		t.Fatalf("a refused proposal answered %+v", r)
 	}
@@ -198,7 +199,7 @@ func TestEveryProposalWaitsForItsPerson(t *testing.T) {
 func TestAnAllowedProposalIsApplied(t *testing.T) {
 	f := &fakeTriggers{}
 	tool := New(f, nil)
-	res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_1", Input: json.RawMessage(weekly)})
+	res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_1", Input: jsontext.Value(weekly)})
 	if err != nil || res.Outcome != tools.OutcomeOK || !strings.Contains(res.Content[0].Text, `"Weekly sign-ups" is theirs now`) || !strings.Contains(res.Content[0].Text, "2026-10-26T08:00:00Z") {
 		t.Fatalf("the allowed proposal answered %+v, %v", res, err)
 	}
@@ -207,11 +208,11 @@ func TestAnAllowedProposalIsApplied(t *testing.T) {
 		t.Fatalf("applied %+v", f.applied)
 	}
 	f.refuse = &runner.TriggerRefusal{Code: "forbidden", Message: "no allow"}
-	if res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_2", Input: json.RawMessage(weekly)}); err != nil || res.Outcome != tools.OutcomeError || !strings.Contains(res.Content[0].Text, "was not made (forbidden: no allow)") {
+	if res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_2", Input: jsontext.Value(weekly)}); err != nil || res.Outcome != tools.OutcomeError || !strings.Contains(res.Content[0].Text, "was not made (forbidden: no allow)") {
 		t.Fatalf("a refused apply answered %+v, %v", res, err)
 	}
 	f.refuse, f.fail = nil, errors.New("the server is away")
-	if _, err := tool.Run(t.Context(), tools.Call{ID: "toolu_3", Input: json.RawMessage(weekly)}); err == nil {
+	if _, err := tool.Run(t.Context(), tools.Call{ID: "toolu_3", Input: jsontext.Value(weekly)}); err == nil {
 		t.Fatal("a server's failure was answered as a result")
 	}
 }
@@ -225,7 +226,7 @@ func TestAListNamesWhatThePersonHolds(t *testing.T) {
 		{ID: "trg_1", Name: "routine-a", Title: "Weekly sign-ups", Schedule: "0 9 * * 1", TimeZone: "Europe/Berlin", Ask: "Count.", NextFireAt: &next, Origin: &v1.TriggerOrigin{Kind: v1.OriginProposal}},
 		{ID: "trg_2", Name: "on-mail", Product: "mail", Suspended: true},
 	}}
-	res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)})
+	res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: jsontext.Value(`{"action":"list"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +237,7 @@ func TestAListNamesWhatThePersonHolds(t *testing.T) {
 		t.Fatalf("the list answered %q, want %q", res.Content[0].Text, want)
 	}
 	f.list = nil
-	if res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)}); err != nil || res.Content[0].Text != "The person holds no triggers of you." {
+	if res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: jsontext.Value(`{"action":"list"}`)}); err != nil || res.Content[0].Text != "The person holds no triggers of you." {
 		t.Fatalf("an empty list answered %+v, %v", res, err)
 	}
 }
@@ -304,11 +305,11 @@ func TestOnlyAListAndAPauseRunWithoutThePerson(t *testing.T) {
 	f := &fakeTriggers{}
 	tool := New(f, nil)
 	for action, in := range calls {
-		if got := tool.Confirm(tools.Call{Input: json.RawMessage(in)}); got != held[action] {
+		if got := tool.Confirm(tools.Call{Input: jsontext.Value(in)}); got != held[action] {
 			t.Errorf("a %s is held %q, want %q", action, got, held[action])
 		}
 		f.checked = nil
-		if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_" + action, Input: json.RawMessage(in)}); r != nil {
+		if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_" + action, Input: jsontext.Value(in)}); r != nil {
 			t.Errorf("a %s the server takes was answered %+v", action, r)
 		}
 		if asked := len(f.checked) == 1; asked != (held[action] != "") || asked && (f.checked[0].Verb() != action || f.checked[0].ToolUseID != "toolu_"+action) {
@@ -323,7 +324,7 @@ func TestOnlyAListAndAPauseRunWithoutThePerson(t *testing.T) {
 	}
 	for action, want := range results {
 		f.applied = nil
-		res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_" + action, Input: json.RawMessage(calls[action])})
+		res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_" + action, Input: jsontext.Value(calls[action])})
 		if err != nil || res.Outcome != tools.OutcomeOK || !strings.HasPrefix(res.Content[0].Text, want) {
 			t.Errorf("a %s answered %+v, %v", action, res, err)
 		}
@@ -332,14 +333,14 @@ func TestOnlyAListAndAPauseRunWithoutThePerson(t *testing.T) {
 		}
 	}
 	f.refuse = &runner.TriggerRefusal{Code: "not_found", Message: "no such trigger"}
-	if res, _ := tool.Run(t.Context(), tools.Call{ID: "toolu_p", Input: json.RawMessage(calls[ActionPause])}); res.Outcome != tools.OutcomeError ||
+	if res, _ := tool.Run(t.Context(), tools.Call{ID: "toolu_p", Input: jsontext.Value(calls[ActionPause])}); res.Outcome != tools.OutcomeError ||
 		res.Content[0].Text != "The pause was not done (not_found: no such trigger). Tell them in one sentence; do not try it again in another way." {
 		t.Errorf("a refused pause answered %+v", res)
 	}
-	if res, _ := tool.Run(t.Context(), tools.Call{ID: "toolu_d", Input: json.RawMessage(calls[ActionDelete])}); !strings.HasPrefix(res.Content[0].Text, "The person said yes, but the delete was not done (not_found") {
+	if res, _ := tool.Run(t.Context(), tools.Call{ID: "toolu_d", Input: jsontext.Value(calls[ActionDelete])}); !strings.HasPrefix(res.Content[0].Text, "The person said yes, but the delete was not done (not_found") {
 		t.Errorf("a refused delete answered %+v", res)
 	}
-	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_c", Input: json.RawMessage(calls[ActionChange])}); r == nil || r.Outcome != tools.OutcomeInvalidInput ||
+	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_c", Input: jsontext.Value(calls[ActionChange])}); r == nil || r.Outcome != tools.OutcomeInvalidInput ||
 		!strings.HasPrefix(r.Content[0].Text, "This change cannot be done, so the person was not asked and nothing changed (not_found: no such trigger).") {
 		t.Errorf("a refused change was probed as %+v", r)
 	}
@@ -351,7 +352,7 @@ func TestOnlyAListAndAPauseRunWithoutThePerson(t *testing.T) {
 // same manifest under the event- name with the filter as its on and the
 // event after the ask; and a change keeps a routine a routine.
 func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
-	read := func(body json.RawMessage) v1.Trigger {
+	read := func(body jsontext.Value) v1.Trigger {
 		t.Helper()
 		var tr v1.Trigger
 		if err := json.Unmarshal(body, &tr); err != nil {
@@ -436,7 +437,7 @@ func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
 // or a schedule a routine's rules refuse; and a document that is no
 // trigger is refused rather than written over.
 func TestAChangeIsHeldToTheRulesOfAProposal(t *testing.T) {
-	read := func(body json.RawMessage) v1.Trigger {
+	read := func(body jsontext.Value) v1.Trigger {
 		t.Helper()
 		var tr v1.Trigger
 		if err := json.Unmarshal(body, &tr); err != nil {
@@ -486,11 +487,11 @@ func TestAChangeIsHeldToTheRulesOfAProposal(t *testing.T) {
 		}
 	}
 	for _, doc := range []string{`[]`, `{"spec":[]}`, `not json`} {
-		if _, err := edit(json.RawMessage(doc), func(map[string]any, map[string]any) {}); err == nil {
+		if _, err := edit(jsontext.Value(doc), func(map[string]any, map[string]any) {}); err == nil {
 			t.Errorf("%s was edited", doc)
 		}
 	}
-	if _, err := editWithMeta(json.RawMessage(`{"metadata":[],"spec":{}}`), "Title", func(map[string]any, map[string]any) {}); err == nil {
+	if _, err := editWithMeta(jsontext.Value(`{"metadata":[],"spec":{}}`), "Title", func(map[string]any, map[string]any) {}); err == nil {
 		t.Error("a trigger whose metadata is no object was edited")
 	}
 	for name, p := range map[string]runner.Proposal{
@@ -517,21 +518,21 @@ func TestTheToolsSmallAnswers(t *testing.T) {
 	if p := tool.Properties(); p.Effect != tools.EffectRead || p.Parallel {
 		t.Fatalf("the properties are %+v", p)
 	}
-	if r := tool.Confirm(tools.Call{Input: json.RawMessage(`{"action":`)}); r != "" {
+	if r := tool.Confirm(tools.Call{Input: jsontext.Value(`{"action":`)}); r != "" {
 		t.Fatalf("a call that does not read is held %q", r)
 	}
-	if r := tool.Probe(t.Context(), tools.Call{Input: json.RawMessage(`{"action":`)}); r != nil {
+	if r := tool.Probe(t.Context(), tools.Call{Input: jsontext.Value(`{"action":`)}); r != nil {
 		t.Fatalf("a call that does not read was probed: %+v", r)
 	}
-	if res, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
+	if res, err := tool.Run(t.Context(), tools.Call{Input: jsontext.Value(`{"action":`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
 		t.Fatalf("a call that does not read ran: %+v, %v", res, err)
 	}
 	f.refuse = &runner.TriggerRefusal{Code: "forbidden", Message: "not yours"}
-	if res, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":"list"}`)}); err != nil || res.Outcome != tools.OutcomeError || !strings.Contains(res.Content[0].Text, "forbidden") {
+	if res, err := tool.Run(t.Context(), tools.Call{Input: jsontext.Value(`{"action":"list"}`)}); err != nil || res.Outcome != tools.OutcomeError || !strings.Contains(res.Content[0].Text, "forbidden") {
 		t.Fatalf("a refused list answered %+v, %v", res, err)
 	}
 	f.refuse, f.fail = nil, errors.New("the server is away")
-	if _, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":"list"}`)}); err == nil {
+	if _, err := tool.Run(t.Context(), tools.Call{Input: jsontext.Value(`{"action":"list"}`)}); err == nil {
 		t.Fatal("a list the server could not answer was answered as a result")
 	}
 }
@@ -544,7 +545,7 @@ func TestTheToolsSmallAnswers(t *testing.T) {
 func TestAProposalCarriesItsAllowance(t *testing.T) {
 	f := &fakeTriggers{}
 	tool := New(f, nil)
-	call := tools.Call{ID: "toolu_b", Input: with(t, "perWeekUsd", json.Number("0.4"))}
+	call := tools.Call{ID: "toolu_b", Input: with(t, "perWeekUsd", jsontext.Value("0.4"))}
 	if r := tool.Check(call); r != nil {
 		t.Fatalf("a proposal with an allowance was refused: %+v", r)
 	}
@@ -554,7 +555,7 @@ func TestAProposalCarriesItsAllowance(t *testing.T) {
 	if _, err := tool.Run(t.Context(), call); err != nil || len(f.applied) != 1 || *f.applied[0].PerWeekUSDMicro != 400000 {
 		t.Fatalf("the allowed proposal: %v, %+v", err, f.applied)
 	}
-	for _, bad := range []json.Number{"0", "-1", "0.0000001", "1e3"} {
+	for _, bad := range []jsontext.Value{jsontext.Value("0"), jsontext.Value("-1"), jsontext.Value("0.0000001"), jsontext.Value("1e3")} {
 		r := tool.Check(tools.Call{ID: "toolu_x", Input: with(t, "perWeekUsd", bad)})
 		if r == nil || r.Outcome != tools.OutcomeInvalidInput || !strings.Contains(r.Content[0].Text, "perWeekUsd") {
 			t.Errorf("perWeekUsd %s: %+v", bad, r)
@@ -563,12 +564,12 @@ func TestAProposalCarriesItsAllowance(t *testing.T) {
 	if r := tool.Check(tools.Call{ID: "toolu_x", Input: with(t, "perWeekUsd", "five")}); r == nil || r.Outcome != tools.OutcomeInvalidInput {
 		t.Errorf("a perWeekUsd that is no number: %+v", r)
 	}
-	change := tools.Call{ID: "toolu_c", Input: json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"It costs more now.","perWeekUsd":1.25}`)}
+	change := tools.Call{ID: "toolu_c", Input: jsontext.Value(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"It costs more now.","perWeekUsd":1.25}`)}
 	if r := tool.Check(change); r != nil {
 		t.Fatalf("a change of the allowance alone was refused: %+v", r)
 	}
 
-	read := func(body json.RawMessage) v1.Trigger {
+	read := func(body jsontext.Value) v1.Trigger {
 		t.Helper()
 		var tr v1.Trigger
 		if err := json.Unmarshal(body, &tr); err != nil {
@@ -612,7 +613,7 @@ func TestTheListSaysEachAllowance(t *testing.T) {
 		{ID: "trg_1", Name: "routine-a", Title: "Weekly", Schedule: "0 9 * * 1", TimeZone: "UTC", PerWeekUSDMicro: new(int64(400000)), SpentUSDMicro: new(int64(120000))},
 		{ID: "trg_2", Name: "routine-b", Title: "Daily", Schedule: "0 9 * * *", TimeZone: "UTC"},
 	}}
-	res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)})
+	res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: jsontext.Value(`{"action":"list"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,7 +678,7 @@ func TestAChangeKeepsTheTimesItsTriggerFiresAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read := func(body json.RawMessage) v1.Trigger {
+	read := func(body jsontext.Value) v1.Trigger {
 		t.Helper()
 		var tr v1.Trigger
 		if err := json.Unmarshal(body, &tr); err != nil {

@@ -11,7 +11,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -173,7 +174,7 @@ func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, 
 	if !ok {
 		return nil, fmt.Errorf("scripted: %q is not a scripted connection", req.Connection.BaseURL)
 	}
-	body, err := json.Marshal(req.IR)
+	body, err := json.Marshal(req.IR, models.ToProvider)
 	if err != nil {
 		return nil, fmt.Errorf("scripted: encode the request: %w", err)
 	}
@@ -218,7 +219,7 @@ func check(e *Expect, r *ir.Request, step int) error {
 		return nil
 	}
 	fail := func(problem string) error {
-		b, err := json.MarshalIndent(r, "", "  ")
+		b, err := json.Marshal(r, models.ToProvider, jsontext.WithIndent("  "))
 		if err != nil {
 			return &ExpectationError{Step: step, Problem: problem}
 		}
@@ -277,7 +278,7 @@ func response(st Step, seq int, model string) ir.Response {
 		r.Blocks = append(r.Blocks, ir.Block{Type: ir.BlockText, Text: st.Text})
 	}
 	for i, c := range st.ToolCalls {
-		args, err := json.Marshal(c.Input)
+		args, err := json.Marshal(c.Input, models.ToProvider)
 		if err != nil || c.Input == nil {
 			args = []byte(`{}`)
 		}
@@ -341,7 +342,7 @@ func (s *stream) Next() (ir.Event, error) {
 		if err != nil {
 			return ir.Event{}, err
 		}
-		raw, err := json.Marshal(lux.Response{ID: s.resp.ID, Model: s.resp.Model, Blocks: msg.Blocks, StopReason: s.resp.StopReason, Usage: usage})
+		raw, err := json.Marshal(lux.Response{ID: s.resp.ID, Model: s.resp.Model, Blocks: msg.Blocks, StopReason: s.resp.StopReason, Usage: usage}, models.ToProvider)
 		if err != nil {
 			return ir.Event{}, fmt.Errorf("scripted: encode the response: %w", err)
 		}

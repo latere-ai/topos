@@ -51,12 +51,12 @@ type triggerFile struct {
 	Version       int              `json:"version"`
 	Digest        string           `json:"digest"`
 	Doc           string           `json:"doc"`
-	Suspended     bool             `json:"suspended,omitempty"`
+	Suspended     bool             `json:"suspended,omitzero"`
 	NextFireAt    *time.Time       `json:"next_fire_at,omitempty"`
 	LastFiredAt   *time.Time       `json:"last_fired_at,omitempty"`
 	LastSessionID string           `json:"last_session_id,omitempty"`
 	Counts        v1.TriggerCounts `json:"counts"`
-	Spend         *v1.TriggerSpend `json:"spend,omitempty"`
+	Spend         *v1.TriggerSpend `json:"spend,omitzero"`
 	CreatedAt     time.Time        `json:"created_at"`
 	UpdatedAt     time.Time        `json:"updated_at"`
 }
@@ -73,7 +73,7 @@ type firingFile struct {
 	Outcome    string    `json:"outcome,omitempty"`
 	Reason     string    `json:"reason,omitempty"`
 	SessionID  string    `json:"session_id,omitempty"`
-	Open       bool      `json:"open,omitempty"`
+	Open       bool      `json:"open,omitzero"`
 	Replica    string    `json:"replica,omitempty"`
 	Time       time.Time `json:"time"`
 	ReceivedAt time.Time `json:"received_at"`
@@ -86,13 +86,13 @@ type runFile struct {
 	Owner            string    `json:"owner"`
 	TriggerID        string    `json:"trigger_id"`
 	SessionID        string    `json:"session_id,omitempty"`
-	Wake             bool      `json:"wake,omitempty"`
+	Wake             bool      `json:"wake,omitzero"`
 	SessionTriggerID string    `json:"session_trigger_id,omitempty"`
 	At               time.Time `json:"at"`
 	Outcome          string    `json:"outcome"`
 	Reason           string    `json:"reason,omitempty"`
 	CostUSDMicro     int64     `json:"cost_usd_micro"`
-	Ended            bool      `json:"ended,omitempty"`
+	Ended            bool      `json:"ended,omitzero"`
 }
 
 func (f runFile) run() store.Run {

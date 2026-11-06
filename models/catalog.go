@@ -5,7 +5,7 @@ package models
 
 import (
 	_ "embed"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math"
@@ -24,18 +24,18 @@ type Entry struct {
 	Aliases         []string   `json:"aliases,omitempty"`
 	Family          string     `json:"family,omitempty"`
 	Dialect         ir.Dialect `json:"dialect,omitempty"`
-	InputWindow     int64      `json:"input_window,omitempty"`
-	MaxOutputTokens int64      `json:"max_output_tokens,omitempty"`
-	Pricing         *Pricing   `json:"pricing,omitempty"`
+	InputWindow     int64      `json:"input_window,omitzero"`
+	MaxOutputTokens int64      `json:"max_output_tokens,omitzero"`
+	Pricing         *Pricing   `json:"pricing,omitzero"`
 	Supports        Supports   `json:"supports,omitzero"`
 }
 
 // Supports says which request features a model takes.
 type Supports struct {
-	Thinking      bool `json:"thinking,omitempty"`
-	Effort        bool `json:"effort,omitempty"`
-	Images        bool `json:"images,omitempty"`
-	ParallelTools bool `json:"parallel_tools,omitempty"`
+	Thinking      bool `json:"thinking,omitzero"`
+	Effort        bool `json:"effort,omitzero"`
+	Images        bool `json:"images,omitzero"`
+	ParallelTools bool `json:"parallel_tools,omitzero"`
 }
 
 // Price is USD per million tokens, held as micro-USD per million tokens
@@ -95,10 +95,10 @@ func (p *Price) UnmarshalJSON(b []byte) error {
 
 // Pricing is a model's prices. A nil price is unpriced.
 type Pricing struct {
-	Input      *Price `json:"input,omitempty"`
-	Output     *Price `json:"output,omitempty"`
-	CacheRead  *Price `json:"cache_read,omitempty"`
-	CacheWrite *Price `json:"cache_write,omitempty"`
+	Input      *Price `json:"input,omitzero"`
+	Output     *Price `json:"output,omitzero"`
+	CacheRead  *Price `json:"cache_read,omitzero"`
+	CacheWrite *Price `json:"cache_write,omitzero"`
 }
 
 // cacheRead is the cache-read price, or the input price when the catalog

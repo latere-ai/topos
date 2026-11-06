@@ -5,7 +5,7 @@ package hosted
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -726,7 +726,7 @@ func TestSearchCredential(t *testing.T) {
 		if !ok {
 			t.Fatalf("web_search is not offered: %v", cfg.Tools.Names())
 		}
-		res, err := tool.Run(ctx, tools.Call{ID: "toolu_s", Input: json.RawMessage(`{"query":"go"}`), Machine: cfg.Machine})
+		res, err := tool.Run(ctx, tools.Call{ID: "toolu_s", Input: jsontext.Value(`{"query":"go"}`), Machine: cfg.Machine})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -5,7 +5,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -423,7 +422,7 @@ func Record(t *Trigger, f Firing, from string, now time.Time) {
 // DecodeTrigger reads a stored trigger's Doc.
 func DecodeTrigger(doc []byte) (*v1.Trigger, error) {
 	var t v1.Trigger
-	if err := json.Unmarshal(doc, &t); err != nil {
+	if err := session.Unmarshal(doc, &t); err != nil {
 		return nil, fmt.Errorf("store: a stored trigger does not read: %w", err)
 	}
 	return &t, nil

@@ -29,9 +29,9 @@ const (
 type Part struct {
 	Kind         string          `json:"kind"`
 	Context      string          `json:"context,omitempty"`
-	Instructions *Instructions   `json:"instructions,omitempty"`
+	Instructions *Instructions   `json:"instructions,omitzero"`
 	Skills       []Skill         `json:"skills,omitempty"`
-	Memory       *MemoryAttached `json:"memory,omitempty"`
+	Memory       *MemoryAttached `json:"memory,omitzero"`
 }
 
 // Transcript is the fold of a thread: the system parts, the Lux wire

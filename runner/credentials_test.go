@@ -5,7 +5,7 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"sync"
@@ -101,7 +101,7 @@ type scoper struct {
 }
 
 func (scoper) Definition() tools.Definition {
-	return tools.Definition{Name: "narrow", Description: "narrows the scope", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	return tools.Definition{Name: "narrow", Description: "narrows the scope", InputSchema: jsontext.Value(`{"type":"object"}`)}
 }
 func (scoper) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectRead} }
 func (sc scoper) Run(ctx context.Context, _ tools.Call) (tools.Result, error) {
@@ -110,7 +110,7 @@ func (sc scoper) Run(ctx context.Context, _ tools.Call) (tools.Result, error) {
 	if err != nil {
 		return tools.Result{}, err
 	}
-	e, err := session.NewEvent(session.TypeScopeChanged, session.ScopeChanged{By: session.Sender{Subject: "usr_ada", Kind: session.SenderPerson}, Old: []json.RawMessage{}, New: []json.RawMessage{}}, t0)
+	e, err := session.NewEvent(session.TypeScopeChanged, session.ScopeChanged{By: session.Sender{Subject: "usr_ada", Kind: session.SenderPerson}, Old: []jsontext.Value{}, New: []jsontext.Value{}}, t0)
 	if err != nil {
 		return tools.Result{}, err
 	}
@@ -163,7 +163,7 @@ func TestScopeChangeTakesFreshToken(t *testing.T) {
 		return c, c.Tools.AddBuiltin(scoper{st: f.store, id: s.ID, src: source, calls: m.count})
 	}
 	ctx := t.Context()
-	f.stub.Script(model, reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_s", Name: "narrow", Args: json.RawMessage(`{}`)}}), reply(ir.Block{Type: ir.BlockText, Text: "done"}))
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_s", Name: "narrow", Args: jsontext.Value(`{}`)}}), reply(ir.Block{Type: ir.BlockText, Text: "done"}))
 	f.message(ctx, "Go.")
 	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
 		t.Fatal(err)

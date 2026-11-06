@@ -4,8 +4,8 @@
 package v1
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 )
 
@@ -81,10 +81,10 @@ type AgentSpec struct {
 	Hooks          []Hook         `json:"hooks,omitempty"`
 	Subagents      []Subagent     `json:"subagents,omitempty"`
 	SubagentLimits SubagentLimits `json:"subagentLimits"`
-	Advisor        *Advisor       `json:"advisor,omitempty"`
+	Advisor        *Advisor       `json:"advisor,omitzero"`
 	// Title turns on the title that follows the conversation (spec 083);
 	// nil leaves the session's title to its create and its people.
-	Title        *Title           `json:"title,omitempty"`
+	Title        *Title           `json:"title,omitzero"`
 	Skills       []Skill          `json:"skills,omitempty"`
 	MCPServers   []MCPServer      `json:"mcpServers,omitempty"`
 	MemoryStores []MemoryStoreRef `json:"memoryStores,omitempty"`
@@ -118,9 +118,9 @@ type AgentModel struct {
 	// reasoning alone: Stored and Answered move it between the two.
 	Effort          string   `json:"effort,omitempty"`
 	Reasoning       string   `json:"reasoning,omitempty"`
-	InputWindow     int64    `json:"inputWindow,omitempty"`
-	MaxOutputTokens int64    `json:"maxOutputTokens,omitempty"`
-	Pricing         *Pricing `json:"pricing,omitempty"`
+	InputWindow     int64    `json:"inputWindow,omitzero"`
+	MaxOutputTokens int64    `json:"maxOutputTokens,omitzero"`
+	Pricing         *Pricing `json:"pricing,omitzero"`
 }
 
 // Level is the model's reasoning level under either name: reasoning, and
@@ -183,44 +183,53 @@ type Pricing struct {
 // client-executed tool with its description and input schema. Its JSON
 // form is the bare name when only Name is set, an object otherwise.
 type Tool struct {
-	Name        string          `json:"name"`
-	OutputLimit int             `json:"outputLimit,omitempty"`
-	Client      bool            `json:"client,omitempty"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
+	Name        string         `json:"name"`
+	OutputLimit int            `json:"outputLimit,omitzero"`
+	Client      bool           `json:"client,omitzero"`
+	Description string         `json:"description,omitempty"`
+	InputSchema jsontext.Value `json:"inputSchema,omitzero"`
 }
 
 // toolObject is Tool without its methods, for the object form.
 type toolObject Tool
 
-// MarshalJSON writes the bare name when only Name is set.
-func (t Tool) MarshalJSON() ([]byte, error) {
+// MarshalJSONTo writes the bare name when only Name is set.
+func (t Tool) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if t.OutputLimit == 0 && !t.Client && t.Description == "" && len(t.InputSchema) == 0 {
-		return json.Marshal(t.Name)
+		return json.MarshalEncode(enc, t.Name)
 	}
-	return json.Marshal(toolObject(t))
+	return json.MarshalEncode(enc, toolObject(t))
 }
+
+// MarshalJSON is the form a caller of encoding/json reads: MarshalJSONTo's.
+func (t Tool) MarshalJSON() ([]byte, error) { return json.Marshal(t) }
 
 // errToolForm is a tool entry that is neither a name nor an object.
 var errToolForm = errors.New("v1: a tool is a name or an object")
 
-// UnmarshalJSON reads a name or an object.
-func (t *Tool) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	switch {
-	case len(b) > 0 && b[0] == '"':
+// UnmarshalJSONFrom reads a name or an object.
+func (t *Tool) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	switch dec.PeekKind() {
+	case '"':
 		*t = Tool{}
-		return json.Unmarshal(b, &t.Name)
-	case len(b) > 0 && b[0] == '{':
+		return json.UnmarshalDecode(dec, &t.Name)
+	case '{':
 		var o toolObject
-		if err := json.Unmarshal(b, &o); err != nil {
+		if err := json.UnmarshalDecode(dec, &o); err != nil {
 			return err
 		}
 		*t = Tool(o)
 		return nil
 	}
+	if err := dec.SkipValue(); err != nil {
+		return err
+	}
 	return errToolForm
 }
+
+// UnmarshalJSON is the form a caller of encoding/json reads:
+// UnmarshalJSONFrom's.
+func (t *Tool) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, t) }
 
 // Approvals are how the agent's sessions decide calls when no
 // authorizer supplies the lists (spec 012).
@@ -253,7 +262,7 @@ type Hook struct {
 type Subagent struct {
 	Name  string     `json:"name"`
 	Agent string     `json:"agent,omitempty"`
-	Spec  *AgentSpec `json:"spec,omitempty"`
+	Spec  *AgentSpec `json:"spec,omitzero"`
 }
 
 // SubagentLimits bound the subagents a session runs (spec 013): how deep
@@ -277,7 +286,7 @@ type Advisor struct {
 // model was asked by, or its model where it has none. A session reads the
 // setting from the agent's latest version, not the version it runs.
 type Title struct {
-	Model *string `json:"model,omitempty"`
+	Model *string `json:"model,omitzero"`
 }
 
 // Skill is an Agent Skills folder: a path on the machine, or a git

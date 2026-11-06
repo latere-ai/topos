@@ -5,7 +5,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -197,7 +198,7 @@ func TestReadWithoutAParserIsUnchanged(t *testing.T) {
 	if err := reg.AddBuiltin(read); err != nil {
 		t.Fatal(err)
 	}
-	if _, res := reg.Validate(NameRead, json.RawMessage(`{"path":"a.pdf","pages":"1"}`)); res == nil || res.Outcome != OutcomeInvalidInput {
+	if _, res := reg.Validate(NameRead, jsontext.Value(`{"path":"a.pdf","pages":"1"}`)); res == nil || res.Outcome != OutcomeInvalidInput {
 		t.Fatalf("pages was taken: %+v", res)
 	}
 	put(t, filepath.Join(f.work, "a.pdf"), pdfBody)

@@ -6,7 +6,7 @@ package cella
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -106,10 +106,10 @@ func (e helperError) Unwrap() error { return e.is }
 // listens on, and why the check for a server stopped early, if it did.
 type exitBody struct {
 	Code      int    `json:"code"`
-	TimedOut  bool   `json:"timedOut,omitempty"`
-	Canceled  bool   `json:"canceled,omitempty"`
-	Moved     bool   `json:"moved,omitempty"`
-	PID       int    `json:"pid,omitempty"`
+	TimedOut  bool   `json:"timedOut,omitzero"`
+	Canceled  bool   `json:"canceled,omitzero"`
+	Moved     bool   `json:"moved,omitzero"`
+	PID       int    `json:"pid,omitzero"`
 	Log       string `json:"log,omitempty"`
 	Ports     []int  `json:"ports,omitempty"`
 	ServerErr string `json:"serverError,omitempty"`
@@ -130,21 +130,21 @@ func (e entry) info() machine.FileInfo {
 
 // response is the helper's one JSON answer.
 type response struct {
-	Result  *machine.SearchResult `json:"result,omitempty"`
-	Walk    *machine.WalkResult   `json:"walk,omitempty"`
+	Result  *machine.SearchResult `json:"result,omitzero"`
+	Walk    *machine.WalkResult   `json:"walk,omitzero"`
 	Entries []entry               `json:"entries,omitempty"`
 	Job     *struct {
 		PID int    `json:"pid"`
 		Log string `json:"log"`
-	} `json:"job,omitempty"`
-	Done  bool       `json:"done,omitempty"`
-	Error *errorBody `json:"error,omitempty"`
+	} `json:"job,omitzero"`
+	Done  bool       `json:"done,omitzero"`
+	Error *errorBody `json:"error,omitzero"`
 }
 
 // decodeResponse reads the helper's answer from its output.
 func decodeResponse(out []byte) (response, error) {
 	var r response
-	if err := json.Unmarshal(bytes.TrimSpace(out), &r); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(out), &r, fromHelper); err != nil {
 		return r, fmt.Errorf("machine: the helper's answer %q: %w", truncate(out), err)
 	}
 	return r, nil
@@ -255,7 +255,7 @@ func closeSession(s *client.Session) error {
 
 // jsonDecode decodes a helper's JSON payload, naming it when it is not.
 func jsonDecode(payload []byte, v any) error {
-	if err := json.Unmarshal(payload, v); err != nil {
+	if err := json.Unmarshal(payload, v, fromHelper); err != nil {
 		return fmt.Errorf("machine: the helper's answer %q: %w", truncate(payload), err)
 	}
 	return nil

@@ -80,16 +80,16 @@ const (
 // folder may hold an older file at, which the fork's copy holds too.
 type WorkSaved struct {
 	Covers       uint64        `json:"covers"`
-	Whole        bool          `json:"whole,omitempty"`
+	Whole        bool          `json:"whole,omitzero"`
 	From         string        `json:"from,omitempty"`
 	Written      []WorkFile    `json:"written,omitempty"`
 	Removed      []string      `json:"removed,omitempty"`
 	Unsaved      []string      `json:"unsaved,omitempty"`
-	Deferred     int           `json:"deferred,omitempty"`
-	Skipped      int           `json:"skipped,omitempty"`
+	Deferred     int           `json:"deferred,omitzero"`
+	Skipped      int           `json:"skipped,omitzero"`
 	SkippedFiles []OmittedFile `json:"skipped_files,omitempty"`
 	Held         WorkHeld      `json:"held"`
-	Failed       *WorkFailure  `json:"failed,omitempty"`
+	Failed       *WorkFailure  `json:"failed,omitzero"`
 }
 
 // WorkFile is one file of the copy: its path relative to the working

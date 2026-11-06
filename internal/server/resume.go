@@ -14,7 +14,7 @@ import (
 // resumeBody is the body of POST /sessions/{id}/resume.
 type resumeBody struct {
 	Reason          string `json:"reason"`
-	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
+	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitzero"`
 }
 
 // resumeSession is POST /sessions/{id}/resume: a session idle on its

@@ -55,7 +55,7 @@ type MemoryFolder struct {
 	// Sessions, when set, makes the folder one of conversations (spec
 	// 094) in place of a folder of a files store: URL, Owner and Path are
 	// then empty and Access is MemoryReadOnly.
-	Sessions *MemorySessions `json:"sessions,omitempty"`
+	Sessions *MemorySessions `json:"sessions,omitzero"`
 }
 
 // MemorySessions is which of the initiator's sessions a folder of

@@ -12,7 +12,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -399,12 +400,11 @@ func (c *call) decodeOptional(v any) error {
 
 // decodeBody reads one JSON value into v, refusing unknown fields.
 func decodeBody(b []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	dec := jsontext.NewDecoder(bytes.NewReader(b))
+	if err := json.UnmarshalDecode(dec, v, json.RejectUnknownMembers(true)); err != nil {
 		return refuse(CodeInvalidRequest, "the body does not decode: %v", err)
 	}
-	if dec.More() {
+	if _, err := dec.ReadToken(); !errors.Is(err, io.EOF) {
 		return refuse(CodeInvalidRequest, "the body holds more than one JSON value")
 	}
 	return nil

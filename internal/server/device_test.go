@@ -5,7 +5,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"net/http"
 	"strings"
@@ -299,7 +299,7 @@ func TestResumeAMachineWaitingSession(t *testing.T) {
 		f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 			d, err := f.authz.next.Authorize(context.Background(), req)
 			if req.Action == authorizer.ActionSessionResume {
-				d.Limits = json.RawMessage(limit)
+				d.Limits = jsontext.Value(limit)
 			}
 			return d, err
 		}

@@ -17,7 +17,8 @@ package idpstub
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -455,10 +456,10 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request, _ []byte) {
 // contract's checks in their order.
 func (s *Server) mint(w http.ResponseWriter, _ *http.Request, body []byte) {
 	var in struct {
-		Audience   string          `json:"audience"`
-		Subject    string          `json:"subject"`
-		Session    json.RawMessage `json:"session"`
-		TTLSeconds int64           `json:"ttl_seconds"`
+		Audience   string         `json:"audience"`
+		Subject    string         `json:"subject"`
+		Session    jsontext.Value `json:"session"`
+		TTLSeconds int64          `json:"ttl_seconds"`
 	}
 	if err := json.Unmarshal(body, &in); err != nil {
 		refuse(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -468,9 +469,7 @@ func (s *Server) mint(w http.ResponseWriter, _ *http.Request, body []byte) {
 		ID       string `json:"id"`
 		Workload string `json:"workload"`
 	}
-	dec := json.NewDecoder(strings.NewReader(string(in.Session)))
-	dec.DisallowUnknownFields()
-	if len(in.Session) == 0 || dec.Decode(&sess) != nil || !refRE.MatchString(sess.ID) || (sess.Workload != "session" && sess.Workload != "sandbox" && sess.Workload != "source") {
+	if len(in.Session) == 0 || json.Unmarshal(in.Session, &sess, json.RejectUnknownMembers(true)) != nil || !refRE.MatchString(sess.ID) || (sess.Workload != "session" && sess.Workload != "sandbox" && sess.Workload != "source") {
 		refuse(w, http.StatusBadRequest, "invalid_session", `session must be {"id", "workload"}`)
 		return
 	}

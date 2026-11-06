@@ -40,9 +40,9 @@ const codeDeadline = "deadline_exceeded"
 type ParseMeta struct {
 	ID       string `json:"id"`
 	Pages    int    `json:"pages"`
-	More     bool   `json:"more,omitempty"`
+	More     bool   `json:"more,omitzero"`
 	Shown    string `json:"shown"`
-	Unpriced bool   `json:"unpriced,omitempty"`
+	Unpriced bool   `json:"unpriced,omitzero"`
 }
 
 // readPDF reads the PDF at p, of size bytes as the machine states it and

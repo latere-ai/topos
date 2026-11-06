@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"path"
 	"slices"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -194,7 +196,7 @@ func (r Reaching) Of(tool tools.Tool, name string, c tools.Call, memory bool) to
 // file is the reach of a write or an edit: whether its path leaves the
 // working directory, and its target a path the session owns on a Cella
 // machine and one others use on a host or a person's own computer.
-func (r Reaching) file(tool tools.Tool, input json.RawMessage) tools.Reach {
+func (r Reaching) file(tool tools.Tool, input jsontext.Value) tools.Reach {
 	class := session.TargetShared
 	if r.Kind == machine.KindCella {
 		class = session.TargetOwn
@@ -236,7 +238,7 @@ func inside(workdir, name string) bool {
 // it, never public, and a first contact when no earlier fetch of the
 // session reached its host. A boundary the session does not know is
 // left out.
-func (r Reaching) fetch(input json.RawMessage) tools.Reach {
+func (r Reaching) fetch(input jsontext.Value) tools.Reach {
 	out := tools.Reach{Undo: session.UndoNone, Crosses: session.Crosses{Remote: new(true), Public: new(false)}, Target: &tools.ReachTarget{Kind: "host"}}
 	host := fetchHost(input)
 	if host == "" {
@@ -317,14 +319,14 @@ func repositories(evs []session.Event) string {
 // handoff is what a call of a thread tool hands over (spec 101), nil for
 // any other call or one whose subagent the thread cannot find: the tools
 // the subagent will hold, and the isolation an agent call asks for.
-func (t *turn) handoff(name string, input json.RawMessage) *Handoff {
+func (t *turn) handoff(name string, input jsontext.Value) *Handoff {
 	var in struct {
 		Subagent  string   `json:"subagent"`
 		Isolation string   `json:"isolation"`
 		Tools     []string `json:"tools"`
 		To        string   `json:"to"`
 	}
-	if json.Unmarshal(input, &in) != nil {
+	if json.Unmarshal(input, &in, models.FromProvider) != nil {
 		return nil
 	}
 	var names []string

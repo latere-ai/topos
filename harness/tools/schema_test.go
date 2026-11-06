@@ -5,7 +5,7 @@ package tools
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"slices"
 	"strings"
 	"testing"
@@ -14,10 +14,8 @@ import (
 // value decodes a JSON value as the registry does, with numbers kept.
 func value(t *testing.T, s string) any {
 	t.Helper()
-	dec := json.NewDecoder(strings.NewReader(s))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
+	v, err := DecodeTree([]byte(s))
+	if err != nil {
 		t.Fatal(err)
 	}
 	return v
@@ -53,13 +51,13 @@ func TestCompileSchemaRefuses(t *testing.T) {
 		{`{"properties":{"a/b~":{"contains":{}}}}`, `/properties/a~1b~0: the keyword "contains" is not supported`},
 		{`{"properties":{"a":{"properties":{"b":{"$ref":"#"}}}}}`, `/properties/a/properties/b: the keyword "$ref" is not supported`},
 	} {
-		_, err := CompileSchema(json.RawMessage(c.schema))
+		_, err := CompileSchema(jsontext.Value(c.schema))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", c.schema, err, c.want)
 		}
 	}
 	for _, s := range []string{``, `  `, `true`, `{}`, `{"title":"t","description":"d","default":1,"examples":[1],"$schema":"x","$id":"y","format":"uri","deprecated":false,"readOnly":true,"writeOnly":false,"$comment":"c"}`} {
-		if _, err := CompileSchema(json.RawMessage(s)); err != nil {
+		if _, err := CompileSchema(jsontext.Value(s)); err != nil {
 			t.Errorf("%q: %v", s, err)
 		}
 	}
@@ -89,7 +87,7 @@ func TestSchemaValidates(t *testing.T) {
 	  "required": ["s"],
 	  "additionalProperties": false
 	}`
-	s, err := CompileSchema(json.RawMessage(schema))
+	s, err := CompileSchema(jsontext.Value(schema))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +139,7 @@ func TestSchemaValidates(t *testing.T) {
 	if typeOf(struct{}{}) != "unknown" || !bytes.Equal(canonical(func() {}), nil) {
 		t.Fatal("an unknown value")
 	}
-	if hasType("x", "integer") || hasType(json.Number("x"), "integer") || hasType("x", "number") {
+	if hasType("x", "integer") || hasType(jsontext.Value("x"), "integer") || hasType("x", "number") {
 		t.Fatal("hasType")
 	}
 }
@@ -150,7 +148,7 @@ func TestSchemaValidates(t *testing.T) {
 // a nested array's with its pointer, and say nothing of a value that is
 // not an array.
 func TestSchemaArrayLengths(t *testing.T) {
-	s, err := CompileSchema(json.RawMessage(`{"type":"object","properties":{
+	s, err := CompileSchema(jsontext.Value(`{"type":"object","properties":{
 	  "list":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"object","properties":{"inner":{"type":"array","minItems":2,"maxItems":2}}}},
 	  "any":{"minItems":2}}}`))
 	if err != nil {
@@ -179,7 +177,7 @@ func TestSchemaArrayLengths(t *testing.T) {
 // and compiles after; a schema with none to drop is kept whole, and one
 // that is not JSON is an error (spec 021).
 func TestReduceSchema(t *testing.T) {
-	raw := json.RawMessage(`{"type":"object","$defs":{"x":{}},"minProperties":1,"description":"d",
+	raw := jsontext.Value(`{"type":"object","$defs":{"x":{}},"minProperties":1,"description":"d",
 		"properties":{"a":{"type":"string","x-mcp-header":"A","format":"email"},
 			"b":{"type":"array","uniqueItems":true,"items":{"type":"integer","multipleOf":2}},
 			"c":{"anyOf":[{"type":"string","not":{}},{"type":"null"}]},
@@ -199,7 +197,7 @@ func TestReduceSchema(t *testing.T) {
 			t.Errorf("%s was dropped: %s", kept, out)
 		}
 	}
-	plain := json.RawMessage(`{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}`)
+	plain := jsontext.Value(`{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}`)
 	if out, cut, err := ReduceSchema(plain); err != nil || cut {
 		t.Fatalf("a schema with nothing to drop: %s %v %v", out, cut, err)
 	} else if _, err := CompileSchema(out); err != nil {
@@ -208,7 +206,7 @@ func TestReduceSchema(t *testing.T) {
 	if out, cut, err := ReduceSchema(nil); err != nil || cut || out != nil {
 		t.Fatalf("no schema: %s %v %v", out, cut, err)
 	}
-	if _, _, err := ReduceSchema(json.RawMessage(`{`)); err == nil {
+	if _, _, err := ReduceSchema(jsontext.Value(`{`)); err == nil {
 		t.Fatal("a schema that is not JSON was reduced")
 	}
 	if !ValidName("mcp__tracker__list_issues") || ValidName("mcp__tracker__admin.reset") || ValidName(strings.Repeat("a", 65)) {

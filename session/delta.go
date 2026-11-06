@@ -48,7 +48,7 @@ type Delta struct {
 	Kind  DeltaKind `json:"kind"`
 	Text  string    `json:"text"`
 	// Reset discards what the step's deltas carried so far.
-	Reset bool `json:"reset,omitempty"`
+	Reset bool `json:"reset,omitzero"`
 }
 
 // MarshalJSON writes a reset as {subagent, turn, step, reset} alone,

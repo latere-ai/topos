@@ -4,7 +4,7 @@
 package session
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"testing"
 	"time"
 )
@@ -38,11 +38,11 @@ func logOf(t *testing.T, items ...logged) []Event {
 // session's own thread as its notice; a thread's result and a status with
 // no outcome change neither.
 func TestTheSessionFoldsOutcomeAndNotice(t *testing.T) {
-	notice := json.RawMessage(`{"notice":{"title":"The fare dropped"}}`)
+	notice := jsontext.Value(`{"notice":{"title":"The fare dropped"}}`)
 	evs := logOf(t,
 		logged{TypeToolResult, "", ToolResult{ToolUseID: "toolu_1", Meta: notice}},
 		logged{TypeSessionStatus, "", SessionStatus{Status: StatusIdle, StopReason: StopEndTurn, Outcome: OutcomeNotified}},
-		logged{TypeToolResult, "thr_1", ToolResult{ToolUseID: "toolu_2", Meta: json.RawMessage(`{"notice":{"title":"A thread's"}}`)}},
+		logged{TypeToolResult, "thr_1", ToolResult{ToolUseID: "toolu_2", Meta: jsontext.Value(`{"notice":{"title":"A thread's"}}`)}},
 		logged{TypeSessionStatus, "", SessionStatus{Status: StatusIdle, StopReason: StopEndTurn}},
 	)
 	var s Session

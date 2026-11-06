@@ -6,7 +6,7 @@ package tools
 import (
 	"cmp"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"path"
 	"slices"
 	"strconv"
@@ -14,6 +14,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 )
 
@@ -201,7 +202,7 @@ func (r *replay) event(e session.Event) {
 		var kept struct {
 			ToolUseID string `json:"tool_use_id"`
 		}
-		if e.Type == session.TypeToolResult && json.Unmarshal(e.Payload, &kept) == nil {
+		if e.Type == session.TypeToolResult && session.Unmarshal(e.Payload, &kept) == nil {
 			r.unknown(kept.ToolUseID)
 		}
 		return
@@ -247,7 +248,7 @@ func (r *replay) event(e session.Event) {
 // result replays one tool result with the call it answers.
 func (r *replay) result(p session.ToolResult) {
 	var meta Meta
-	if len(p.Meta) > 0 && json.Unmarshal(p.Meta, &meta) != nil {
+	if len(p.Meta) > 0 && session.Unmarshal(p.Meta, &meta) != nil {
 		return
 	}
 	call, ok := r.calls[p.ToolUseID]
@@ -277,13 +278,13 @@ func (r *replay) result(p session.ToolResult) {
 	switch call.Name {
 	case NameWrite:
 		var in writeInput
-		if json.Unmarshal(call.Input, &in) != nil {
+		if json.Unmarshal(call.Input, &in, models.FromProvider) != nil {
 			return
 		}
 		r.set(rel, RebuiltFile{Content: []byte(in.Content), Unverified: differs([]byte(in.Content), meta.SHA256)})
 	case NameEdit:
 		var in editInput
-		if json.Unmarshal(call.Input, &in) != nil {
+		if json.Unmarshal(call.Input, &in, models.FromProvider) != nil {
 			return
 		}
 		r.edit(rel, in, meta.SHA256)
@@ -386,7 +387,7 @@ func (r *replay) unknown(id string) {
 	var in struct {
 		Path string `json:"path"`
 	}
-	if json.Unmarshal(call.Input, &in) != nil {
+	if json.Unmarshal(call.Input, &in, models.FromProvider) != nil {
 		return
 	}
 	if rel, ok := r.rel(in.Path); ok {

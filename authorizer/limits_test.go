@@ -4,7 +4,8 @@
 package authorizer
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -19,6 +20,11 @@ import (
 
 func decision(t *testing.T, w any) authz.Decision {
 	t.Helper()
+	// A raw value is the answer as a server wrote it, bytes a marshal
+	// would replace included.
+	if v, ok := w.(jsontext.Value); ok {
+		return authz.Decision{Allow: true, Limits: v}
+	}
 	raw, err := json.Marshal(w)
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +41,7 @@ func TestDecodeLimitsReadsEveryMember(t *testing.T) {
 		BudgetUSDMicro: &budget,
 		TurnTimeout:    "30m",
 		MaxAge:         "72h",
-		Scope:          []json.RawMessage{json.RawMessage(`{"action":"repo.push","resource":"*"}`)},
+		Scope:          []jsontext.Value{jsontext.Value(`{"action":"repo.push","resource":"*"}`)},
 		Retention:      "720h",
 		Owner:          &Owner{Type: OwnerOrganization, ID: "org-1"},
 		Model:          "vendor/model-a",
@@ -70,7 +76,7 @@ func TestDecodeLimitsRefusesWhatItCannotApply(t *testing.T) {
 		"negative duration": WireLimits{Retention: "-1h"},
 		"unordered":         WireLimits{Thresholds: &Thresholds{FlagAt: 0.6, AskAt: 0.4, BlockAt: 0.9}},
 		"above one":         WireLimits{Thresholds: &Thresholds{FlagAt: 0.1, AskAt: 0.4, BlockAt: 1.5}},
-		"scope entry":       WireLimits{Scope: []json.RawMessage{json.RawMessage(`"repo.push"`)}},
+		"scope entry":       WireLimits{Scope: []jsontext.Value{jsontext.Value(`"repo.push"`)}},
 		"wrong type":        map[string]any{"turn_timeout": 30},
 		"owner of no type":  WireLimits{Owner: &Owner{Type: "team", ID: "t"}},
 		"owner with no id":  WireLimits{Owner: &Owner{Type: OwnerUser}},
@@ -85,7 +91,7 @@ func TestDecodeLimitsRefusesWhatItCannotApply(t *testing.T) {
 			t.Errorf("%s: decoded", name)
 		}
 	}
-	if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: json.RawMessage(`[`)}); err == nil || !strings.Contains(err.Error(), "limits") {
+	if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: jsontext.Value(`[`)}); err == nil || !strings.Contains(err.Error(), "limits") {
 		t.Errorf("a malformed object: %v", err)
 	}
 }
@@ -101,7 +107,7 @@ func TestTheModelIsOneMemberOnTheWire(t *testing.T) {
 	if raw, err := json.Marshal(WireLimits{}); err != nil || string(raw) != `{}` {
 		t.Fatalf("the limits of an allow that routes nothing are %s, %v", raw, err)
 	}
-	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: json.RawMessage(`{"model":""}`)}); err != nil || l.Model != "" {
+	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: jsontext.Value(`{"model":""}`)}); err != nil || l.Model != "" {
 		t.Fatalf("an empty model routes nothing: %+v, %v", l, err)
 	}
 }
@@ -286,8 +292,8 @@ func TestDecodeInstructions(t *testing.T) {
 	if _, err := DecodeLimits(decision(t, WireLimits{Instructions: full + "x"})); err == nil {
 		t.Fatal("8 KiB plus one byte decoded")
 	}
-	// encoding/json replaces invalid UTF-8 when it encodes, so the raw
-	// answer carries the bytes as a server that writes them would.
+	// An encoder refuses or replaces invalid UTF-8, so the raw answer
+	// carries the bytes as a server that writes them would.
 	raw := []byte(`{"instructions":"bad ` + "\xff\xfe" + ` text"}`)
 	if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: raw}); err == nil {
 		t.Fatal("invalid UTF-8 decoded")
@@ -298,7 +304,7 @@ func TestDecodeInstructions(t *testing.T) {
 }
 
 // TestInstructionsEscapesAreHeldToUTF8: a lone surrogate escape, which
-// encoding/json would read as a replacement character, is refused, and a
+// a lenient decoder would read as a replacement character, is refused, and a
 // pair, an escaped backslash and the other escapes are read.
 func TestInstructionsEscapesAreHeldToUTF8(t *testing.T) {
 	for raw, ok := range map[string]bool{
@@ -369,7 +375,7 @@ func TestTheAttachMembers(t *testing.T) {
 		"a context with no title": {WireLimits{Context: []session.ContextPart{{Text: "x"}}}, "limits.context[0].title"},
 		"a context with no text":  {WireLimits{Context: []session.ContextPart{{Title: "P"}}}, "limits.context[0].text"},
 		"a context too long":      {WireLimits{Context: []session.ContextPart{{Title: "P", Text: strings.Repeat("x", session.MaxContext)}}}, "limits.context is"},
-		"a lone surrogate":        {json.RawMessage(`{"context":[{"title":"P","text":"\ud800"}]}`), "limits.context[0]"},
+		"a lone surrogate":        {jsontext.Value(`{"context":[{"title":"P","text":"\ud800"}]}`), "limits.context[0]"},
 	} {
 		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
 			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)
@@ -430,21 +436,21 @@ func TestTheConnectionsMember(t *testing.T) {
 		names string
 	}{
 		"too many":               {WireLimits{Connections: many}, "limits.connections names"},
-		"an unknown kind":        {json.RawMessage(`{"connections":[{"name":"a","kind":"ssh","title":"A","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
-		"no address":             {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x"}]}`), "limits.connections[0]"},
+		"an unknown kind":        {jsontext.Value(`{"connections":[{"name":"a","kind":"ssh","title":"A","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"no address":             {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x"}]}`), "limits.connections[0]"},
 		"a repeated name":        {WireLimits{Connections: []session.Connection{want[1], want[1]}}, "limits.connections[1]"},
-		"a lone surrogate":       {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"\ud800","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0].title"},
-		"a connections object":   {json.RawMessage(`{"connections":{"name":"a"}}`), "limits"},
-		"an available address":   {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
-		"an unknown state":       {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"connected","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
-		"an mcp api_url":         {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_url":"https://api.example.com"}]}`), "limits.connections[0]"},
-		"an available account":   {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","account":"ada"}]}`), "limits.connections[0]"},
-		"a shell in api_example": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","api_example":"/v1/$(id)"}]}`), "limits.connections[0]"},
-		"mcp api_notes":          {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_notes":"Issues are numbered."}]}`), "limits.connections[0]"},
-		"an http hidden":         {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","hidden":["*"]}]}`), "limits.connections[0]"},
-		"an available hidden":    {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"available","hidden":["delete_*"]}]}`), "limits.connections[0]"},
-		"a broken hidden glob":   {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","hidden":["delete_["]}]}`), "limits.connections[0]"},
-		"hidden as a string":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","hidden":"delete_*"}]}`), "limits"},
+		"a lone surrogate":       {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"\ud800","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0].title"},
+		"a connections object":   {jsontext.Value(`{"connections":{"name":"a"}}`), "limits"},
+		"an available address":   {jsontext.Value(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"an unknown state":       {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"connected","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"an mcp api_url":         {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_url":"https://api.example.com"}]}`), "limits.connections[0]"},
+		"an available account":   {jsontext.Value(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","account":"ada"}]}`), "limits.connections[0]"},
+		"a shell in api_example": {jsontext.Value(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","api_example":"/v1/$(id)"}]}`), "limits.connections[0]"},
+		"mcp api_notes":          {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_notes":"Issues are numbered."}]}`), "limits.connections[0]"},
+		"an http hidden":         {jsontext.Value(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","hidden":["*"]}]}`), "limits.connections[0]"},
+		"an available hidden":    {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"available","hidden":["delete_*"]}]}`), "limits.connections[0]"},
+		"a broken hidden glob":   {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","hidden":["delete_["]}]}`), "limits.connections[0]"},
+		"hidden as a string":     {jsontext.Value(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","hidden":"delete_*"}]}`), "limits"},
 	} {
 		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
 			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)
@@ -580,7 +586,7 @@ func TestDecodeRuns(t *testing.T) {
 		t.Fatalf("the runs: %+v, %v", got, err)
 	}
 	raw := `{"runs":[{"scope":"you","since":"2026-10-28T03:00:00Z"}],"memory":[]}`
-	if got, err := DecodeRuns(authz.Decision{Allow: true, Limits: json.RawMessage(raw)}); err != nil || len(got) != 1 || got[0].Scope != "you" {
+	if got, err := DecodeRuns(authz.Decision{Allow: true, Limits: jsontext.Value(raw)}); err != nil || len(got) != 1 || got[0].Scope != "you" {
 		t.Fatalf("the runs as the wire writes them: %+v, %v", got, err)
 	}
 	for name, d := range map[string]authz.Decision{
@@ -603,8 +609,8 @@ func TestDecodeRuns(t *testing.T) {
 		"a slash first": decision(t, WireRuns{Runs: []WireRun{{Scope: "/you"}}}),
 		"too long":      decision(t, WireRuns{Runs: []WireRun{{Scope: strings.Repeat("s", 129)}}}),
 		"twice":         decision(t, WireRuns{Runs: []WireRun{{Scope: "you"}, {Scope: "you"}}}),
-		"not a list":    {Allow: true, Limits: json.RawMessage(`{"runs":{"scope":"you"}}`)},
-		"a bad since":   {Allow: true, Limits: json.RawMessage(`{"runs":[{"scope":"you","since":"yesterday"}]}`)},
+		"not a list":    {Allow: true, Limits: jsontext.Value(`{"runs":{"scope":"you"}}`)},
+		"a bad since":   {Allow: true, Limits: jsontext.Value(`{"runs":[{"scope":"you","since":"yesterday"}]}`)},
 	} {
 		if _, err := DecodeRuns(d); err == nil || !strings.HasPrefix(err.Error(), "limits") {
 			t.Errorf("%s: %v", name, err)

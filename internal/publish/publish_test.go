@@ -6,7 +6,8 @@ package publish
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -130,7 +131,7 @@ func newHost(t *testing.T, answer map[string]func(n int) (int, any)) *host {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
-		if err := json.NewEncoder(w).Encode(body); err != nil {
+		if err := json.MarshalWrite(w, body); err != nil {
 			t.Errorf("write: %v", err)
 		}
 	}))
@@ -189,7 +190,7 @@ func newTool(t *testing.T, h stub, c runner.Credentials) *Tool {
 }
 
 func call(input string, m machine.Machine, st tools.State) tools.Call {
-	return tools.Call{ID: "toolu_1", Input: json.RawMessage(input), Machine: m, State: st}
+	return tools.Call{ID: "toolu_1", Input: jsontext.Value(input), Machine: m, State: st}
 }
 
 func resultText(r tools.Result) string {
@@ -1048,7 +1049,7 @@ func TestCheckRefusesBeforeTheCallIsDecided(t *testing.T) {
 	} {
 		h := newHost(t, nil)
 		tool := attachedTool(t, h)
-		got := tool.Check(tools.Call{ID: "toolu_1", Input: json.RawMessage(c.input), Machine: c.m, State: c.st})
+		got := tool.Check(tools.Call{ID: "toolu_1", Input: jsontext.Value(c.input), Machine: c.m, State: c.st})
 		switch {
 		case c.code == "" && got != nil:
 			t.Errorf("%s: refused %+v", name, *got)
@@ -1073,7 +1074,7 @@ func TestCheckRefusesBeforeTheCallIsDecided(t *testing.T) {
 		t.Fatalf("Check opened the machine %d times", opens)
 	}
 	none := New(Options{URL: "https://apps.example", GitURL: gitURL}, session.Session{}, nil)
-	if got := none.Check(tools.Call{Input: json.RawMessage(`{"path":"site"}`), Machine: unopened}); got == nil || !strings.Contains(resultText(*got), "mints no credential for its app host") {
+	if got := none.Check(tools.Call{Input: jsontext.Value(`{"path":"site"}`), Machine: unopened}); got == nil || !strings.Contains(resultText(*got), "mints no credential for its app host") {
 		t.Fatalf("no token source: %+v", got)
 	}
 	var _ tools.Checker = (*Tool)(nil)
@@ -1318,7 +1319,7 @@ func TestAccessIsRefusedBeforeItIsAsked(t *testing.T) {
 		if c.attached {
 			tool = attachedTool(t, h)
 		}
-		in := tools.Call{ID: "toolu_1", Input: json.RawMessage(c.input), Machine: unopened, State: c.st}
+		in := tools.Call{ID: "toolu_1", Input: jsontext.Value(c.input), Machine: unopened, State: c.st}
 		got := tool.Check(in)
 		switch {
 		case c.code == "" && got != nil:
@@ -1343,7 +1344,7 @@ func TestAccessIsRefusedBeforeItIsAsked(t *testing.T) {
 	}
 	tool := newTool(t, newHost(t, nil), creds{})
 	for _, input := range []string{`{}`, `{"path":"site"}`, `{"release":true}`, `{"app":"a-poem","release":true}`, `{"access":""}`, `{"app":`} {
-		if why := tool.Confirm(tools.Call{Input: json.RawMessage(input)}); why != "" {
+		if why := tool.Confirm(tools.Call{Input: jsontext.Value(input)}); why != "" {
 			t.Errorf("%s is held for a person: %q", input, why)
 		}
 	}
@@ -1701,7 +1702,7 @@ func TestACallThatPublishesAndChangesAccessIsCheckedAsItsPublish(t *testing.T) {
 		if c.attached {
 			tool = attachedTool(t, h)
 		}
-		in := tools.Call{ID: "toolu_1", Input: json.RawMessage(c.input), Machine: c.m, State: c.st}
+		in := tools.Call{ID: "toolu_1", Input: jsontext.Value(c.input), Machine: c.m, State: c.st}
 		got := tool.Check(in)
 		switch {
 		case c.code == "" && got != nil:
@@ -2165,7 +2166,7 @@ func newIDHost(t *testing.T, byID bool, slugs map[string]string) *idHost {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /apps", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
 			t.Errorf("read a create: %v", err)
 		}
 		h.mu.Lock()
@@ -2182,7 +2183,7 @@ func newIDHost(t *testing.T, byID bool, slugs map[string]string) *idHost {
 	})
 	mux.HandleFunc("PATCH /apps/{app}", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
 			t.Errorf("read a change: %v", err)
 		}
 		if id, ok := h.find(w, r); ok {
@@ -2239,7 +2240,7 @@ func (h *idHost) find(w http.ResponseWriter, r *http.Request) (string, bool) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
-	if err := json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "app_not_found", "details": map[string]string{"slug": v}}}); err != nil {
+	if err := json.MarshalWrite(w, map[string]any{"error": map[string]any{"code": "app_not_found", "details": map[string]string{"slug": v}}}); err != nil {
 		h.t.Errorf("write: %v", err)
 	}
 	return "", false
@@ -2293,7 +2294,7 @@ func (h *idHost) created() int {
 func (h *idHost) write(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		h.t.Errorf("write: %v", err)
 	}
 }

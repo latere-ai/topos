@@ -5,7 +5,8 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -409,7 +410,7 @@ func TestACallItsToolHoldsWaitsForAPerson(t *testing.T) {
 // and a call no tool holds is decided as before.
 func TestTheRulesHoldACallForAPerson(t *testing.T) {
 	ext := tools.Properties{Effect: tools.EffectExternal}
-	in := json.RawMessage(`{"access":"link"}`)
+	in := jsontext.Value(`{"access":"link"}`)
 	for name, c := range map[string]struct {
 		policy  Policy
 		confirm string

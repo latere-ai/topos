@@ -5,7 +5,7 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -52,7 +52,7 @@ func utc(t *time.Time) *time.Time {
 }
 
 func encodeCounts(c v1.TriggerCounts) (string, error) {
-	b, err := json.Marshal(c)
+	b, err := json.Marshal(c, json.Deterministic(true))
 	if err != nil {
 		return "", fmt.Errorf("postgres: encode a trigger's counts: %w", err)
 	}
@@ -119,7 +119,7 @@ func (s *Store) PutTrigger(ctx context.Context, t store.Trigger) error {
 	if err != nil {
 		return err
 	}
-	claims, err := json.Marshal(t.Claims)
+	claims, err := json.Marshal(t.Claims, json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("postgres: encode a trigger's claims: %w", err)
 	}
@@ -496,7 +496,7 @@ func (s *Store) HeldOwners(ctx context.Context) ([]string, error) {
 
 // SetSpend writes the trigger's week as JSON text (spec 087).
 func (s *Store) SetSpend(ctx context.Context, id string, spend v1.TriggerSpend) error {
-	b, err := json.Marshal(spend)
+	b, err := json.Marshal(spend, json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("postgres: encode a trigger's spend: %w", err)
 	}

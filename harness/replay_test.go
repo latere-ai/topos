@@ -5,7 +5,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"slices"
 	"testing"
@@ -169,7 +169,7 @@ func TestReplayReportsWhatItDoesNotCompare(t *testing.T) {
 	redacted := slices.Clone(log)
 	for i, ev := range redacted {
 		if ev.Type == session.TypeUserMessage {
-			redacted[i].Payload = json.RawMessage(`{"tombstone":true}`)
+			redacted[i].Payload = jsontext.Value(`{"tombstone":true}`)
 		}
 	}
 	if steps := e.replay(ctx, e.h, redacted); steps[0].Outcome != models.ReplaySkipped || steps[0].Detail == "" {
@@ -188,7 +188,7 @@ func TestReplayReportsWhatItDoesNotCompare(t *testing.T) {
 		t.Fatalf("a configuration without the subagent: %v", got)
 	}
 	failed := edit(first, func(*session.ModelRequest) {})
-	failed[first].Payload = json.RawMessage(`{"model":`)
+	failed[first].Payload = jsontext.Value(`{"model":`)
 	if _, err := models.Replay(ctx, failed, e.h.Rebuild(e.s, e.log), &dialect.Model{}); err == nil {
 		t.Fatal("an unreadable model.request replayed")
 	}

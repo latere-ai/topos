@@ -29,9 +29,9 @@ const epsilon = 1e-9
 // names its model before the baseline is measured.
 type Bar struct {
 	Model     BarModel `yaml:"model" json:"model"`
-	Baseline  *float64 `yaml:"baseline" json:"baseline,omitempty"`
-	Noise     *float64 `yaml:"noise" json:"noise,omitempty"`
-	Threshold *float64 `yaml:"threshold" json:"threshold,omitempty"`
+	Baseline  *float64 `yaml:"baseline" json:"baseline,omitzero"`
+	Noise     *float64 `yaml:"noise" json:"noise,omitzero"`
+	Threshold *float64 `yaml:"threshold" json:"threshold,omitzero"`
 	Runs      []BarRun `yaml:"runs" json:"runs,omitempty"`
 }
 

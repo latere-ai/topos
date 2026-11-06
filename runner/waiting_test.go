@@ -5,7 +5,7 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +29,7 @@ type sender struct {
 }
 
 func (sender) Definition() tools.Definition {
-	return tools.Definition{Name: "send", Description: "sends while it runs", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	return tools.Definition{Name: "send", Description: "sends while it runs", InputSchema: jsontext.Value(`{"type":"object"}`)}
 }
 func (sender) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectRead} }
 func (s sender) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
@@ -71,7 +71,7 @@ func withSender(f *fixture, msg session.UserMessage, wait bool) {
 
 func words(s string) []lux.Block { return []lux.Block{{Type: ir.BlockText, Text: s}} }
 
-var sendCall = ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_s", Name: "send", Args: json.RawMessage(`{}`)}}
+var sendCall = ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_s", Name: "send", Args: jsontext.Value(`{}`)}}
 
 func (f *fixture) statuses(ctx context.Context) []session.SessionStatus {
 	f.t.Helper()

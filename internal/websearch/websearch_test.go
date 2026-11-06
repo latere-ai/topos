@@ -5,7 +5,7 @@ package websearch
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"math"
@@ -188,5 +188,28 @@ func TestTheClientsFailures(t *testing.T) {
 	defer cancel()
 	if _, err := c.Search(ctx, search.Request{Query: "q"}); !errors.Is(err, search.ErrFailed) || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("a slow service: %v", err)
+	}
+}
+
+// TestAQueryAndAnswerOfAnyBytes: a query with bytes that are not UTF-8 is
+// sent with the replacement character, and an answer with a repeated
+// member, member names in another letter case and bytes that are not UTF-8
+// is read.
+func TestAQueryAndAnswerOfAnyBytes(t *testing.T) {
+	s := &service{status: 200, body: `{"Results":[{"title":"a` + "\xff" + `","url":"https://a.example.com/","snippet":"x"}],"results":[{"title":"b","url":"https://b.example.com/","snippet":"y"}]}`}
+	srv := s.start(t)
+	c, err := New(srv.URL, nil, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Search(context.Background(), search.Request{Query: "go \xff release", MaxResults: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.sent.Query != "go � release" {
+		t.Fatalf("the query sent is %q", s.sent.Query)
+	}
+	if len(res.Hits) != 1 {
+		t.Fatalf("hits %+v", res.Hits)
 	}
 }

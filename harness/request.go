@@ -7,7 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
@@ -314,7 +316,7 @@ func luxTools(defs []tools.Definition) []lux.Tool {
 	for i, d := range defs {
 		schema := d.InputSchema
 		if len(schema) == 0 {
-			schema = json.RawMessage(`{"type":"object"}`)
+			schema = jsontext.Value(`{"type":"object"}`)
 		}
 		out[i] = lux.Tool{Name: d.Name, Description: d.Description, InputSchema: schema}
 	}
@@ -323,7 +325,7 @@ func luxTools(defs []tools.Definition) []lux.Tool {
 
 // toolsHash is the sha256 of the tool definitions as sent.
 func toolsHash(defs []lux.Tool) (string, error) {
-	b, err := session.Marshal(defs)
+	b, err := session.MarshalDigested(defs)
 	if err != nil {
 		return "", fmt.Errorf("harness: encode the tool definitions: %w", err)
 	}
@@ -398,7 +400,7 @@ func buildRequest(p requestParts) (ir.Request, error) {
 
 // irOf is a Lux request as the IR, through the Lux codec.
 func irOf(req lux.Request) (ir.Request, error) {
-	b, err := json.Marshal(req)
+	b, err := json.Marshal(req, models.ToProvider)
 	if err != nil {
 		return ir.Request{}, fmt.Errorf("harness: encode the request: %w", err)
 	}

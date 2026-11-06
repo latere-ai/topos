@@ -6,7 +6,8 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +30,7 @@ const storage = `{"questions":[{"header":"Storage","question":"Which database sh
 // asks is a reply that calls question, and decided one that ends the turn
 // once the result it reads holds want.
 func asks(id string) luxstub.Reply {
-	return luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "question", Args: json.RawMessage(storage)}}}, StopReason: ir.StopToolUse}}
+	return luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "question", Args: jsontext.Value(storage)}}}, StopReason: ir.StopToolUse}}
 }
 
 func decided(want, said string) luxstub.Reply {

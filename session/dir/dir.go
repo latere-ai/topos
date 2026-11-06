@@ -20,7 +20,6 @@ package dir
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -225,7 +224,7 @@ func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
 		return session.Session{}, fmt.Errorf("dir: read session %s: %w", id, err)
 	}
 	var sess session.Session
-	if err := json.Unmarshal(b, &sess); err != nil {
+	if err := session.Unmarshal(b, &sess); err != nil {
 		return session.Session{}, fmt.Errorf("%w: session.json of %s: %w", session.ErrCorrupt, id, err)
 	}
 	tail, err := tailAfter(s.eventsPath(id), sess.LastSeq)
@@ -700,7 +699,7 @@ func (s *Store) lockFile(id string) (*os.File, error) {
 func readHolder(f *os.File) session.Holder {
 	var h session.Holder
 	b, err := io.ReadAll(io.NewSectionReader(f, 0, 1<<16))
-	if err != nil || json.Unmarshal(bytes.TrimSpace(b), &h) != nil {
+	if err != nil || session.Unmarshal(bytes.TrimSpace(b), &h) != nil {
 		return session.Holder{}
 	}
 	return h
@@ -758,7 +757,7 @@ func (s *Store) recover(id string) (session.Session, error) {
 		return session.Session{}, fmt.Errorf("dir: read session %s: %w", id, err)
 	}
 	var hdr session.Session
-	if err := json.Unmarshal(b, &hdr); err != nil {
+	if err := session.Unmarshal(b, &hdr); err != nil {
 		return session.Session{}, fmt.Errorf("%w: session.json of %s: %w", session.ErrCorrupt, id, err)
 	}
 	if hdr.LastSeq > uint64(len(events)) {

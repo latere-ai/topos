@@ -4,7 +4,6 @@
 package session
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -62,7 +61,7 @@ type Question struct {
 	// Options are the choices, in the order they are shown.
 	Options []QuestionOption `json:"options"`
 	// Multiple lets the person choose several options.
-	Multiple bool `json:"multiple,omitempty"`
+	Multiple bool `json:"multiple,omitzero"`
 }
 
 // QuestionOption is one choice of a question.
@@ -75,7 +74,7 @@ type QuestionOption struct {
 	// Preview is a mockup or a snippet as lines of plain text.
 	Preview []string `json:"preview,omitempty"`
 	// Recommended marks the option the agent would take.
-	Recommended bool `json:"recommended,omitempty"`
+	Recommended bool `json:"recommended,omitzero"`
 }
 
 // UserAnswer is the payload of user.answer: a person's answer to the
@@ -237,7 +236,7 @@ func Questions(evs []Event) []Asked {
 			c.Settled, c.ResultID, c.Event = true, e.ID, Event{}
 			var p ToolResult
 			var m QuestionMeta
-			if !e.Redacted() && e.Decode(&p) == nil && len(p.Meta) > 0 && json.Unmarshal(p.Meta, &m) == nil && m.ClosedBy != "" {
+			if !e.Redacted() && e.Decode(&p) == nil && len(p.Meta) > 0 && Unmarshal(p.Meta, &m) == nil && m.ClosedBy != "" {
 				c.By, c.EventID = m.ClosedBy, m.EventID
 			}
 			unclosed = slices.DeleteFunc(unclosed, func(j int) bool { return j == i })
@@ -253,7 +252,7 @@ func Questions(evs []Event) []Asked {
 			a := Asked{ToolUseID: p.ToolUseID, Seq: e.Seq}
 			// An input that does not decode is one no runner of this build
 			// recorded; the call is still a question, with no questions.
-			if err := json.Unmarshal(p.Input, &a.Input); err != nil {
+			if err := Unmarshal(p.Input, &a.Input); err != nil {
 				a.Input = QuestionInput{}
 			}
 			at[p.ToolUseID] = len(out)

@@ -9,7 +9,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"encoding/pem"
 	"io"
 	"maps"
@@ -205,7 +206,7 @@ func TestADeviceSessionEndToEnd(t *testing.T) {
 
 	const model = "anthropic/claude-haiku-4.5"
 	vars, lux, _ := hostedStubs(t,
-		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: json.RawMessage(`{"command":"echo from the device > hello.txt && pwd -P"}`)}}}, StopReason: ir.StopToolUse}},
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: jsontext.Value(`{"command":"echo from the device > hello.txt && pwd -P"}`)}}}, StopReason: ir.StopToolUse}},
 		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockText, Text: "Done."}}, StopReason: ir.StopEndTurn}})
 	tokenFile := filepath.Join(t.TempDir(), "cella-token")
 	if err := os.WriteFile(tokenFile, []byte(admin+"\n"), 0o600); err != nil {

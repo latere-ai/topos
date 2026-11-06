@@ -4,7 +4,7 @@
 package auth_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 
 	"latere.ai/x/topos/internal/auth"
@@ -49,12 +49,12 @@ func TestFiredByIsTheKeysClaimsVerbatim(t *testing.T) {
 		{map[string]any{"token_use": "sak", "authorization_details": "everything"}, `{"authorization_details":"everything","token_use":"sak"}`},
 		{map[string]any{"token_use": "pat"}, `{"token_use":"pat"}`},
 		{map[string]any{"token_use": "elsewhere", "authorization_details": nil}, `{"authorization_details":null,"token_use":"elsewhere"}`},
-		{map[string]any{"token_use": "", "authorization_details": grants}, `null`},
-		{map[string]any{"token_use": 7, "authorization_details": grants}, `null`},
-		{map[string]any{"sub": "alice", "org_id": "acme"}, `null`},
-		{nil, `null`},
+		{map[string]any{"token_use": "", "authorization_details": grants}, `{}`},
+		{map[string]any{"token_use": 7, "authorization_details": grants}, `{}`},
+		{map[string]any{"sub": "alice", "org_id": "acme"}, `{}`},
+		{nil, `{}`},
 	} {
-		got, err := json.Marshal(auth.FiredBy(auth.Caller{Subject: "https://issuer.test|alice", Claims: c.claims}))
+		got, err := json.Marshal(auth.FiredBy(auth.Caller{Subject: "https://issuer.test|alice", Claims: c.claims}), json.Deterministic(true))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -6,7 +6,7 @@ package harness
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"net/url"
 	"slices"
@@ -111,7 +111,7 @@ func (n Network) with(host string) Network {
 // asks and is blocked with the result the model reads otherwise. It
 // decides nothing for another tool, a policy with no network, or a fetch
 // whose URL names no host.
-func (p Policy) fetchDecision(name string, input json.RawMessage) (Decision, bool) {
+func (p Policy) fetchDecision(name string, input jsontext.Value) (Decision, bool) {
 	n := p.Network
 	if n == nil || name != tools.NameWebFetch {
 		return Decision{}, false

@@ -46,7 +46,7 @@ type ConversationFile struct {
 	Name     string    `json:"name"`
 	Version  string    `json:"version"`
 	Modified time.Time `json:"modified"`
-	Size     int64     `json:"size,omitempty"`
+	Size     int64     `json:"size,omitzero"`
 }
 
 // conversationDay is the layout of the day a conversation's file is named

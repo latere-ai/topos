@@ -4,8 +4,8 @@
 package session
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"time"
@@ -150,11 +150,11 @@ type Resource struct {
 	// App is the app at the installation's app host a repository is the
 	// source of, nil for any other; only the allow of the session's create
 	// attaches one (spec 058).
-	App *ResourceApp `json:"app,omitempty"`
+	App *ResourceApp `json:"app,omitzero"`
 	// Attached marks a resource the allow of the session's create
 	// attached rather than the request or the agent named. A fork does
 	// not carry it: its own allow attaches what it reaches (spec 058).
-	Attached bool `json:"attached,omitempty"`
+	Attached bool `json:"attached,omitzero"`
 }
 
 // Policy is a session's approval policy (spec 012): the agent's
@@ -178,13 +178,13 @@ type Thresholds struct {
 // Budget is a session's spend ceiling and its spend so far, in millionths
 // of a USD. A nil MaxCostUSDMicro means no ceiling.
 type Budget struct {
-	MaxCostUSDMicro   *int64 `json:"max_cost_usd_micro,omitempty"`
+	MaxCostUSDMicro   *int64 `json:"max_cost_usd_micro,omitzero"`
 	SpentCostUSDMicro int64  `json:"spent_cost_usd_micro"`
 	// CarriedCostUSDMicro is the part of the spend a fork copied from its
 	// parent's log, fixed at the fork, zero on a session no fork made
 	// (spec 056). The session's own spend, which its ceiling holds, is
 	// SpentCostUSDMicro less it.
-	CarriedCostUSDMicro int64 `json:"carried_cost_usd_micro,omitempty"`
+	CarriedCostUSDMicro int64 `json:"carried_cost_usd_micro,omitzero"`
 }
 
 // Limits are a session's wall-clock bounds, as Go durations.
@@ -225,7 +225,7 @@ type ModelRef struct {
 	Effort      string `json:"effort,omitempty"`
 	Reasoning   string `json:"reasoning,omitempty"`
 	Route       string `json:"route,omitempty"`
-	MessageText bool   `json:"message_text,omitempty"`
+	MessageText bool   `json:"message_text,omitzero"`
 }
 
 // Level is the reasoning level under either name: reasoning, and effort
@@ -246,7 +246,7 @@ func (m ModelRef) Answered() ModelRef {
 
 // Capture says which raw wire data a session keeps beyond the default.
 type Capture struct {
-	Requests bool `json:"requests,omitempty"`
+	Requests bool `json:"requests,omitzero"`
 }
 
 // Parent names the session and sequence a forked session started from:
@@ -277,40 +277,40 @@ type Session struct {
 	// org_id claim names, never a rendered subject, so a decision service
 	// that keys a person's own context by their rendered subject tells
 	// the two apart. It is set at the create and no event changes it.
-	Org        string            `json:"org,omitempty"`
-	Title      string            `json:"title,omitempty"`
-	Initiator  Sender            `json:"initiator"`
-	Runner     string            `json:"runner"`
-	Writer     *Writer           `json:"writer,omitempty"`
-	Status     Status            `json:"status"`
-	StopReason StopReason        `json:"stop_reason,omitempty"`
-	Turn       int               `json:"turn"`
-	LastSeq    uint64            `json:"last_seq"`
-	Machine    Machine           `json:"machine"`
-	Resources  []Resource        `json:"resources,omitempty"`
-	Scope      []json.RawMessage `json:"scope,omitempty"`
+	Org        string           `json:"org,omitempty"`
+	Title      string           `json:"title,omitempty"`
+	Initiator  Sender           `json:"initiator"`
+	Runner     string           `json:"runner"`
+	Writer     *Writer          `json:"writer,omitzero"`
+	Status     Status           `json:"status"`
+	StopReason StopReason       `json:"stop_reason,omitempty"`
+	Turn       int              `json:"turn"`
+	LastSeq    uint64           `json:"last_seq"`
+	Machine    Machine          `json:"machine"`
+	Resources  []Resource       `json:"resources,omitempty"`
+	Scope      []jsontext.Value `json:"scope,omitempty"`
 	// Policy is the merged approval policy; nil, as on a local session,
 	// leaves the agent's own to the runner.
-	Policy *Policy `json:"policy,omitempty"`
+	Policy *Policy `json:"policy,omitzero"`
 	Budget Budget  `json:"budget"`
 	// Model is the model the session's turns run: the one its create's
 	// allow named, then the latest session.model_changed's; nil runs the
 	// agent's.
-	Model     *ModelRef `json:"model,omitempty"`
+	Model     *ModelRef `json:"model,omitzero"`
 	Limits    Limits    `json:"limits"`
 	Capture   Capture   `json:"capture"`
-	EndOnIdle bool      `json:"end_on_idle,omitempty"`
+	EndOnIdle bool      `json:"end_on_idle,omitzero"`
 	// Attended is the creator's declaration that a person answers the
 	// session's questions, through a client that shows them (spec 039). A
 	// question call of a session that is not attended is answered at
 	// once, and the session never goes idle on it. It is set at create
 	// and no event changes it, so every runner reads the same value.
-	Attended bool `json:"attended,omitempty"`
+	Attended bool `json:"attended,omitzero"`
 	// Network is the session's base network (spec 052): the one its
 	// create's allow named, or its agent's, with each change an allow of a
 	// send made since. Nil on a session that recorded none, which runs on
 	// its agent's mode and hosts.
-	Network *Network `json:"network,omitempty"`
+	Network *Network `json:"network,omitzero"`
 	// Instructions are the initiator's standing instructions an allow of
 	// the session's create carried (spec 053), which the model reads after
 	// its agent's own; empty for none. No event changes them.
@@ -327,12 +327,12 @@ type Session struct {
 	// session's create, fork or send named (spec 101): the hosts the
 	// organization owns. Nil when none named one, and a web_fetch then
 	// sends no organization boundary to a decision service.
-	Boundary *Boundary `json:"boundary,omitempty"`
+	Boundary *Boundary `json:"boundary,omitzero"`
 	// Denials are the limits of refusals the allow of the session's create
 	// or fork named (spec 101), which apply where lower than the
 	// installation's; nil when it named none.
-	Denials *DenialLimits `json:"denials,omitempty"`
-	Parent  *Parent       `json:"parent,omitempty"`
+	Denials *DenialLimits `json:"denials,omitzero"`
+	Parent  *Parent       `json:"parent,omitzero"`
 	// Root is the id of the session at the top of this session's fork
 	// tree: its parent's root, or its parent's id where the parent has
 	// none; its own id on a fork that started a tree of its own; empty on
@@ -362,12 +362,12 @@ type Session struct {
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	// Tree is set only on the sessions a List grouped by tree answers,
 	// each the one that stands for its tree (spec 056).
-	Tree *Tree `json:"tree,omitempty"`
+	Tree *Tree `json:"tree,omitzero"`
 	// Folder is the folder of a files store the allow of the session's
 	// create named (spec 068), where its attachments and kept files are
 	// written; nil keeps them as blobs. It is fixed at the create, and
 	// Stored is set by the first event that records a file there.
-	Folder *Folder `json:"folder,omitempty"`
+	Folder *Folder `json:"folder,omitzero"`
 	// Memory are the memory folders the allow of the session's create or
 	// fork named (spec 093), which its file tools reach at
 	// /memory/<name>/; fixed at the create, and a fork's are its own
@@ -376,18 +376,18 @@ type Session struct {
 	// Wake is the session's pending wake (spec 086), folded from its
 	// session.wake_set and cleared by its session.wake_cleared or by the
 	// message its firing sent; nil when none is pending.
-	Wake *Wake `json:"wake,omitempty"`
+	Wake *Wake `json:"wake,omitzero"`
 	// Outcome is OutcomeQuiet or OutcomeNotified, of the latest turn a
 	// trigger began that recorded one (spec 086); empty before any.
 	Outcome string `json:"outcome,omitempty"`
 	// Notice is the latest notify of the session's own thread, nil before
 	// any (spec 086).
-	Notice *Notice `json:"notice,omitempty"`
+	Notice *Notice `json:"notice,omitzero"`
 	// ContextReport is the context of the latest model.request of the
 	// session's own thread that records one (spec 087), nil before any. A
 	// subagent's requests and a title's leave it. It is not Context, the
 	// text an allow attached.
-	ContextReport *ContextReport `json:"context_report,omitempty"`
+	ContextReport *ContextReport `json:"context_report,omitzero"`
 }
 
 // Folder is a folder of an Arca-compatible files API (spec 068): the
@@ -399,7 +399,7 @@ type Folder struct {
 	URL    string `json:"url,omitempty"`
 	Owner  string `json:"owner"`
 	Path   string `json:"path"`
-	Stored bool   `json:"stored,omitempty"`
+	Stored bool   `json:"stored,omitzero"`
 }
 
 // TreeRoot is the id that keys s's fork tree: its root, or its own id
@@ -463,17 +463,43 @@ func New(agent AgentRef, initiator Sender, runner string, m Machine, now time.Ti
 	}
 }
 
-// Marshal renders v in the one byte form spec 004 fixes: encoding/json
-// with HTML escaping off, fields in declaration order, no trailing
-// newline.
+// storedWrite is how the log's JSON is written: object keys sorted, so a
+// document's bytes depend only on its content, and strings and embedded
+// raw values passed through as they came, since a payload carries model
+// output and process output this package does not control.
+var storedWrite = json.JoinOptions(
+	json.Deterministic(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
+// storedRead is how the log's JSON is read: a payload embeds arguments
+// and output that other systems produced, so duplicate keys and invalid
+// UTF-8 are accepted.
+var storedRead = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
+// Marshal renders v in the one byte form spec 004 fixes: compact JSON
+// with HTML escaping off, object keys sorted, fields in declaration order,
+// no trailing newline.
 func Marshal(v any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return nil, err
-	}
-	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+	return json.Marshal(v, storedWrite)
+}
+
+// MarshalDigested renders v as Marshal does, with a nil list or map written
+// as null. A digest is taken over these bytes and compared with the digest
+// of the same document stored earlier, so the form of an empty value must
+// not change between writers.
+func MarshalDigested(v any) ([]byte, error) {
+	return json.Marshal(v, storedWrite, json.FormatNilSliceAsNull(true), json.FormatNilMapAsNull(true))
+}
+
+// Unmarshal reads a document of the log, an event payload or a stored
+// header, into v.
+func Unmarshal(b []byte, v any) error {
+	return json.Unmarshal(b, v, storedRead)
 }
 
 // Spent is the budget meter of spec 007: the cost of every model.request
@@ -502,7 +528,7 @@ func Cost(e Event) int64 {
 		var p struct {
 			CostUSDMicro *int64 `json:"cost_usd_micro"`
 		}
-		if json.Unmarshal(e.Payload, &p) == nil && p.CostUSDMicro != nil {
+		if Unmarshal(e.Payload, &p) == nil && p.CostUSDMicro != nil {
 			return *p.CostUSDMicro
 		}
 	}

@@ -5,7 +5,8 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -21,8 +22,8 @@ import (
 	"latere.ai/x/topos/test/stubs/mcpstub"
 )
 
-func text(s string) func(json.RawMessage) any {
-	return func(json.RawMessage) any {
+func text(s string) func(jsontext.Value) any {
+	return func(jsontext.Value) any {
 		return map[string]any{"resultType": "complete", "content": []any{map[string]any{"type": "text", "text": s}}}
 	}
 }
@@ -33,10 +34,10 @@ func text(s string) func(json.RawMessage) any {
 // item.
 func trackerTools() []mcpstub.Tool {
 	return []mcpstub.Tool{
-		{Name: "list_issues", Description: "List the open issues.", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`), Answer: text("#1 The build is broken")},
+		{Name: "list_issues", Description: "List the open issues.", InputSchema: jsontext.Value(`{"type":"object","properties":{}}`), Answer: text("#1 The build is broken")},
 		{Name: "create_issue", Description: "Open an issue.", Stream: true,
-			InputSchema: json.RawMessage(`{"type":"object","minProperties":1,"properties":{"title":{"type":"string","x-mcp-header":"Title"},"meta":{"type":"object","properties":{"priority":{"type":"integer","x-mcp-header":"Priority"}}}},"required":["title"]}`),
-			Answer: func(args json.RawMessage) any {
+			InputSchema: jsontext.Value(`{"type":"object","minProperties":1,"properties":{"title":{"type":"string","x-mcp-header":"Title"},"meta":{"type":"object","properties":{"priority":{"type":"integer","x-mcp-header":"Priority"}}}},"required":["title"]}`),
+			Answer: func(args jsontext.Value) any {
 				var in struct {
 					Title string `json:"title"`
 				}
@@ -45,8 +46,8 @@ func trackerTools() []mcpstub.Tool {
 				}
 				return map[string]any{"content": []any{map[string]any{"type": "text", "text": "Opened #2: " + in.Title}}}
 			}},
-		{Name: "admin.reset", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: text("reset")},
-		{Name: "bulk", InputSchema: json.RawMessage(`{"type":"object","properties":{"ids":{"type":"array","items":{"type":"string","x-mcp-header":"Id"}}}}`), Answer: text("done")},
+		{Name: "admin.reset", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: text("reset")},
+		{Name: "bulk", InputSchema: jsontext.Value(`{"type":"object","properties":{"ids":{"type":"array","items":{"type":"string","x-mcp-header":"Id"}}}}`), Answer: text("done")},
 	}
 }
 
@@ -105,11 +106,11 @@ func TestStreamableHTTP(t *testing.T) {
 		t.Fatalf("the list took %d requests, want one per page", n)
 	}
 
-	res, err := list.Run(ctx, tools.Call{ID: "toolu_1", Input: json.RawMessage(`{}`)})
+	res, err := list.Run(ctx, tools.Call{ID: "toolu_1", Input: jsontext.Value(`{}`)})
 	if err != nil || res.Outcome != tools.OutcomeOK || res.Content[0].Text != "#1 The build is broken" {
 		t.Fatalf("list_issues: %+v %v", res, err)
 	}
-	res, err = create.Run(ctx, tools.Call{ID: "toolu_2", Input: json.RawMessage(`{"title":"Fix the build","meta":{"priority":2}}`)})
+	res, err = create.Run(ctx, tools.Call{ID: "toolu_2", Input: jsontext.Value(`{"title":"Fix the build","meta":{"priority":2}}`)})
 	if err != nil || res.Outcome != tools.OutcomeOK || res.Content[0].Text != "Opened #2: Fix the build" {
 		t.Fatalf("create_issue: %+v %v", res, err)
 	}
@@ -132,14 +133,14 @@ func TestStreamableHTTP(t *testing.T) {
 		body.Params.Meta["io.modelcontextprotocol/clientInfo"].(map[string]any)["name"] != "topos" {
 		t.Fatalf("the call's metadata %s", call.Body)
 	}
-	if _, err := create.Run(ctx, tools.Call{ID: "toolu_3", Input: json.RawMessage(`{"title":" Überprüfen "}`)}); err != nil {
+	if _, err := create.Run(ctx, tools.Call{ID: "toolu_3", Input: jsontext.Value(`{"title":" Überprüfen "}`)}); err != nil {
 		t.Fatal(err)
 	}
 	reqs = stub.Requests()
 	if got := reqs[len(reqs)-1].Header.Get("Mcp-Param-Title"); got != "=?base64?"+base64Std(" Überprüfen ")+"?=" {
 		t.Fatalf("a title that is not plain went as %q", got)
 	}
-	if _, err := create.Run(ctx, tools.Call{ID: "toolu_4", Input: json.RawMessage(`{"title":"No priority","meta":{"priority":null}}`)}); err != nil {
+	if _, err := create.Run(ctx, tools.Call{ID: "toolu_4", Input: jsontext.Value(`{"title":"No priority","meta":{"priority":null}}`)}); err != nil {
 		t.Fatal(err)
 	}
 	reqs = stub.Requests()
@@ -154,8 +155,8 @@ func TestStreamableHTTP(t *testing.T) {
 // (spec 069).
 func TestAHiddenToolIsNotOffered(t *testing.T) {
 	stub := mcpstub.New(t, mcpstub.Options{Admit: func(b string) bool { return b == "session-token" }, Tools: append(trackerTools(),
-		mcpstub.Tool{Name: "list_secrets", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: text("hunter2")},
-		mcpstub.Tool{Name: "delete_issue", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: text("deleted")},
+		mcpstub.Tool{Name: "list_secrets", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: text("hunter2")},
+		mcpstub.Tool{Name: "delete_issue", InputSchema: jsontext.Value(`{"type":"object"}`), Answer: text("deleted")},
 	)})
 	s := tracker(stub.URL(), "session-token")
 	s.Connection.Hidden = []string{"delete_*", "list_secrets", "create_issue"}
@@ -185,7 +186,7 @@ func TestANotConnectedServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	stub.Disconnect("revoked", "issues:write")
-	res, err := byName(ts, "mcp__tracker__create_issue").Run(ctx, tools.Call{ID: "toolu_1", Input: json.RawMessage(`{"title":"x"}`)})
+	res, err := byName(ts, "mcp__tracker__create_issue").Run(ctx, tools.Call{ID: "toolu_1", Input: jsontext.Value(`{"title":"x"}`)})
 	if err != nil || res.Outcome != tools.OutcomeError {
 		t.Fatalf("a call to a server not connected: %+v %v", res, err)
 	}
@@ -220,7 +221,7 @@ func TestAServerKeptApartFromThisConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	stub.Disconnect(ReasonKeptApart)
-	res, err := byName(ts, "mcp__tracker__create_issue").Run(ctx, tools.Call{ID: "toolu_1", Input: json.RawMessage(`{"title":"x"}`)})
+	res, err := byName(ts, "mcp__tracker__create_issue").Run(ctx, tools.Call{ID: "toolu_1", Input: jsontext.Value(`{"title":"x"}`)})
 	if err != nil || res.Outcome != tools.OutcomeError {
 		t.Fatalf("a call kept apart: %+v %v", res, err)
 	}
@@ -256,7 +257,7 @@ func TestAnEarlierRevision(t *testing.T) {
 		t.Fatalf("a request in the session carried %v", last.Header)
 	}
 	stub.EndSessions()
-	res, err := byName(ts, "mcp__tracker__list_issues").Run(ctx, tools.Call{ID: "toolu_1", Input: json.RawMessage(`{}`)})
+	res, err := byName(ts, "mcp__tracker__list_issues").Run(ctx, tools.Call{ID: "toolu_1", Input: jsontext.Value(`{}`)})
 	if err != nil || res.Outcome != tools.OutcomeOK {
 		t.Fatalf("a call after the session ended: %+v %v", res, err)
 	}
@@ -288,7 +289,7 @@ func TestWhatAResultHolds(t *testing.T) {
 	}
 	var defs []mcpstub.Tool
 	for name, a := range answers {
-		defs = append(defs, mcpstub.Tool{Name: name, InputSchema: json.RawMessage(`{"type":"object"}`), Answer: func(json.RawMessage) any { return a }})
+		defs = append(defs, mcpstub.Tool{Name: name, InputSchema: jsontext.Value(`{"type":"object"}`), Answer: func(jsontext.Value) any { return a }})
 	}
 	stub := mcpstub.New(t, mcpstub.Options{Tools: defs})
 	ts, _, err := tracker(stub.URL(), "t").Tools(ctx)
@@ -398,25 +399,25 @@ func TestHeaderValues(t *testing.T) {
 			t.Errorf("%q a token: %v", name, !ok)
 		}
 	}
-	if ps, ok := headerParams(json.RawMessage(`{"properties":{"a":{"type":"string","x-mcp-header":"A"},"b":{"type":"string","x-mcp-header":"a"}}}`)); ok {
+	if ps, ok := headerParams(jsontext.Value(`{"properties":{"a":{"type":"string","x-mcp-header":"A"},"b":{"type":"string","x-mcp-header":"a"}}}`)); ok {
 		t.Fatalf("a name marked twice: %v", ps)
 	}
-	if _, ok := headerParams(json.RawMessage(`{"properties":{"a":{"type":"number","x-mcp-header":"A"}}}`)); ok {
+	if _, ok := headerParams(jsontext.Value(`{"properties":{"a":{"type":"number","x-mcp-header":"A"}}}`)); ok {
 		t.Fatal("a number was marked")
 	}
-	if _, ok := headerParams(json.RawMessage(`{"oneOf":[{"properties":{"a":{"type":"string","x-mcp-header":"A"}}}]}`)); ok {
+	if _, ok := headerParams(jsontext.Value(`{"oneOf":[{"properties":{"a":{"type":"string","x-mcp-header":"A"}}}]}`)); ok {
 		t.Fatal("a mark under oneOf was taken")
 	}
-	if _, ok := headerParams(json.RawMessage(`not json`)); ok {
+	if _, ok := headerParams(jsontext.Value(`not json`)); ok {
 		t.Fatal("a schema that is not JSON was read")
 	}
 	if ps, ok := headerParams(nil); !ok || ps != nil {
 		t.Fatal("no schema")
 	}
-	if h := headersFor([]headerParam{{header: "A", path: []string{"a"}}}, json.RawMessage(`not json`)); h != nil {
+	if h := headersFor([]headerParam{{header: "A", path: []string{"a"}}}, jsontext.Value(`not json`)); h != nil {
 		t.Fatalf("arguments that are not JSON mirrored %v", h)
 	}
-	if h := headersFor([]headerParam{{header: "A", path: []string{"a", "b"}}, {header: "B", path: []string{"c"}}}, json.RawMessage(`{"a":"x","c":true}`)); h.Get("Mcp-Param-A") != "" || h.Get("Mcp-Param-B") != "true" {
+	if h := headersFor([]headerParam{{header: "A", path: []string{"a", "b"}}, {header: "B", path: []string{"c"}}}, jsontext.Value(`{"a":"x","c":true}`)); h.Get("Mcp-Param-A") != "" || h.Get("Mcp-Param-B") != "true" {
 		t.Fatalf("mirrored %v", h)
 	}
 }

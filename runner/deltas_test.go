@@ -4,7 +4,7 @@
 package runner
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"slices"
 	"strings"
 	"sync"
@@ -207,7 +207,7 @@ func TestDeltasAreNotAppended(t *testing.T) {
 	run := func(r *Runner) []session.Type {
 		t.Helper()
 		f.stub.Script(model,
-			reply(ir.Block{Type: ir.BlockThinking, Text: "Echo first.", Signature: "sig"}, ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "echo", Args: json.RawMessage(`{"text":"a"}`)}}),
+			reply(ir.Block{Type: ir.BlockThinking, Text: "Echo first.", Signature: "sig"}, ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "echo", Args: jsontext.Value(`{"text":"a"}`)}}),
 			reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
 		)
 		f.message(ctx, "Echo.")

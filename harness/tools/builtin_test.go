@@ -4,7 +4,8 @@
 package tools
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"slices"
 	"strings"
@@ -48,8 +49,8 @@ func TestBuiltinsFollowTheTable(t *testing.T) {
 			t.Fatalf("%s: %v", d.Name, err)
 		}
 		var schema struct {
-			Required   []string                   `json:"required"`
-			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                  `json:"required"`
+			Properties map[string]jsontext.Value `json:"properties"`
 		}
 		if err := json.Unmarshal(d.InputSchema, &schema); err != nil {
 			t.Fatalf("%s: %v", d.Name, err)

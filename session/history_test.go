@@ -4,7 +4,7 @@
 package session_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"slices"
 	"strings"
 	"testing"
@@ -43,15 +43,15 @@ func TestHistoryReadsTheLogAsWritten(t *testing.T) {
 	}})
 	b.add(session.TypeModelRequest, "", 1, session.ModelRequest{Model: "m", Outcome: "ok"})
 	b.assistant("", 1, false, lux.Block{Type: ir.BlockThinking, Text: "secret plan", Signature: "sig"}, txt("Reading."), use("toolu_r", "read"), use("toolu_b", "bash"))
-	b.add(session.TypeAgentToolUse, "", 1, session.AgentToolUse{ToolUseID: "toolu_r", Name: "read", Input: json.RawMessage(`{"path":"plot.png"}`), Verdict: "allow"})
+	b.add(session.TypeAgentToolUse, "", 1, session.AgentToolUse{ToolUseID: "toolu_r", Name: "read", Input: jsontext.Value(`{"path":"plot.png"}`), Verdict: "allow"})
 	b.toolUse("", 1, "toolu_b")
-	b.add(session.TypeToolResult, "", 1, session.ToolResult{ToolUseID: "toolu_r", Content: []lux.Block{{Type: ir.BlockImage, Image: &lux.Image{MediaType: "image/png", Data: "aGk="}}}, Outcome: "ok", Meta: json.RawMessage(`{"path":"/work/plot.png"}`)})
+	b.add(session.TypeToolResult, "", 1, session.ToolResult{ToolUseID: "toolu_r", Content: []lux.Block{{Type: ir.BlockImage, Image: &lux.Image{MediaType: "image/png", Data: "aGk="}}}, Outcome: "ok", Meta: jsontext.Value(`{"path":"/work/plot.png"}`)})
 	b.add(session.TypeToolResult, "", 1, session.ToolResult{ToolUseID: "toolu_b", Content: []lux.Block{txt("dial tcp: ECONNREFUSED")}, IsError: true})
 	b.add(session.TypeContextCompacted, "", 2, session.ContextCompacted{Kind: session.CompactClearToolResults, ToolUseIDs: []string{"toolu_b"}, FromSeq: 7, ToSeq: 7})
 	b.add(session.TypeContextCompacted, "", 2, session.ContextCompacted{Kind: session.CompactSummary, FromSeq: 1, ToSeq: 7, Summary: "Ada gave a port."})
 	b.add(session.TypeUserInterrupt, "", 2, session.UserInterrupt{Sender: grace})
 	b.add(session.TypeTitleChanged, "", 2, session.TitleChanged{By: ada, Old: "Staging", New: "Staging port"})
-	b.add(session.TypeAgentToolUse, "", 2, session.AgentToolUse{ToolUseID: "toolu_q", Name: "question", Input: json.RawMessage(`{"questions":[]}`), Verdict: "allow"})
+	b.add(session.TypeAgentToolUse, "", 2, session.AgentToolUse{ToolUseID: "toolu_q", Name: "question", Input: jsontext.Value(`{"questions":[]}`), Verdict: "allow"})
 	b.add(session.TypeUserAnswer, "", 2, session.UserAnswer{Sender: ada, ToolUseID: "toolu_q", Answers: []session.AnswerEntry{{Selected: []string{"SQLite"}}, {}}})
 	b.add(session.TypeSessionMachine, "", 2, session.SessionMachine{Context: "machine"})
 	secret := b.user(grace, "the password is hunter2", 2)
@@ -141,7 +141,7 @@ func TestHistoryShowsACallNoToolUseRecords(t *testing.T) {
 	b.assistant("", 1, false, use("toolu_bad", "bash"))
 	b.add(session.TypeToolResult, "", 1, session.ToolResult{ToolUseID: "toolu_bad", Content: []lux.Block{txt("invalid input")}, Outcome: "invalid_input", IsError: true})
 	b.assistant("", 1, false, use("toolu_ok", "deploy"))
-	b.add(session.TypeAgentToolUse, "", 1, session.AgentToolUse{ToolUseID: "toolu_ok", Name: "deploy", Input: json.RawMessage(`{}`), Verdict: "allow", Client: true})
+	b.add(session.TypeAgentToolUse, "", 1, session.AgentToolUse{ToolUseID: "toolu_ok", Name: "deploy", Input: jsontext.Value(`{}`), Verdict: "allow", Client: true})
 	b.add(session.TypeUserToolResult, "", 1, session.UserToolResult{Sender: ada, ToolUseID: "toolu_ok", Content: []lux.Block{txt("deployed")}, IsError: true})
 	b.assistant("", 1, true, txt("Writ"), use("toolu_cut", "write"))
 
@@ -173,7 +173,7 @@ func TestHistoryRefusesAPayloadItCannotRead(t *testing.T) {
 		session.TypeAgentToolUse, session.TypeToolResult, session.TypeUserToolResult, session.TypeUserAnswer,
 		session.TypeUserInterrupt, session.TypeTitleChanged,
 	} {
-		e := session.Event{ID: "evt_1", Seq: 1, Type: typ, Payload: json.RawMessage(`[]`)}
+		e := session.Event{ID: "evt_1", Seq: 1, Type: typ, Payload: jsontext.Value(`[]`)}
 		if typ == session.TypeSubagentStarted || typ == session.TypeSubagentMessage {
 			e.Subagent = "evt_1"
 		}
@@ -184,7 +184,7 @@ func TestHistoryRefusesAPayloadItCannotRead(t *testing.T) {
 	}
 	// A meta that does not decode leaves a picture without its path.
 	b := &logb{t: t}
-	b.add(session.TypeToolResult, "", 1, session.ToolResult{ToolUseID: "toolu_r", Content: []lux.Block{{Type: ir.BlockImage, Image: &lux.Image{MediaType: "image/png", Data: "aGk="}}}, Meta: json.RawMessage(`"path"`)})
+	b.add(session.TypeToolResult, "", 1, session.ToolResult{ToolUseID: "toolu_r", Content: []lux.Block{{Type: ir.BlockImage, Image: &lux.Image{MediaType: "image/png", Data: "aGk="}}}, Meta: jsontext.Value(`"path"`)})
 	got, err := session.History(b.events, "", 10)
 	if err != nil || len(got) != 1 || got[0].Body != "[a picture]" {
 		t.Fatalf("%+v, %v", got, err)

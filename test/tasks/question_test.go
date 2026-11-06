@@ -4,7 +4,7 @@
 package tasks
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"path/filepath"
 	"slices"
 	"strings"

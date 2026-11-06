@@ -20,7 +20,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -93,7 +94,7 @@ var addressRefused = []string{"invalid_slug", "slug_taken", "slug_reserved", "sl
 const DefaultAudience = "apps"
 
 // schema is the tool's input.
-var schema = json.RawMessage(`{
+var schema = jsontext.Value(`{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the folder last published to this session's own app, else the working directory."},
@@ -308,13 +309,22 @@ func (g target) meta(a hostApp) *session.PublishMeta {
 // noCredential is why a drive with no token source cannot publish.
 const noCredential = "this server mints no credential for its app host"
 
+// foreignJSON reads JSON this package does not produce: the model's input
+// to the tool and the lines of a build log. Duplicate members, bytes that
+// are not UTF-8 and member names in any letter case are read, not refused.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
 // decode reads a call's input; an empty input is {}.
-func decode(raw json.RawMessage) (input, error) {
+func decode(raw jsontext.Value) (input, error) {
 	var in input
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return in, nil
 	}
-	err := json.Unmarshal(raw, &in)
+	err := json.Unmarshal(raw, &in, foreignJSON)
 	return in, err
 }
 
@@ -1255,7 +1265,7 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 	defer cancel()
 	var rd io.Reader
 	if body != nil {
-		b, err := json.Marshal(body)
+		b, err := json.Marshal(body, jsontext.AllowInvalidUTF8(true))
 		if err != nil {
 			return err
 		}
@@ -1289,9 +1299,9 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 		he := &hostError{Status: resp.StatusCode}
 		var env struct {
 			Error struct {
-				Code    string          `json:"code"`
-				Message string          `json:"message"`
-				Details json.RawMessage `json:"details"`
+				Code    string         `json:"code"`
+				Message string         `json:"message"`
+				Details jsontext.Value `json:"details"`
 			} `json:"error"`
 		}
 		if json.Unmarshal(b, &env) == nil {
@@ -1771,7 +1781,7 @@ func (t *Tool) logTail(ctx context.Context, a hostApp, id string) string {
 		var l struct {
 			Line string `json:"line"`
 		}
-		if json.Unmarshal(sc.Bytes(), &l) != nil {
+		if json.Unmarshal(sc.Bytes(), &l, foreignJSON) != nil {
 			continue
 		}
 		lines = append(lines, strings.TrimRight(l.Line, "\n"))

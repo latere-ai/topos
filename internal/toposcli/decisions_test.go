@@ -4,7 +4,7 @@
 package toposcli
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +27,7 @@ func (d *decisionService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.paths = append(d.paths, r.URL.Path)
 	d.mu.Unlock()
 	if r.URL.Path == "/v1/predictions" {
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"verdict": "allow", "approve": 0.97, "uncertainty": 0.1,
 			"thresholds": map[string]float64{"allow_above": 0.9, "block_below": 0.25},
 			"audit_rate": 0, "source": "learned/1", "reason": "approved often",

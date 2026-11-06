@@ -4,7 +4,8 @@
 package tasks
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -254,7 +255,7 @@ func event(t *testing.T, typ session.Type, thread string, payload any) session.E
 // call is a tool_use and its result in a thread.
 func call(t *testing.T, thread, id, name, input, outcome string) []session.Event {
 	t.Helper()
-	evs := []session.Event{event(t, session.TypeAgentToolUse, thread, session.AgentToolUse{ToolUseID: id, Name: name, Input: json.RawMessage(input), Verdict: "allow"})}
+	evs := []session.Event{event(t, session.TypeAgentToolUse, thread, session.AgentToolUse{ToolUseID: id, Name: name, Input: jsontext.Value(input), Verdict: "allow"})}
 	if outcome != "" {
 		evs = append(evs, event(t, session.TypeToolResult, thread, session.ToolResult{
 			ToolUseID: id, Outcome: outcome, Content: []lux.Block{{Type: ir.BlockText, Text: name + " said " + outcome}, {Type: ir.BlockImage}},
@@ -270,11 +271,11 @@ func TestCalls(t *testing.T) {
 	evs = append(evs, call(t, "", "c2", "bash", `{"command":"sleep 100"}`, "")...)
 	evs = append(evs, event(t, session.TypeToolResult, "", session.ToolResult{ToolUseID: "c9", Outcome: "ok"}))
 	bad := event(t, session.TypeAgentToolUse, "", session.AgentToolUse{ToolUseID: "c3"})
-	bad.Payload = json.RawMessage(`{"tool_use_id": 3}`)
+	bad.Payload = jsontext.Value(`{"tool_use_id": 3}`)
 	badResult := event(t, session.TypeToolResult, "", session.ToolResult{})
-	badResult.Payload = json.RawMessage(`[]`)
+	badResult.Payload = jsontext.Value(`[]`)
 	redacted := call(t, "", "c4", "read", `{}`, "ok")[0]
-	redacted.Payload = json.RawMessage(`{"tombstone":true}`)
+	redacted.Payload = jsontext.Value(`{"tombstone":true}`)
 	evs = append(evs, bad, badResult, redacted)
 	got := Calls(evs)
 	if len(got) != 3 {

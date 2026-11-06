@@ -5,7 +5,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"os"
 	"strings"
@@ -54,7 +55,7 @@ func (f *fixture) ask(id string) {
 	f.t.Helper()
 	f.put(id,
 		ev(f.t, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}),
-		ev(f.t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: exampleQuestionCall, Name: session.ToolQuestion, Input: json.RawMessage(exampleQuestionInput), Verdict: "allow"}),
+		ev(f.t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: exampleQuestionCall, Name: session.ToolQuestion, Input: jsontext.Value(exampleQuestionInput), Verdict: "allow"}),
 		ev(f.t, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopQuestion}),
 	)
 }
@@ -146,8 +147,8 @@ func TestAnAnswerIsCheckedAgainstItsQuestion(t *testing.T) {
 		`{"type":"user.answer","payload":{"answers":[{},{}]}}`:                                   "tool_use_id",
 		`{"type":"user.answer","payload":{"tool_use_id":"toolu_01"}}`:                            "one entry per question",
 		answerBody(`[{"text":"` + strings.Repeat("é", session.MaxAnswerTextLength+1) + `"},{}]`): "at most 2000",
-		answerBody(`[{"selected":["SQLite"],"note":"x"},{}]`):                                    "unknown field",
-		`{"type":"user.answer","payload":{"tool_use_id":"toolu_01","answers":[],"x":1}}`:         "unknown field",
+		answerBody(`[{"selected":["SQLite"],"note":"x"},{}]`):                                    "unknown object member name",
+		`{"type":"user.answer","payload":{"tool_use_id":"toolu_01","answers":[],"x":1}}`:         "unknown object member name",
 	} {
 		a := send(body)
 		if a.code() != CodeInvalidRequest || !strings.Contains(a.detail(), want) {
@@ -232,7 +233,7 @@ func TestAnAnswerIsCheckedAgainstItsQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.put(quiet.ID,
-		ev(t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: exampleQuestionCall, Name: session.ToolQuestion, Input: json.RawMessage(exampleQuestionInput), Verdict: "allow"}),
+		ev(t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: exampleQuestionCall, Name: session.ToolQuestion, Input: jsontext.Value(exampleQuestionInput), Verdict: "allow"}),
 		ev(t, session.TypeToolResult, session.ToolResult{ToolUseID: exampleQuestionCall, Outcome: tools.OutcomeUnanswered, Meta: meta}))
 	if a := f.do(http.MethodPost, "/v1/sessions/"+quiet.ID+"/events", "alice", answerBody(`[{},{}]`)); a.code() != CodeConflict || !strings.Contains(a.detail(), "nobody attends") {
 		t.Fatalf("an answer to a question nobody attends: %d %s", a.status, a.body)
@@ -305,7 +306,7 @@ func TestTwoAnswersAtOnce(t *testing.T) {
 
 	// Two confirmations of one call.
 	c := f.create("alice", "reviewer")
-	f.put(c.ID, ev(t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_b", Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"}))
+	f.put(c.ID, ev(t, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_b", Name: "bash", Input: jsontext.Value(`{}`), Verdict: "ask"}))
 	_, other = competing(session.TypeUserToolConfirmation, session.UserToolConfirmation{Sender: session.Sender{Subject: bob, Kind: session.SenderPerson}, ToolUseID: "toolu_b", Decision: session.DecisionDeny})
 	race.other = other
 	if a := f.do(http.MethodPost, "/v1/sessions/"+c.ID+"/events", "alice", `{"type":"user.tool_confirmation","payload":{"tool_use_id":"toolu_b","decision":"allow"}}`); a.code() != CodeConflict {

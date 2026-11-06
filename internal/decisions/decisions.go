@@ -19,7 +19,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -313,7 +314,7 @@ type environment struct {
 // it is a first contact. Every value is a word of a closed list.
 type scope struct {
 	Undo    string           `json:"undo,omitempty"`
-	Crosses *session.Crosses `json:"crosses,omitempty"`
+	Crosses *session.Crosses `json:"crosses,omitzero"`
 	Contact string           `json:"contact,omitempty"`
 }
 
@@ -333,14 +334,14 @@ type signal struct {
 // action is a call as the service reads it.
 type action struct {
 	key
-	Actor       actor           `json:"actor"`
-	Kind        string          `json:"kind"`
-	Name        string          `json:"name"`
-	Effect      string          `json:"effect"`
-	Input       json.RawMessage `json:"input,omitempty"`
-	Scope       *scope          `json:"scope,omitempty"`
-	Target      *target         `json:"target,omitempty"`
-	Environment environment     `json:"environment"`
+	Actor       actor          `json:"actor"`
+	Kind        string         `json:"kind"`
+	Name        string         `json:"name"`
+	Effect      string         `json:"effect"`
+	Input       jsontext.Value `json:"input,omitzero"`
+	Scope       *scope         `json:"scope,omitzero"`
+	Target      *target        `json:"target,omitzero"`
+	Environment environment    `json:"environment"`
 	// Attributes are observable facts of the call beside its fields:
 	// attended, whether a person began its turn (spec 087), so a service
 	// can weigh a call nobody watches; depth, how deep it was delegated;
@@ -365,14 +366,14 @@ type prediction struct {
 	Reason      string     `json:"reason"`
 	// EvidenceRatio and AskKind say how much the person's answers settle
 	// the prediction; a service that predates them sends neither.
-	EvidenceRatio *float64 `json:"evidence_ratio,omitempty"`
+	EvidenceRatio *float64 `json:"evidence_ratio,omitzero"`
 	AskKind       string   `json:"ask_kind,omitempty"`
 	// Scope is the reach the service read, the wider of its reading of
 	// the input and what Topos sent, and Cover whether the person's
 	// approvals cover the call (spec 101); a service that predates them
 	// sends neither.
-	Scope *readScope `json:"scope,omitempty"`
-	Cover *cover     `json:"cover,omitempty"`
+	Scope *readScope `json:"scope,omitzero"`
+	Cover *cover     `json:"cover,omitzero"`
 }
 
 // cover says whether the person's approvals cover a call.
@@ -389,11 +390,11 @@ func (p prediction) covered() bool { return p.Cover != nil && p.Cover.Covered }
 // and unknown, so each is read leniently: a value outside a scope's
 // lists is not known, and is left out of what the call records.
 type readScope struct {
-	Undo        string                     `json:"undo"`
-	Crosses     map[string]json.RawMessage `json:"crosses"`
-	TargetClass string                     `json:"target_class"`
-	TargetKind  string                     `json:"target_kind"`
-	Contact     string                     `json:"contact"`
+	Undo        string                    `json:"undo"`
+	Crosses     map[string]jsontext.Value `json:"crosses"`
+	TargetClass string                    `json:"target_class"`
+	TargetKind  string                    `json:"target_kind"`
+	Contact     string                    `json:"contact"`
 }
 
 // record is the scope as a call records it: the words of the lists
@@ -422,7 +423,7 @@ func (r readScope) record() session.CallScope {
 
 // boundary reads one boundary of a prediction's crosses: true or yes,
 // false or no, and nil for anything else, unknown included.
-func boundary(raw json.RawMessage) *bool {
+func boundary(raw jsontext.Value) *bool {
 	var b bool
 	if json.Unmarshal(raw, &b) == nil {
 		return &b
@@ -444,7 +445,7 @@ type decision struct {
 	Verdict           string  `json:"verdict"`
 	ReviewProbability float64 `json:"review_probability"`
 	Source            string  `json:"source"`
-	Action            *action `json:"action,omitempty"`
+	Action            *action `json:"action,omitzero"`
 }
 
 // answer is a person's answer to a call, with how the person answered
@@ -454,10 +455,10 @@ type answer struct {
 	key
 	Approve         bool   `json:"approve"`
 	By              string `json:"by,omitempty"`
-	AnswerMS        *int64 `json:"answer_ms,omitempty"`
+	AnswerMS        *int64 `json:"answer_ms,omitzero"`
 	WaitedMS        int64  `json:"waited_ms"`
-	DetailsOpened   *bool  `json:"details_opened,omitempty"`
-	SuggestionShown *bool  `json:"suggestion_shown,omitempty"`
+	DetailsOpened   *bool  `json:"details_opened,omitzero"`
+	SuggestionShown *bool  `json:"suggestion_shown,omitzero"`
 	Surface         string `json:"surface,omitempty"`
 	Remembered      bool   `json:"remembered"`
 }
@@ -474,6 +475,9 @@ func (d *Decider) action(c harness.Call, risk session.Risk) action {
 	input := c.Input
 	switch harness.ToolName(c.Name) {
 	case harness.ToolAgent, harness.ToolSendMessage, harness.ToolAdvisor:
+		input = nil
+	}
+	if len(bytes.TrimSpace(input)) == 0 {
 		input = nil
 	}
 	a := action{
@@ -817,7 +821,8 @@ func (d *Decider) post(ctx context.Context, path string, body, out any) error {
 func (d *Decider) postWithin(ctx context.Context, limit time.Duration, path string, body, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	b, err := json.Marshal(body)
+	// A call's input is the model's own JSON, passed on as it came.
+	b, err := json.Marshal(body, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return err
 	}

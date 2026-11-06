@@ -5,7 +5,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"slices"
 	"strings"
@@ -92,7 +93,7 @@ func (r *router) last(t *testing.T, action string) authz.Request {
 // with the ids a run mints replaced by their names.
 func wire(t *testing.T, req authz.Request, ids ...string) string {
 	t.Helper()
-	b, err := json.Marshal(req.Resource)
+	b, err := json.Marshal(req.Resource, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +177,8 @@ func TestARoutedSessionStartsOnTheModelItsAllowNames(t *testing.T) {
 		t.Fatalf("create: %d %s", a.status, a.body)
 	}
 	var answered struct {
-		ID    string          `json:"id"`
-		Model json.RawMessage `json:"model"`
+		ID    string         `json:"id"`
+		Model jsontext.Value `json:"model"`
 	}
 	a.decode(t, &answered)
 	if want := `{"name":"claude-haiku-4-5","via":"tier/quick"}`; string(answered.Model) != want {
@@ -450,7 +451,7 @@ func TestAnAllowWithoutAModelRoutesNothing(t *testing.T) {
 			return func(req authz.Request) (authz.Decision, error) {
 				d, err := f.authz.next.Authorize(context.Background(), req)
 				if d.Allow && !authz.IsList(req.Action) {
-					d.Limits = json.RawMessage(`{"budget_usd_micro":5000000,"a_member_from_later":true}`)
+					d.Limits = jsontext.Value(`{"budget_usd_micro":5000000,"a_member_from_later":true}`)
 				}
 				return d, err
 			}
@@ -542,7 +543,7 @@ func TestAModelThatDoesNotDecodeRefusesTheRequest(t *testing.T) {
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d, err := f.authz.next.Authorize(context.Background(), req)
 		if d.Allow && !authz.IsList(req.Action) {
-			d.Limits = json.RawMessage(`{"model":{"name":"vendor/model-a"}}`)
+			d.Limits = jsontext.Value(`{"model":{"name":"vendor/model-a"}}`)
 		}
 		return d, err
 	}

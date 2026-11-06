@@ -5,7 +5,7 @@ package cella
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"time"
@@ -106,7 +106,7 @@ func (m *Machine) update(ctx context.Context, sb v1.Sandbox, want v1.Egress) (v1
 		Spec:     sb.Spec,
 	}
 	body.Spec.Network.Egress = want
-	b, err := json.Marshal(body)
+	b, err := json.Marshal(body, toCella)
 	if err != nil {
 		return v1.Sandbox{}, fmt.Errorf("machine: encode the sandbox %s: %w", m.name, err)
 	}

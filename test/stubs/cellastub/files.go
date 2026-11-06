@@ -6,7 +6,7 @@ package cellastub
 import (
 	"archive/tar"
 	"crypto/rand"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"io/fs"
@@ -286,9 +286,7 @@ func (s *Server) jsonTarget(w http.ResponseWriter, r *http.Request, v any, at fu
 	if !ok {
 		return sandbox{}, nil, false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<16), v, json.RejectUnknownMembers(true)); err != nil {
 		refuse(w, http.StatusBadRequest, "invalid_field", err.Error())
 		return sandbox{}, nil, false
 	}
