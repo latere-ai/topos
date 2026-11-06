@@ -55,8 +55,12 @@ so resuming everything never resumes what the person paused one by one.
 
 Both routes ask `trigger.hold` with a resource of kind `trigger` that
 names the `owner`, the caller, and, for the `PUT`, `held`. An
-authorizer that does not know `trigger.hold` denies it, and the routes
-answer `forbidden`; roll the authorizer that answers it first.
+authorizer built on the shared scaffold whose table does not list
+`trigger.hold` answers its question `400`, a malformed request, which
+`toposd` reads as no decision: the routes answer
+`authorizer_unavailable` and nothing is held. One that reads the action
+and denies it makes them answer `forbidden`. Roll out the authorizer
+that answers `trigger.hold` first.
 
 No trigger may be named `hold`: the route takes the name, and an apply of
 one is refused `invalid_manifest`.

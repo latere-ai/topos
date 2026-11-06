@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/authz/stub"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/proposal"
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -282,5 +284,38 @@ func TestTheQuestionsOfASessionsTriggerCalls(t *testing.T) {
 	hq := take()
 	if len(hq) != 1 || hq[0].Action != authorizer.ActionTriggerHold || hq[0].Resource.String("owner") != alice || hq[0].Resource.Fields["held"] != true {
 		t.Fatalf("trigger.hold was asked %+v", hq)
+	}
+}
+
+// TestAHoldAnAuthorizerDoesNotKnowIsUnavailable: an authorizer on the
+// shared scaffold whose table predates trigger.hold answers its question
+// 400, a malformed request, which toposd reads as no decision: both hold
+// routes answer authorizer_unavailable, not forbidden, and nothing is
+// held (docs/holding-triggers.md).
+func TestAHoldAnAuthorizerDoesNotKnowIsUnavailable(t *testing.T) {
+	full := authorizer.Vocabulary()
+	var older []authz.Action
+	for _, a := range full.Actions {
+		if a.Name != authorizer.ActionTriggerHold {
+			older = append(older, a)
+		}
+	}
+	v, err := authz.NewVocabulary(full.Core, older...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := stub.New(t, stub.WithVocabulary(v))
+	az, err := auth.NewAuthorizer(auth.AuthorizerOptions{URL: s.URL(), Token: s.Token(), HTTP: &http.Client{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, func(o *Options) { o.Guard = auth.Guard{Authorizer: az} })
+	for _, c := range []struct{ method, body string }{{http.MethodGet, ""}, {http.MethodPut, `{"held":true}`}} {
+		if a := f.do(c.method, "/v1/triggers/hold", "alice", c.body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {
+			t.Errorf("%s /v1/triggers/hold: %d %s", c.method, a.status, a.body)
+		}
+	}
+	if since, err := f.objects.Hold(t.Context(), alice); err != nil || since != nil {
+		t.Fatalf("held since %v, %v", since, err)
 	}
 }

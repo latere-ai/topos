@@ -54,6 +54,16 @@ committed: the commit log already holds that.
   tells an authorizer's author to, so an endpoint that answers a list
   with a page of its own and no `allow`, which `toposd` cannot read,
   fails them.
+- **The documentation says what the server does in four more places.**
+  `docs/configuration.md` says a boolean is read as Go's
+  `strconv.ParseBool` reads one, so `1` and `TRUE` are `true`, lists
+  `OTEL_EXPORTER_OTLP_ENDPOINT` and the OpenTelemetry variables beside
+  it, and links the section of spec 028 that designs `toposd check`.
+  `docs/holding-triggers.md` says an authorizer on the shared scaffold
+  that does not know `trigger.hold` makes the hold routes answer
+  `authorizer_unavailable`, not `forbidden`. The `authorizer` package
+  says a fork whose send is refused is only logged, since `toposd` sets
+  no event sink.
 
 ### Security
 

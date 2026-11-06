@@ -328,9 +328,12 @@
 // the send from that record. A send denied after that allow writes
 // nothing, and toposd reports the refusal as an event of spec 023's
 // sink, session.fork of the new session with the deny's code as its
-// outcome, which an endpoint that recorded the fork reads to close the
-// record. A send's allow that names another model or network changes
-// the fork before its message, as on any send.
+// outcome, which an endpoint that recorded the fork could read to close
+// the record. The sink is the server's Options.Sink, and cmd/toposd sets
+// none, so toposd only logs the event at info, and an endpoint
+// that recorded the fork does not hear of the refusal from toposd. A
+// send's allow that names another model or network changes the fork
+// before its message, as on any send.
 //
 // A create that names its model asks session.create with that model as
 // model, and its level as reasoning and effort, beside the create's other

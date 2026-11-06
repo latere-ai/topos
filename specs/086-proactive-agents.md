@@ -6,7 +6,7 @@ depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, 008-tools.md
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, internal/hosted/, internal/proposal/, internal/runnerapi/, internal/runnerrole/, runner/, harness/, harness/tools/, session/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-22
-updated: 2026-11-01
+updated: 2026-11-06
 author: changkun
 ---
 
@@ -532,8 +532,12 @@ The sessions list answers them as it answers every Session field
 
 An authorizer that does not know `origin` reads a session's call as its
 owner's own apply. An installation's authorizer is rolled first, so it
-decides the new questions from their first asking; until it learns
-`trigger.hold`, it denies it, and the hold route answers `forbidden`.
+decides the new questions from their first asking. Until it learns
+`trigger.hold`, one on the shared scaffold answers it `400`, which
+toposd reads as no decision, so the hold routes answer
+`authorizer_unavailable`; one that reads the action and denies it makes
+them answer `forbidden`
+(`internal/server.TestAHoldAnAuthorizerDoesNotKnowIsUnavailable`).
 
 ### Roll order
 
