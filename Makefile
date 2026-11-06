@@ -38,9 +38,10 @@ build:
 
 # The server on loopback as a self-hoster runs it: the local issuer with a
 # key generated once under out/, the owner policy, and admin as its admin.
-# `make token` prints a token for it. TOPOS_MODELS_URL, and TOPOS_MODELS_KEY
-# where the connection needs one, come from the environment: toposd does
-# not start without a model connection.
+# `make token` prints a token for it and nothing else on standard output, so
+# a shell can capture the token alone. TOPOS_MODELS_URL, and
+# TOPOS_MODELS_KEY where the connection needs one, come from the
+# environment: toposd does not start without a model connection.
 LOCAL_KEY := $(OUT_DIR)/local-issuer.pem
 LOCAL_ENV = TOPOS_PUBLIC_URL=http://127.0.0.1:8080 \
 	TOPOS_LOCAL_ISSUER_KEY="$$(cat $(LOCAL_KEY))" \
@@ -48,13 +49,14 @@ LOCAL_ENV = TOPOS_PUBLIC_URL=http://127.0.0.1:8080 \
 
 $(LOCAL_KEY):
 	@mkdir -p $(OUT_DIR)
-	openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out $@
+	@openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out $@
 
 run: build $(LOCAL_KEY)
 	$(LOCAL_ENV) TOPOS_PUBLIC_ADDR=127.0.0.1:8080 TOPOS_INTERNAL_ADDR=127.0.0.1:8081 \
 		$(OUT_DIR)/toposd
 
-token: build $(LOCAL_KEY)
+token: $(LOCAL_KEY)
+	@$(MAKE) --no-print-directory build >&2
 	@$(LOCAL_ENV) $(OUT_DIR)/toposd token
 
 fmt:
