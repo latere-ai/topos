@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 009-machines.md, 012-permissions-and-approvals
 affects: [docs/security.md, SECURITY.md]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-25
+updated: 2026-11-06
 author: changkun
 ---
 
@@ -95,8 +95,9 @@ the person.
 
 ### Reporting
 
-`SECURITY.md` names the reporting address and the response times. A
-report of a working exploit is handled privately until a fix ships.
+`SECURITY.md` names the private reporting routes and links the
+organization's policy, which sets the response times. A report of a
+working exploit is handled privately until a fix ships.
 
 ## Not in this spec
 
