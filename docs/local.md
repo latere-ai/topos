@@ -286,9 +286,11 @@ variables it reads are [The topos command](configuration.md#the-topos-command).
 
 ## Stop and clean up
 
-Stop the three things you started and confirm the ports are free. Each
-`make run` runs its process in the foreground of a `make`, so stopping
-the process ends the job:
+Stop the three things you started and confirm the ports are free.
+`make run` execs `out/toposd`, so the server is the `make` job's own
+child: stopping the server ends the job, and stopping the job (`kill`
+with the job number `jobs` shows in the shell that started it) stops the
+server.
 
 ```sh
 pkill -f '^out/toposd$'
@@ -296,9 +298,13 @@ make -C ../lux run-down
 podman stop topos-postgres
 ```
 
-The last line only applies if you started Postgres. `make clean`
-removes `out/`, with the data directory, the issuer key, the log and
-the build; then the two clones can go:
+The last line only applies if you started Postgres. The server answers
+`/readyz` with 503 as soon as it gets the signal and closes its ports
+3 seconds later, its drain delay, so the port check below prints `000`
+for 8080 only after that.
+
+`make clean` removes `out/`, with the data directory, the issuer key,
+the log and the build; then the two clones can go:
 
 ```sh
 make clean

@@ -41,7 +41,10 @@ build:
 # `make token` prints a token for it and nothing else on standard output, so
 # a shell can capture the token alone. TOPOS_MODELS_URL, and
 # TOPOS_MODELS_KEY where the connection needs one, come from the
-# environment: toposd does not start without a model connection.
+# environment: toposd does not start without a model connection. The
+# recipe execs toposd, so the shell make starts becomes toposd whatever
+# that shell does with its last command, and the SIGTERM make passes its
+# child when it is stopped reaches the server.
 LOCAL_KEY := $(OUT_DIR)/local-issuer.pem
 LOCAL_ENV = TOPOS_PUBLIC_URL=http://127.0.0.1:8080 \
 	TOPOS_LOCAL_ISSUER_KEY="$$(cat $(LOCAL_KEY))" \
@@ -53,7 +56,7 @@ $(LOCAL_KEY):
 
 run: build $(LOCAL_KEY)
 	$(LOCAL_ENV) TOPOS_PUBLIC_ADDR=127.0.0.1:8080 TOPOS_INTERNAL_ADDR=127.0.0.1:8081 \
-		$(OUT_DIR)/toposd
+		exec $(OUT_DIR)/toposd
 
 token: $(LOCAL_KEY)
 	@$(MAKE) --no-print-directory build >&2

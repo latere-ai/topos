@@ -34,6 +34,12 @@ committed: the commit log already holds that.
 - **`make token` prints the token alone.** The build's output goes to
   standard error, so `TOKEN=$(make token)` holds a token a server
   accepts.
+- **Stopping `make run` stops the server.** The target now execs
+  `out/toposd`, so the server is `make`'s own child whatever the shell
+  does with its last command, and the `SIGTERM` that `make` passes its
+  child when it is stopped reaches the server. A shell that stayed the
+  server's parent took that signal itself and left the server running
+  on its ports.
 - **A server with no sandbox service creates a session of an agent that
   names no machine.** With no `TOPOS_CELLA_URL` and `TOPOS_HOST_SESSIONS`
   off, such a session was refused at create with `machine_unavailable`,
