@@ -50,6 +50,10 @@ const (
 // fetched again.
 const hostTokenMargin = 2 * time.Minute
 
+// serviceTokenTimeout bounds one fetch of a service token, which runs
+// apart from the caller's deadline.
+const serviceTokenTimeout = 5 * time.Second
+
 // maxLifetime is the longest a hosted-agent token lives.
 const maxLifetime = 15 * time.Minute
 
@@ -190,11 +194,36 @@ func (c *Client) ServiceToken(ctx context.Context, audience string) (Token, erro
 	if audience == "" {
 		return Token{}, errors.New("identity: a service token names its audience")
 	}
+	type result struct {
+		t   Token
+		err error
+	}
+	// The fetch runs apart from the caller's deadline, so a caller that
+	// gives up early still leaves the token cached for the next one; the
+	// caller itself returns when its own context ends.
+	done := make(chan result, 1)
+	go func() {
+		t, err := c.serviceToken(context.WithoutCancel(ctx), audience)
+		done <- result{t, err}
+	}()
+	select {
+	case r := <-done:
+		return r.t, r.err
+	case <-ctx.Done():
+		return Token{}, ctx.Err()
+	}
+}
+
+// serviceToken returns the held token for audience, or fetches one
+// within serviceTokenTimeout and holds it.
+func (c *Client) serviceToken(ctx context.Context, audience string) (Token, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if t, ok := c.service[audience]; ok && c.o.Now().Add(hostTokenMargin).Before(t.ExpiresAt) {
 		return t, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, serviceTokenTimeout)
+	defer cancel()
 	tok, exp, err := c.grant(ctx, audience)
 	if err != nil {
 		return Token{}, err

@@ -23,6 +23,12 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- **A short deadline no longer leaves the next call without a service
+  token.** A call to another service that gave up while its token was
+  being fetched, as the 300 ms Oversight check does after each token
+  expires, now leaves the fetch to finish and hold the token, so the
+  next call is answered at once.
+
 - **`SECURITY.md` names the test that holds each commitment.** It lists
   what Topos protects against a caller, a steered model, the code a
   session runs and a runner, and what it does not defend. Report a

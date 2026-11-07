@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -210,5 +211,37 @@ func TestServiceTokenAsksTheAudience(t *testing.T) {
 	}
 	if _, err := c.ServiceToken(ctx, "other"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("a refused grant: %v", err)
+	}
+}
+
+// TestAServiceTokenFetchOutlivesACallerThatGaveUp: a caller whose
+// deadline ends before the provider answers returns its own error, the
+// fetch finishes and holds the token, and the next caller is answered
+// from it without a second fetch.
+func TestAServiceTokenFetchOutlivesACallerThatGaveUp(t *testing.T) {
+	c, _, _ := newClient(t)
+	var fetches atomic.Int32
+	c.fetch = func(ctx context.Context, _, _, _, _ string) (string, time.Time, error) {
+		fetches.Add(1)
+		select {
+		case <-time.After(100 * time.Millisecond):
+			return "tok", time.Now().Add(15 * time.Minute), nil
+		case <-ctx.Done():
+			return "", time.Time{}, ctx.Err()
+		}
+	}
+	short, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := c.ServiceToken(short, "oversight"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a caller past its deadline: %v", err)
+	}
+	// The second caller waits for the first fetch to finish and is
+	// answered from what it held.
+	tok, err := c.ServiceToken(t.Context(), "oversight")
+	if err != nil || tok.Value != "tok" {
+		t.Fatalf("the fetch was not held for the next caller: %+v %v", tok, err)
+	}
+	if n := fetches.Load(); n != 1 {
+		t.Fatalf("%d fetches for one token", n)
 	}
 }
