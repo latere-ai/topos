@@ -27,10 +27,6 @@
 # The decision service is the limend Service, pod port 7720; limend's own
 # policy admits the core in deploy/prod/networkpolicy.yaml of latere-ai/limen.
 #
-# The collector the namespace's monitoring injects is dialed at the node's
-# address on host port 40318, which Cilium translates to the collector's Pod
-# on container port 4318 before policy, so the Pods on 4318 are admitted.
-#
 # The object store, DigitalOcean Spaces in fra1, on 443: Storage answers a
 # read of a conversation's file with a redirect to a presigned address of
 # its bucket, latere-storage under fra1.digitaloceanspaces.com, and a large
@@ -107,16 +103,6 @@ spec:
               app.kubernetes.io/name: limend
       ports:
         - port: 7720
-          protocol: TCP
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: dash0-system
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: opentelemetry-collector
-      ports:
-        - port: 4318
           protocol: TCP
     - to:
         - ipBlock:

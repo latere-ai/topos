@@ -89,6 +89,9 @@ committed: the commit log already holds that.
   the authorizer to `https`, or set `TOPOS_AUTHORIZER_INSECURE=true` for
   an authorizer reached over a network it trusts. A loopback URL, such as
   `http://127.0.0.1:9000/authorize`, needs nothing.
+- **The network policy no longer admits the Dash0 collector.** The collector
+  is retired, so the egress rule to it is gone. Telemetry export stays off
+  until a deployment sets `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 ## v0.70.0 - 2026-11-05
 
