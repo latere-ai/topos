@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.71.0 - 2026-11-15
+
 ### Added
 
 - **The documentation has a page for each reader.** `docs/README.md`
