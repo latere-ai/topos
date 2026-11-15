@@ -151,7 +151,7 @@ reads it from the grants or the subject. The fire route's own question,
 
 ## Outcome
 
-Built on 2026-10-17, in no release yet. Every criterion has its test.
+Built on 2026-10-17, released in v0.42.0. Every criterion has its test.
 `TestAFiringNamesTheKeyThatFiredIt` failed against the code before the
 change at its first case, a key's firing asked no `fired_by`; against a
 first build that kept no key with a firing, at its held-firing case;

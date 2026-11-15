@@ -121,7 +121,7 @@ invalid resource until it reads the field; the client then hears
 
 ## Outcome
 
-Built on 2026-10-06, in no release yet, and not yet run against a live
+Built on 2026-10-06, released in v0.22.0, and not yet run against a live
 authorizer. Every criterion has its test. What shipped differs from the
 draft in these points:
 

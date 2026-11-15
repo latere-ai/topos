@@ -195,7 +195,7 @@ the agent. A delete of an agent in the local CLI's store.
 
 ## Outcome
 
-Built on 2026-10-14, in no release yet. Every criterion has its test,
+Built on 2026-10-14, released in v0.39.0. Every criterion has its test,
 and each test of the server's failed against the code with its part
 taken out: the named owner on either list, the owner on the question,
 the check of the agent's sessions, the read of an identity the provider

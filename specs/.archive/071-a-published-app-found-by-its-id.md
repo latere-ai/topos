@@ -239,8 +239,7 @@ before.
 
 ## Outcome
 
-Built on 2026-10-12, and the attachment's id on 2026-10-13, in no
-release yet, and not yet run against a live app host. Every criterion
+Built on 2026-10-12, and the attachment's id on 2026-10-13, released in v0.34.0, and not yet run against a live app host. Every criterion
 has its test, and each new test failed against the tool before the
 change. What shipped beyond the design above:
 

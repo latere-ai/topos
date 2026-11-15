@@ -117,7 +117,7 @@ together, since the header's new field is read by the harness.
 
 ## Outcome
 
-Built on 2026-10-06, in no release yet, and not yet run against a live
+Built on 2026-10-06, released in v0.21.0, and not yet run against a live
 authorizer. Every criterion has its test. What shipped differs from the
 draft in these points:
 

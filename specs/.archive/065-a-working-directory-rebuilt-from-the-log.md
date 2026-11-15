@@ -257,7 +257,7 @@ whose machine is still there. How a client shows the record.
 
 ## Outcome
 
-Built on 2026-10-11, in no release yet, and not yet run against a
+Built on 2026-10-11, released in v0.31.0, and not yet run against a
 model gateway or a Cella installation; the archive path is proven
 against the stub Cella. Every criterion has its test. What shipped
 differs from the first draft in these points:

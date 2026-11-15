@@ -158,7 +158,7 @@ absence as a short message with nothing attached and no tool before it.
 
 ## Outcome
 
-Built on 2026-10-08 on the branch `auto-level`, in no release yet. Every
+Built on 2026-10-08 on the branch `auto-level`, released in v0.27.0. Every
 criterion has its test in `internal/server/shape_test.go` and
 `authorizer/limits_test.go`. What shipped:
 

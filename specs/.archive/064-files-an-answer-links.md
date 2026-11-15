@@ -298,7 +298,7 @@ skips them.
 
 ## Outcome
 
-Built on 2026-10-11, in no release yet, and not yet run against a
+Built on 2026-10-11, released in v0.30.0, and not yet run against a
 model gateway or a Cella installation; the Cella machine is proven
 against the stub. Every criterion has its test. What shipped differs
 from the first draft in these points:

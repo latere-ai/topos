@@ -282,7 +282,7 @@ The reminder needs no other part: it is the harness's alone.
 
 ## Outcome
 
-Built on 2026-10-08, in no release yet. Every criterion has its test.
+Built on 2026-10-08, released in v0.28.0. Every criterion has its test.
 What shipped:
 
 - `harness/written.go` holds the detection (`writtenCall`) and the

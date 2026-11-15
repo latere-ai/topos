@@ -180,8 +180,8 @@ Postgres answer to.
 
 ## Outcome
 
-Built on 2026-10-21 as designed, every criterion with its test, and not
-released. Three changes against the first draft:
+Built on 2026-10-21 as designed, every criterion with its test, and
+released in v0.51.0. Three changes against the first draft:
 
 - The answer is the page every list answers, `{"items", "next_cursor"}`,
   rather than an object that repeats the day.

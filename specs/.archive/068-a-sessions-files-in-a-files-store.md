@@ -285,7 +285,7 @@ read `ref` reads every file by digest as before.
 
 ## Outcome
 
-Built on 2026-10-12, in no release yet, and run against the stub files
+Built on 2026-10-12, released in v0.35.0, and run against the stub files
 API, the stub identity provider and the stub Cella alone, not against an
 installation's files service. Every criterion has its test. Where the
 build differs from the design as first written:

@@ -164,7 +164,7 @@ not know; the words a client shows for each level.
 
 ## Outcome
 
-Built on 2026-10-25, in no release yet. Every criterion has its test,
+Built on 2026-10-25, released in v0.58.0. Every criterion has its test,
 and `TestAFiringStartsItsSessionOnTheTriggersModel` fails at every case
 but the trigger without a model when the actor does not pass the
 trigger's model to the create. Nothing diverged from the design.

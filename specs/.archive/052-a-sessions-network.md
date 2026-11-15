@@ -332,7 +332,7 @@ egress beyond what its driver applies.
 
 ## Outcome
 
-Built on 2026-10-06, in no release yet, and not yet run against a live
+Built on 2026-10-06, released in v0.21.0, and not yet run against a live
 authorizer or Cella. Every criterion has its test. The end-to-end tests
 live in `internal/hosted`, whose runner drives a session against the
 stub Cella and the stub model gateway; the stub Cella gained the

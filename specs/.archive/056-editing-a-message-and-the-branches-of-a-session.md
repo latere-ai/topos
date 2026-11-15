@@ -485,7 +485,7 @@ reversible).
 
 ## Outcome
 
-Built on 2026-10-07, in no release yet, and not yet run against a live
+Built on 2026-10-07, released in v0.23.0, and not yet run against a live
 authorizer or a model gateway. Every criterion has its test. What
 shipped differs from the draft in these points:
 

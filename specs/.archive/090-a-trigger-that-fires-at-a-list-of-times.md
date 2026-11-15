@@ -166,7 +166,7 @@ than one time.
 
 ## Outcome
 
-Built on 2026-10-25, in no release yet. Every criterion has its test;
+Built on 2026-10-25, released in v0.58.0. Every criterion has its test;
 the lateness rule, the wait's bound by the next time, the kept next fire
 time at an apply and at a release, and the trigger tool's path each fail
 their tests when undone. Building the tool's path found that a one-shot

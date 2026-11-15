@@ -327,7 +327,7 @@ has no marked file, and its requests build as before.
 
 ## Outcome
 
-Built on 2026-10-18 on the branch `brought-files`, in no release yet,
+Built on 2026-10-18 on the branch `brought-files`, released in v0.43.0,
 and run against the stub files API, the stub identity provider and the
 stub Cella alone, not against an installation's files service. Every
 criterion has its test. Where the build differs from the design as first

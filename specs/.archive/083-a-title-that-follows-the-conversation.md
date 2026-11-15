@@ -228,7 +228,7 @@ runs.
 
 ## Outcome
 
-Built on 2026-10-19, in no release yet, and not yet run against an
+Built on 2026-10-19, released in v0.47.0, and not yet run against an
 installation's authorizer. Every criterion has its test, and the two
 tasks passed live on `claude-haiku-5-5` called directly. What shipped
 differs from the draft in these points:

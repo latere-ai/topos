@@ -141,6 +141,6 @@ firings, not sessions.
 
 ## Outcome
 
-Built on 2026-10-12, in no release yet. Every criterion has its test,
+Built on 2026-10-12, released in v0.34.0. Every criterion has its test,
 and each new test failed against the code before the change. The
 search route takes no `trigger`, as the table above decides.

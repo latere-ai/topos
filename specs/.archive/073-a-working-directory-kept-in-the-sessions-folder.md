@@ -368,7 +368,7 @@ without a folder.
 
 ## Outcome
 
-Built on 2026-10-13, in no release yet, and run against the stub Cella
+Built on 2026-10-13, released in v0.38.0, and run against the stub Cella
 and the stub files API alone, not against a Cella installation or an
 installation's files service. Every criterion has its test. Where the
 build differs from the design as first written, or adds to it:

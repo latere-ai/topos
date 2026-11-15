@@ -263,7 +263,7 @@ reversible).
 
 ## Outcome
 
-Built on 2026-10-07 and not yet run against a model gateway or a Cella
+Built on 2026-10-07, released in v0.24.0, and not yet run against a model gateway or a Cella
 installation; the Cella machine is proven against the stub. Every
 criterion has its test. The first release of the roll order is v0.23.0:
 the type, its redaction and the blob route, with no runner appending

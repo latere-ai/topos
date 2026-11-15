@@ -168,7 +168,7 @@ to what it read before.
 
 ## Outcome
 
-Built on 2026-10-09 on the branch `semantic-auto`, in no release yet.
+Built on 2026-10-09 on the branch `semantic-auto`, released in v0.28.0.
 Every criterion has its test: `internal/server/opening_test.go`,
 `authorizer/limits_test.go` and `internal/config/config_test.go`, and the
 configuration tables of `docs/configuration.md` and spec 002 name the
