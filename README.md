@@ -32,7 +32,7 @@ v0.9.0. The Go packages of v0.7.0, an embeddable runtime, are gone from
 |---|---|---|
 | Sessions | the session log in memory, in a directory or in Postgres; forks, archive, summaries, delete, and search over what sessions said | external runners that append to a session, and handoff between them |
 | The loop | the built-in tools, approval modes, subagents, context compaction, and a checkpoint of the working directory at every turn | |
-| Running it | `topos run`, `confirm` and `rewind` on your own machine with no server; `toposd`, which serves the API under `/v1` with its OpenAPI document and runs hosted sessions on Cella sandboxes, in its own process or in separate runners | `toposd check` and the conformance suite; the release archives |
+| Running it | `topos run`, `confirm` and `rewind` on your own machine with no server; `toposd`, which serves the API under `/v1` with its OpenAPI document and runs hosted sessions on Cella sandboxes, in its own process or in separate runners; release binaries and a signed image | `toposd check` and the conformance suite |
 | People in a session | the `question` tool, approval mode and title changes after the start, edited messages with their forks kept as a tree, messages sent while the agent works | |
 | Agents and triggers | agents owned by a person or an organization; triggers on a schedule, at listed times or on delivered events, with weekly allowances | |
 | Machines | a sandbox that failed is started again with its files; a working directory rebuilt from the log; the sites a session's machine may reach, set per session | |
