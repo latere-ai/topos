@@ -74,9 +74,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          # 0.0.82 and later apply seccomp from a nested user namespace, which
-          # the hosted runner refuses without CAP_SYS_ADMIN.
-          npm install -g @anthropic-ai/sandbox-runtime@0.0.81
+          # The runner's AppArmor also confines the user namespace an
+          # unconfined process makes, which refuses the nested one the
+          # runtime applies its seccomp filter from.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0
+          npm install -g @anthropic-ai/sandbox-runtime
           srt echo ok
       - name: cellad of the pinned Cella
         run: go install "latere.ai/x/cella/cmd/cellad@$(go list -m -f '{{.Version}}' latere.ai/x/cella)"
