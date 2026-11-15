@@ -23,6 +23,8 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- Built with Go 1.27.4, which fixes GO-2026-6859.
+
 - **A short deadline no longer leaves the next call without a service
   token.** A call to another service that gave up while its token was
   being fetched, as the 300 ms Oversight check does after each token
