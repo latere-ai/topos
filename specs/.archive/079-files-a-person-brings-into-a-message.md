@@ -1,12 +1,12 @@
 ---
 title: "Files a person brings into a message: a file of the person's own files named by source and read at the send with the session's own token, a short text file the model reads in its request without a machine, and Word, Excel and PowerPoint documents the read tool reads as text"
-status: testing
+status: complete
 track: core
 depends_on: [008-tools.md, 015-api.md, 056-editing-a-message-and-the-branches-of-a-session.md, 061-a-messages-shape-and-the-route-an-allow-names.md, 063-a-messages-opening-for-an-authorizer-that-routes-by-it.md, 068-a-sessions-files-in-a-files-store.md]
 affects: [session/, harness/, harness/tools/, prompts/, internal/server/, internal/filestore/, internal/credentials/, cmd/toposd/, test/stubs/arcastub/, api/openapi.yaml]
 effort: medium
 created: 2026-10-18
-updated: 2026-10-18
+updated: 2026-11-15
 author: changkun
 ---
 

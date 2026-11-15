@@ -1,12 +1,12 @@
 ---
 title: "A session's files in a files store: an allow of a create names a folder at an Arca-compatible files API, a message's attachments and an answer's kept files are written there by the session and named by ref, the blob route reads them by digest as a stream, and a fork copies them on the server"
-status: testing
+status: complete
 track: core
 depends_on: [015-api.md, 017-external-runners-handoff-fork.md, 018-credentials-and-secrets.md, 055-images-an-answer-shows.md, 056-editing-a-message-and-the-branches-of-a-session.md, 058-what-a-create-allow-attaches.md, 064-files-an-answer-links.md, 065-a-working-directory-rebuilt-from-the-log.md]
 affects: [authorizer/, session/, harness/, internal/filestore/, runner/, internal/hosted/, internal/server/, internal/identity/, internal/config/, internal/store/postgres/, session/dir/, cmd/toposd/, test/stubs/arcastub/, test/stubs/idpstub/, api/openapi.yaml, docs/configuration.md]
 effort: large
 created: 2026-10-12
-updated: 2026-10-13
+updated: 2026-11-15
 author: changkun
 ---
 

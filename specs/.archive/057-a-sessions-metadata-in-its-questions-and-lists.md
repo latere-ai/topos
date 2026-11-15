@@ -1,12 +1,12 @@
 ---
 title: "A session's metadata in its questions and lists: the create and fork questions carry it, a list filters by one entry, and a change files a session elsewhere"
-status: testing
+status: complete
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 014-store.md, 015-api.md, 023-events-and-observability.md, 054-a-sessions-title-and-filing.md, 056-editing-a-message-and-the-branches-of-a-session.md]
 affects: [internal/server/, session/, internal/store/postgres/, internal/store/postgres/migrations/, client/, api/, docs/]
 effort: small
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-11-15
 author: changkun
 ---
 

@@ -1,12 +1,12 @@
 ---
 title: "A working directory rebuilt from the log: a machine made new for a session that lost its own, or for a fork with no checkpoint, gets back the files the session's log holds, and the model is told what is back and what is not"
-status: testing
+status: complete
 track: core
 depends_on: [008-tools.md, 009-machines.md, 017-external-runners-handoff-fork.md, 034-checkpoints-and-rewind.md, 064-files-an-answer-links.md]
 affects: [harness/tools/, runner/, session/, machine/, prompts/transcript/, internal/server/, api/openapi.yaml]
 effort: medium
 created: 2026-10-11
-updated: 2026-10-13
+updated: 2026-11-15
 author: changkun
 ---
 

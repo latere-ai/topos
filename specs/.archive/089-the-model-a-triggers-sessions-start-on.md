@@ -1,12 +1,12 @@
 ---
 title: "The model a trigger's sessions start on: spec.session.model names the model and the reasoning level each session a firing starts begins on, in the shape a session's change of its model takes, asked at session.create as a create that names its model is and answered by the allow as the agent's own model is, while a firing that continues a session leaves its model"
-status: testing
+status: complete
 track: core
 depends_on: [.archive/022-triggers.md, .archive/038-routed-models.md, .archive/049-reasoning.md, 077-rollouts.md, 086-proactive-agents.md]
 affects: [manifest/v1/, manifest/, internal/server/, internal/proposal/, api/openapi.yaml, docs/]
 effort: small
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-11-15
 author: changkun
 ---
 

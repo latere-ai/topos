@@ -1,12 +1,12 @@
 ---
 title: "A title that follows the conversation: after a turn a person started, the harness asks a small model whether the session's title still names what the conversation is about and writes a new one when it does not, an agent turns it on with spec.title, and the sessions it ran before are named once"
-status: testing
+status: complete
 track: core
 depends_on: [.archive/004-session-log.md, .archive/006-identity.md, .archive/007-models.md, 010-context.md, 016-runners.md, 017-external-runners-handoff-fork.md, 025-task-suite.md, .archive/038-routed-models.md, .archive/049-reasoning.md, 054-a-sessions-title-and-filing.md, 061-a-messages-shape-and-the-route-an-allow-names.md]
 affects: [manifest/v1/, manifest/, session/, harness/, runner/, authorizer/, prompts/, internal/server/, internal/runnerapi/, internal/runnerrole/, cmd/toposd/, test/tasks/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-19
-updated: 2026-10-23
+updated: 2026-11-15
 author: changkun
 ---
 

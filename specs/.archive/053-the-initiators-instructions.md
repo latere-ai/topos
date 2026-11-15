@@ -1,12 +1,12 @@
 ---
 title: "The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, which the session records and the model reads after its agent's own"
-status: testing
+status: complete
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 010-context.md, 011-instructions-and-skills.md, 015-api.md, 038-routed-models.md]
 affects: [authorizer/, session/, harness/, prompts/context/, internal/server/, api/openapi.yaml, docs/]
 effort: small
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-11-15
 author: changkun
 ---
 

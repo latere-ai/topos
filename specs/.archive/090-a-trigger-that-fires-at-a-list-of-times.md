@@ -1,12 +1,12 @@
 ---
 title: "A trigger that fires at a list of times: spec.times lists 1 to MaxTimes instants, each fired once as a trigger's single at is, late past maxAge or once the next listed time comes, a refusal that resets waiting no later than the next time, the latest time's firing spending the trigger, times already past kept and never fired, the runs read answering fires_on times, and the trigger tool keeping the list"
-status: testing
+status: complete
 track: core
 depends_on: [.archive/022-triggers.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 088-a-triggers-runs-and-fire-times-read-for-a-forecast.md]
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/proposal/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-11-15
 author: changkun
 ---
 

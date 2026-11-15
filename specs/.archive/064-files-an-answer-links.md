@@ -1,12 +1,12 @@
 ---
 title: "Files an answer links: each local file an agent message links is kept from the machine as a blob of the session, recorded by files.kept beside the images the message shows, and answered by the blob route as a download"
-status: testing
+status: complete
 track: core
 depends_on: [044-reading-a-sessions-files.md, 055-images-an-answer-shows.md]
 affects: [session/, harness/, runner/, machine/cella/, internal/server/, internal/runnerapi/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-11
-updated: 2026-10-25
+updated: 2026-11-15
 author: changkun
 ---
 

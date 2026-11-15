@@ -1,12 +1,12 @@
 ---
 title: "Images an answer shows: each local image an agent message names is kept from the machine as a blob of the session, recorded beside the message, and served by the blob route as an image"
-status: testing
+status: complete
 track: core
 depends_on: [016-runners.md, 044-reading-a-sessions-files.md]
 affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-29
+updated: 2026-11-15
 author: changkun
 ---
 

@@ -1,12 +1,12 @@
 ---
 title: "A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list"
-status: testing
+status: complete
 track: core
 depends_on: [017-external-runners-handoff-fork.md, 038-routed-models.md]
 affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, authorizer/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-29
+updated: 2026-11-15
 author: changkun
 ---
 

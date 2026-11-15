@@ -1,12 +1,12 @@
 ---
 title: "A message's shape and the route an allow names: a send tells the authorizer how long the message is, what it attaches and links, and whether the last turn ran a tool, and an allow may name the routed name it chose on the way to the model, which the session keeps beside it"
-status: testing
+status: complete
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 015-api.md, 038-routed-models.md, 051-a-turn-moves-off-a-model-that-cannot-serve.md, 056-editing-a-message-and-the-branches-of-a-session.md]
 affects: [authorizer/, session/, internal/server/, api/openapi.yaml, docs/]
 effort: small
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-11-15
 author: changkun
 ---
 

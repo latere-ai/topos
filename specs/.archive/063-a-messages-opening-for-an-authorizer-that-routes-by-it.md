@@ -1,12 +1,12 @@
 ---
 title: "A message's opening for an authorizer that routes by it: an allow may ask for each later message's opening, which the session keeps beside its route under the operator's ceiling; and a message may say its client shows an authorizer's ask, and name the ask it answers"
-status: testing
+status: complete
 track: core
 depends_on: [006-identity.md, 015-api.md, 038-routed-models.md, 056-editing-a-message-and-the-branches-of-a-session.md, 061-a-messages-shape-and-the-route-an-allow-names.md]
 affects: [authorizer/, session/, internal/config/, internal/server/, api/openapi.yaml, docs/configuration.md, docs/]
 effort: medium
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-11-15
 author: changkun
 ---
 

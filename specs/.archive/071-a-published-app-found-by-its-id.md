@@ -1,12 +1,12 @@
 ---
 title: "A published app found by its id: a publish result records the app's id, an allow may attach an app with its id, and every later call finds the app by it, so a rename of the app at its host keeps a conversation publishing to the same app"
-status: testing
+status: complete
 track: core
 depends_on: [043-publishing-a-folder.md, 058-what-a-create-allow-attaches.md, 059-publishing-to-a-chosen-app.md, 067-a-name-and-an-address-for-a-published-site.md]
 affects: [session/, authorizer/, harness/tools/, internal/publish/, internal/hosted/, internal/server/, runner/, api/, docs/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-25
+updated: 2026-11-15
 author: changkun
 ---
 

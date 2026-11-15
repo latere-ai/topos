@@ -1,12 +1,12 @@
 ---
 title: "A session's title and its filing: the title member of PATCH, the session.title_changed event, and an archive of an idle session"
-status: testing
+status: complete
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 015-api.md, 017-external-runners-handoff-fork.md, 041-approval-mode-change.md]
 affects: [session/, internal/server/, api/openapi.yaml, docs/]
 effort: small
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-11-15
 author: changkun
 ---
 

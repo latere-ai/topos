@@ -1,12 +1,12 @@
 ---
 title: "A firing names the key that fired it: a session a trigger's fire starts carries fired_by on its create, the token_use and authorization_details of the fire request's own token when a key minted it, so an authorizer can hold the session to that key"
-status: testing
+status: complete
 track: core
 depends_on: [006-identity.md, 014-store.md, 022-triggers.md]
 affects: [internal/auth/, internal/triggers/, internal/server/, internal/store/, internal/store/dir/, internal/store/postgres/, internal/store/postgres/migrations/, authorizer/]
 effort: small
 created: 2026-10-17
-updated: 2026-10-17
+updated: 2026-11-15
 author: changkun
 ---
 

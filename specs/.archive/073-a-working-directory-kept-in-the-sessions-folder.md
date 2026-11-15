@@ -1,12 +1,12 @@
 ---
 title: "A working directory kept in the session's folder: at the end of each turn that changed files, the working directory's latest state is written as plain files under work/ in the session's folder of a files store, and a new machine, a fork's first among them, is restored from it before the log gives back what it does not hold"
-status: testing
+status: complete
 track: core
 depends_on: [009-machines.md, 017-external-runners-handoff-fork.md, 034-checkpoints-and-rewind.md, 064-files-an-answer-links.md, 065-a-working-directory-rebuilt-from-the-log.md, 068-a-sessions-files-in-a-files-store.md]
 affects: [session/, harness/, harness/tools/, machine/, machine/cella/, cmd/topos-machine/, runner/, internal/filestore/, internal/server/, prompts/transcript/, test/stubs/arcastub/, api/openapi.yaml, docs/configuration.md, docs/editing-a-message.md]
 effort: large
 created: 2026-10-13
-updated: 2026-10-25
+updated: 2026-11-15
 author: changkun
 ---
 

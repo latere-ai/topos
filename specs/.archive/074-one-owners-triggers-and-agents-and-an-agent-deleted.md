@@ -1,12 +1,12 @@
 ---
 title: "One owner's triggers and agents, and an agent deleted: the trigger and agent lists take `owner=<subject>`, which their questions carry, and `DELETE /v1/agents/{ref}` deletes an agent with its versions once no session of it is left"
-status: testing
+status: complete
 track: core
 depends_on: [003-manifest.md, 006-identity.md, 014-store.md, 015-api.md, 018-credentials-and-secrets.md, 022-triggers.md, 036-organization-owners.md, 040-session-deletion.md]
 affects: [authorizer/, internal/auth/, internal/identity/, internal/server/, internal/store/, test/stubs/idpstub/, api/]
 effort: small
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-11-15
 author: changkun
 ---
 

@@ -1,12 +1,12 @@
 ---
 title: "A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow"
-status: testing
+status: complete
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 038-routed-models.md, 039-questions.md]
 affects: [manifest/, authorizer/, session/, harness/, runner/, machine/, internal/hosted/, internal/server/, internal/toposcli/, test/stubs/cellastub/, api/openapi.yaml, prompts/results/call/, prompts/transcript/, docs/]
 effort: large
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-11-15
 author: changkun
 ---
 

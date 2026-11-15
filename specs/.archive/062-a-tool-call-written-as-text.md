@@ -1,12 +1,12 @@
 ---
 title: "A tool call written as text: a response that writes a call of a tool its request offered into its text, instead of calling it, is not kept, its model is reminded once to call the tool, a routed turn whose model does it again moves to another model once, and the log says which"
-status: testing
+status: complete
 track: core
 depends_on: [005-harness-loop.md, 007-models.md, 008-tools.md, 039-questions.md, 051-a-turn-moves-off-a-model-that-cannot-serve.md]
 affects: [harness/, session/, prompts/, runner/, internal/runnerapi/, internal/server/, internal/hosted/, cmd/toposd/, authorizer/doc.go, api/openapi.yaml, docs/questions.md]
 effort: medium
 created: 2026-10-08
-updated: 2026-10-29
+updated: 2026-11-15
 author: changkun
 ---
 

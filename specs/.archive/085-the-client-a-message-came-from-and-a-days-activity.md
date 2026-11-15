@@ -1,12 +1,12 @@
 ---
 title: "The client a message came from, and a day's activity: the server writes the OAuth client of the verified token on every sender it records, and one route answers, for one day, how many messages each person sent from each client, how many sessions they started from each, and how many answers to their messages finished, counts with no content"
-status: testing
+status: complete
 track: core
 depends_on: [.archive/004-session-log.md, .archive/006-identity.md, .archive/014-store.md, 015-api.md, .archive/022-triggers.md, 056-editing-a-message-and-the-branches-of-a-session.md, 077-rollouts.md]
 affects: [session/, authorizer/, internal/auth/, internal/server/, internal/store/postgres/, api/openapi.yaml, docs/configuration.md, docs/activity.md]
 effort: medium
 created: 2026-10-21
-updated: 2026-10-29
+updated: 2026-11-15
 author: changkun
 ---
 

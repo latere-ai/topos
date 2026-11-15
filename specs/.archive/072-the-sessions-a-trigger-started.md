@@ -1,12 +1,12 @@
 ---
 title: "The sessions a trigger started: the sessions list and its summary take trigger=<id>, which keeps the sessions that trigger started beside every other filter, the cursor and group=tree"
-status: testing
+status: complete
 track: core
 depends_on: [014-store.md, 015-api.md, 022-triggers.md, 056-editing-a-message-and-the-branches-of-a-session.md, 057-a-sessions-metadata-in-its-questions-and-lists.md]
 affects: [session/, internal/server/, internal/store/postgres/, internal/store/postgres/migrations/, api/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-25
+updated: 2026-11-15
 author: changkun
 ---
 
