@@ -495,21 +495,6 @@ their `depends_on` allows. A spec that spans phases (009, 013, 016,
 017, 024, 034) is dispatched once and its acceptance rows are marked by
 the phase that proves them.
 
-As of 2026-10-02 (v0.11.1), phase 0 is closed and phases 1 to 3 are
-built in large part with none closed. Phase 1 is open because no
-release has measured the task suite's bar against a pinned model
-(025). Phase 2 is open because the conformance suite (029) and the
-release job that runs it (028) are not built. Phase 3 is open because
-memory stores (020) are not built and the Cella tier's three tests are
-not written. Phase 4 has fork and none of the external runner or
-handoff. Of phase 5, 037 is complete, and 038 since, on 2026-10-04, in
-no release yet; 039 is built but for its instruction tier against a
-real model, in no release yet, and 047 likewise, on 2026-10-05.
-
-Of the specs drafted on 2026-10-07, 057 comes first, since an
-authorizer decides attachments by the label it reads; 058 follows, and
-059 and 060 each build on 058 and can run in parallel.
-
 Work ran ahead of this order, so many specs are `in-progress` while
 specs they build on are open; each Outcome section names what shipped
 and in which release.
