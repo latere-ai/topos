@@ -51,7 +51,10 @@ const (
 // IdempotencyTable is the lifecycle of an idempotency record. Begin
 // reserves a key; Finish stores the answer of the request that reserved it
 // and moves a reserved record to done, and only that: an answer already
-// stored is never overwritten. Abandon removes a record in either state.
+// stored is never overwritten, and a reservation that was replaced after it
+// expired no longer exists for its holder, which is a step from removed.
+// Abandon removes a record in either state, but only the reservation its
+// holder took.
 var IdempotencyTable = statemachine.Must(statemachine.New("Idempotency", []IdempotencyState{IdempotencyReserved}, map[IdempotencyState][]IdempotencyState{
 	IdempotencyReserved: {IdempotencyDone, IdempotencyRemoved},
 	IdempotencyDone:     {IdempotencyRemoved},

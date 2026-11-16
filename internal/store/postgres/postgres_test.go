@@ -287,7 +287,7 @@ func TestObjectCallsOnAClosedStoreReturnTheirErrors(t *testing.T) {
 		"Archive":     func() error { return st.Archive(t.Context(), a.ID, time.Now()) },
 		"Begin":       func() error { _, _, err := st.Begin(t.Context(), rec); return err },
 		"Finish":      func() error { return st.Finish(t.Context(), rec) },
-		"Abandon":     func() error { return st.Abandon(t.Context(), "alice", "k") },
+		"Abandon":     func() error { return st.Abandon(t.Context(), rec) },
 	} {
 		if err := call(); err == nil || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrConflict) {
 			t.Errorf("%s on a closed store: %v", name, err)

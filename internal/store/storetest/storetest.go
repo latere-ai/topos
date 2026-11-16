@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/statemachine"
+
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/session"
@@ -57,6 +59,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("delete agent", func(t *testing.T) { deleteAgent(t, f) })
 	t.Run("lookup", func(t *testing.T) { lookup(t, f) })
 	t.Run("idempotency", func(t *testing.T) { idempotency(t, f) })
+	t.Run("idempotency replaced reservation", func(t *testing.T) { idempotencyReplaced(t, f) })
 	t.Run("triggers", func(t *testing.T) { triggers(t, f) })
 	t.Run("trigger schedules", func(t *testing.T) { triggerSchedules(t, f) })
 	t.Run("trigger leases", func(t *testing.T) { triggerLeases(t, f) })
@@ -523,7 +526,7 @@ func idempotency(t *testing.T, f Factory) {
 	if _, fresh, err := st.Begin(t.Context(), r); err != nil || !fresh {
 		t.Fatalf("a key past its expiry: %v, %v", fresh, err)
 	}
-	if err := st.Abandon(t.Context(), "alice", "k1"); err != nil {
+	if err := st.Abandon(t.Context(), r); err != nil {
 		t.Fatal(err)
 	}
 	if _, fresh, err := st.Begin(t.Context(), r); err != nil || !fresh {
@@ -531,5 +534,64 @@ func idempotency(t *testing.T, f Factory) {
 	}
 	if err := st.Finish(t.Context(), store.Idempotency{Subject: "carol", Key: "none"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("finishing a record never begun: %v", err)
+	}
+}
+
+// idempotencyReplaced runs a request past its reservation's expiry: the retry
+// that replaced the reservation keeps it, and the request that outlived it
+// can neither store its answer nor remove it. The expiries carry nanoseconds,
+// so a reservation matching itself shows on every store's timestamp
+// precision.
+func idempotencyReplaced(t *testing.T, f Factory) {
+	ctx := t.Context()
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ttl := time.Hour + 123456789*time.Nanosecond
+	a := store.Idempotency{Subject: "alice", Key: "k", Route: "POST /v1/sessions", BodyHash: "h", ExpiresAt: clock.Now().Add(ttl)}
+	if _, fresh, err := st.Begin(ctx, a); err != nil || !fresh {
+		t.Fatalf("A reserves: %v, %v", fresh, err)
+	}
+	clock.Advance(ttl)
+	b := a
+	b.ExpiresAt = clock.Now().Add(ttl)
+	if _, fresh, err := st.Begin(ctx, b); err != nil || !fresh {
+		t.Fatalf("B replaces the expired reservation: %v, %v", fresh, err)
+	}
+	a.Status, a.ContentType, a.Body = 201, "application/json", []byte(`{"id":"from_a"}`)
+	if err := st.Finish(ctx, a); !errors.Is(err, statemachine.ErrIllegalTransition) {
+		t.Fatalf("A finishes a replaced reservation: %v", err)
+	}
+	if err := st.Abandon(ctx, a); err != nil {
+		t.Fatalf("A abandons a replaced reservation: %v", err)
+	}
+	held, fresh, err := st.Begin(ctx, b)
+	if err != nil || fresh || held.Done {
+		t.Fatalf("B's reservation after A's Finish and Abandon: %+v, %v, %v", held, fresh, err)
+	}
+	b.Status, b.ContentType, b.Body = 200, "application/json", []byte(`{"id":"from_b"}`)
+	if err := st.Finish(ctx, b); err != nil {
+		t.Fatalf("B finishes its own reservation: %v", err)
+	}
+	held, fresh, err = st.Begin(ctx, b)
+	if err != nil || fresh || !held.Done || held.Status != 200 || string(held.Body) != `{"id":"from_b"}` {
+		t.Fatalf("a repeat after B's answer: %+v, %v, %v", held, fresh, err)
+	}
+	if err := st.Finish(ctx, b); !errors.Is(err, statemachine.ErrIllegalTransition) {
+		t.Fatalf("B finishes its answer twice: %v", err)
+	}
+	if err := st.Finish(ctx, a); !errors.Is(err, statemachine.ErrIllegalTransition) {
+		t.Fatalf("A finishes over B's answer: %v", err)
+	}
+	if err := st.Abandon(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if held, _, err := st.Begin(ctx, b); err != nil || !held.Done {
+		t.Fatalf("B's answer after A's late Abandon: %+v, %v", held, err)
+	}
+	if err := st.Abandon(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, fresh, err := st.Begin(ctx, b); err != nil || !fresh {
+		t.Fatalf("a key after its holder abandoned it: %v, %v", fresh, err)
 	}
 }

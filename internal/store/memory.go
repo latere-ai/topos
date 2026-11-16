@@ -195,6 +195,9 @@ func (m *Memory) Finish(_ context.Context, r Idempotency) error {
 	if !ok {
 		return fmt.Errorf("%w: no reserved record for the key", ErrNotFound)
 	}
+	if !held.ExpiresAt.Equal(r.ExpiresAt) {
+		return fmt.Errorf("the reservation was replaced by another request: %w", IdempotencyTable.Check(IdempotencyRemoved, IdempotencyDone))
+	}
 	if held.Done {
 		return fmt.Errorf("the record already holds its answer: %w", IdempotencyTable.Check(IdempotencyDone, IdempotencyDone))
 	}
@@ -203,10 +206,13 @@ func (m *Memory) Finish(_ context.Context, r Idempotency) error {
 	return nil
 }
 
-func (m *Memory) Abandon(_ context.Context, subject, key string) error {
+func (m *Memory) Abandon(_ context.Context, r Idempotency) error {
+	k := [2]string{r.Subject, r.Key}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.idem, [2]string{subject, key})
+	if held, ok := m.idem[k]; ok && held.ExpiresAt.Equal(r.ExpiresAt) {
+		delete(m.idem, k)
+	}
 	return nil
 }
 

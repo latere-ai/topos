@@ -252,7 +252,7 @@ func TestWriteFailuresLeaveTheStoreAsItWas(t *testing.T) {
 	if a, err := st.Agent(t.Context(), id); err != nil || a.Latest != 1 {
 		t.Fatalf("a failed version counted %+v, %v", a, err)
 	}
-	if err := st.Abandon(t.Context(), "nobody", "none"); err != nil {
+	if err := st.Abandon(t.Context(), store.Idempotency{Subject: "nobody", Key: "none"}); err != nil {
 		t.Fatalf("abandoning no record: %v", err)
 	}
 	if held, fresh, err := st.Begin(t.Context(), r); err != nil || fresh || held.Done {
@@ -406,7 +406,7 @@ func TestACorruptIdempotencyRecordIsRefused(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(path, "held"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Abandon(t.Context(), r.Subject, r.Key); err == nil {
+	if err := st.Abandon(t.Context(), r); err == nil {
 		t.Fatal("abandoning a record that cannot be removed")
 	}
 }

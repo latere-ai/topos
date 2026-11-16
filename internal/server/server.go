@@ -516,7 +516,7 @@ func (s *Server) idempotent(ctx context.Context, c *call) {
 		writeError(rw, s.o.Log, err)
 	}
 	if rw.status >= http.StatusInternalServerError {
-		if err := s.o.Objects.Abandon(ctx, rec.Subject, rec.Key); err != nil {
+		if err := s.o.Objects.Abandon(ctx, rec); err != nil {
 			s.o.Log.ErrorContext(ctx, "abandon an idempotency key", "err", err)
 		}
 		return

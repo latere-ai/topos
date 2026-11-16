@@ -18,6 +18,7 @@ committed: the commit log already holds that.
 ### Fixed
 
 - **An idempotency answer already stored is no longer overwritten.** A second `Finish` of a record wrote its answer over the first, so two requests that held one key could leave the answer of the second. It is now refused and the first answer stays.
+- **A slow request no longer overrides the retry that replaced it.** A request that outlived its idempotency reservation could store its answer over, or remove, the reservation of the retry that took its place. Its answer is now refused and its removal leaves the retry's reservation alone.
 
 ## v0.71.0 - 2026-11-15
 

@@ -443,6 +443,9 @@ func (s *Store) Finish(_ context.Context, r store.Idempotency) error {
 	if !ok {
 		return fmt.Errorf("%w: no reserved record for the key", store.ErrNotFound)
 	}
+	if !held.ExpiresAt.Equal(r.ExpiresAt) {
+		return fmt.Errorf("the reservation was replaced by another request: %w", store.IdempotencyTable.Check(store.IdempotencyRemoved, store.IdempotencyDone))
+	}
 	if held.Done {
 		return fmt.Errorf("the record already holds its answer: %w", store.IdempotencyTable.Check(store.IdempotencyDone, store.IdempotencyDone))
 	}
@@ -450,13 +453,17 @@ func (s *Store) Finish(_ context.Context, r store.Idempotency) error {
 	return s.writeIdempotency(r)
 }
 
-func (s *Store) Abandon(_ context.Context, subject, key string) error {
+func (s *Store) Abandon(_ context.Context, r store.Idempotency) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.Remove(s.idempotencyPath(subject, key)); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
+	held, ok, err := s.readIdempotency(r.Subject, r.Key)
+	if err != nil {
+		return err
+	}
+	if !ok || !held.ExpiresAt.Equal(r.ExpiresAt) {
+		return nil
+	}
+	if err := os.Remove(s.idempotencyPath(r.Subject, r.Key)); err != nil {
 		return fmt.Errorf("dir: remove an idempotency record: %w", err)
 	}
 	return syncDir(filepath.Join(s.root, kindIdempotency))

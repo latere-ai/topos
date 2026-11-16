@@ -99,8 +99,9 @@ func TestIdempotencyWriters(t *testing.T) {
 	clock := objstoretest.NewClock()
 	st := fresh(t, Options{Now: clock.Now})
 	ctx := t.Context()
+	expires := clock.Now().Add(time.Hour)
 	record := func(key string) store.Idempotency {
-		return store.Idempotency{Subject: "alice", Key: key, Route: "POST /v1/sessions", BodyHash: "h", Status: 201, ExpiresAt: clock.Now().Add(time.Hour)}
+		return store.Idempotency{Subject: "alice", Key: key, Route: "POST /v1/sessions", BodyHash: "h", Status: 201, ExpiresAt: expires}
 	}
 	d := statemachinetest.Driver[store.IdempotencyState]{
 		Enter: func(t *testing.T, state store.IdempotencyState) string {
@@ -114,7 +115,7 @@ func TestIdempotencyWriters(t *testing.T) {
 					t.Fatalf("finish: %v", err)
 				}
 			case store.IdempotencyRemoved:
-				if err := st.Abandon(ctx, "alice", key); err != nil {
+				if err := st.Abandon(ctx, record(key)); err != nil {
 					t.Fatalf("abandon: %v", err)
 				}
 			case store.IdempotencyReserved:
@@ -130,7 +131,7 @@ func TestIdempotencyWriters(t *testing.T) {
 				}
 				return err
 			case store.IdempotencyRemoved:
-				removed, err := st.abandon(ctx, "alice", key)
+				removed, err := st.abandon(ctx, record(key))
 				if err == nil && !removed {
 					return refused("abandon " + key)
 				}

@@ -304,7 +304,7 @@ func (s *Store) Begin(ctx context.Context, r store.Idempotency) (store.Idempoten
 
 func (s *Store) Finish(ctx context.Context, r store.Idempotency) error {
 	tag, err := s.pool.Exec(ctx, `UPDATE idempotency_keys SET route = $3, body_hash = $4, done = true, status = $5,
-		content_type = $6, body = $7, expires_at = $8 WHERE subject = $1 AND key = $2 AND NOT done`,
+		content_type = $6, body = $7 WHERE subject = $1 AND key = $2 AND expires_at = $8 AND NOT done`,
 		r.Subject, r.Key, r.Route, r.BodyHash, r.Status, r.ContentType, r.Body, r.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("postgres: finish an idempotency record: %w", err)
@@ -312,27 +312,29 @@ func (s *Store) Finish(ctx context.Context, r store.Idempotency) error {
 	if tag.RowsAffected() == 1 {
 		return nil
 	}
-	var done bool
-	err = s.pool.QueryRow(ctx, `SELECT done FROM idempotency_keys WHERE subject = $1 AND key = $2`, r.Subject, r.Key).Scan(&done)
+	var replaced bool
+	err = s.pool.QueryRow(ctx, `SELECT expires_at <> $3 FROM idempotency_keys WHERE subject = $1 AND key = $2`, r.Subject, r.Key, r.ExpiresAt).Scan(&replaced)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return fmt.Errorf("%w: no reserved record for the key", store.ErrNotFound)
 	case err != nil:
 		return fmt.Errorf("postgres: read an idempotency record: %w", err)
+	case replaced:
+		return fmt.Errorf("the reservation was replaced by another request: %w", store.IdempotencyTable.Check(store.IdempotencyRemoved, store.IdempotencyDone))
 	}
 	return fmt.Errorf("the record already holds its answer: %w", store.IdempotencyTable.Check(store.IdempotencyDone, store.IdempotencyDone))
 }
 
-// Abandon removes the record, which is idempotent: a key that holds none is
-// as it should be.
-func (s *Store) Abandon(ctx context.Context, subject, key string) error {
-	_, err := s.abandon(ctx, subject, key)
+// Abandon removes the reservation r, which is idempotent: a key that holds
+// none, or holds another reservation, is as it should be.
+func (s *Store) Abandon(ctx context.Context, r store.Idempotency) error {
+	_, err := s.abandon(ctx, r)
 	return err
 }
 
 // abandon is Abandon and reports whether it removed a record.
-func (s *Store) abandon(ctx context.Context, subject, key string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE subject = $1 AND key = $2`, subject, key)
+func (s *Store) abandon(ctx context.Context, r store.Idempotency) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE subject = $1 AND key = $2 AND expires_at = $3`, r.Subject, r.Key, r.ExpiresAt)
 	if err != nil {
 		return false, fmt.Errorf("postgres: abandon an idempotency record: %w", err)
 	}

@@ -136,11 +136,17 @@ type Idempotencies interface {
 	// Begin reserves a record for (r.Subject, r.Key) and reports true, or
 	// returns the record already held, unexpired, and false.
 	Begin(ctx context.Context, r Idempotency) (Idempotency, bool, error)
-	// Finish stores the answer of a reserved record.
+	// Finish stores the answer of the reservation r, the record Begin
+	// returned for it. A reservation is identified by its ExpiresAt: when
+	// the record was replaced after r expired, the answer is refused with
+	// an error wrapping statemachine.ErrIllegalTransition and the
+	// replacement stays as it is.
 	Finish(ctx context.Context, r Idempotency) error
-	// Abandon drops a reserved record whose request failed, so a retry
-	// runs again.
-	Abandon(ctx context.Context, subject, key string) error
+	// Abandon drops the reservation r, the record Begin returned for it,
+	// whose request failed, so a retry runs again. A record that is gone or
+	// was replaced by another reservation is left as it is and Abandon
+	// succeeds.
+	Abandon(ctx context.Context, r Idempotency) error
 }
 
 // Store is every object store toposd needs beside session.Store.
