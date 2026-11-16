@@ -61,6 +61,8 @@ func Run(t *testing.T, open Open) {
 		{"ListByMetadata", testListByMetadata},
 		{"ListByTrigger", testListByTrigger},
 		{"ListByRollout", testListByRollout},
+		{"StatusLifecycle", testStatusLifecycle},
+		{"MessageLifecycle", testMessageLifecycle},
 		{"Archive", testArchive},
 		{"SetMetadata", testSetMetadata},
 		{"Summary", testSummary},

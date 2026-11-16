@@ -106,7 +106,11 @@ func (m *memoryStore) SetArchived(ctx context.Context, id string, at *time.Time)
 	if err != nil {
 		return Session{}, err
 	}
-	if Archive(&ms.s, at) {
+	changed, err := Archive(&ms.s, at)
+	if err != nil {
+		return Session{}, err
+	}
+	if changed {
 		ms.notify()
 	}
 	return cloneSession(ms.s), nil
@@ -175,6 +179,9 @@ func (m *memoryStore) Append(ctx context.Context, id string, afterSeq uint64, ev
 	last := afterSeq + uint64(len(events))
 	if retried {
 		return last, nil
+	}
+	if err := CheckStatuses(ms.s.Status, events); err != nil {
+		return 0, err
 	}
 	ms.events = append(ms.events, cloneEvents(events)...)
 	ApplyBatch(&ms.s, events)

@@ -324,6 +324,8 @@ func withdrawable(evs []session.Event, p session.UserWithdraw) error {
 			return refuse(CodeConflict, "user.withdraw names %s, which a request already read", p.EventID)
 		case session.MessageWithdrawn:
 			return refuse(CodeConflict, "user.withdraw names %s, which was already withdrawn", p.EventID)
+		case session.MessageWaiting:
+			// A waiting message may be withdrawn.
 		}
 		return nil
 	}

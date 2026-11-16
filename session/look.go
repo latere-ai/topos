@@ -54,7 +54,7 @@ func Looks(s Session, evs []Event) []Look {
 		out[open].CostUSDMicro += Cost(e)
 		if e.Type == TypeSessionStatus && e.Subagent == "" && !e.Redacted() {
 			var p SessionStatus
-			if e.Decode(&p) == nil && p.Status != "" && p.Status != StatusRunning {
+			if e.Decode(&p) == nil && p.Status != StatusNone && p.Status != StatusRunning {
 				out[open].Ended = true
 				open = -1
 			}

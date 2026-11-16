@@ -295,6 +295,9 @@ func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events [
 		if err != nil || retried {
 			return err
 		}
+		if err := session.CheckStatuses(hdr.Status, events); err != nil {
+			return err
+		}
 		if err := appendBatch(s.eventsPath(id), events); err != nil {
 			return err
 		}
@@ -326,7 +329,11 @@ func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (sess
 	st := s.state(id)
 	var out session.Session
 	err := s.locked(id, st, func(hdr *session.Session) error {
-		if session.Archive(hdr, at) {
+		changed, err := session.Archive(hdr, at)
+		if err != nil {
+			return err
+		}
+		if changed {
 			if err := s.writeHeader(id, *hdr); err != nil {
 				return err
 			}

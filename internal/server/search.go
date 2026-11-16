@@ -49,7 +49,7 @@ func (c *call) searchSessions() error {
 		}
 		limit = n
 	}
-	o, none, err := c.sessionScope(session.Status(q.Get("status")))
+	o, none, err := c.sessionScope(q.Get("status"))
 	if err != nil {
 		return err
 	}

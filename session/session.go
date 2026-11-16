@@ -24,7 +24,21 @@ const (
 	StatusIdle    Status = "idle"
 	StatusRunning Status = "running"
 	StatusEnded   Status = "ended"
+	// StatusNone is the empty status: a list that narrows by none, and a
+	// status event that names none.
+	StatusNone Status = ""
 )
+
+// ParseStatus reads a status written as text outside the store, such as a
+// list's status query, and reports whether it is one of the three, or empty.
+func ParseStatus(s string) (Status, bool) {
+	switch st := Status(s); st {
+	case StatusIdle, StatusRunning, StatusEnded, StatusNone:
+		return st, true
+	default:
+		return StatusNone, false
+	}
+}
 
 // StopReason says why a session is idle or ended.
 type StopReason string

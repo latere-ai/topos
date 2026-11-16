@@ -231,7 +231,7 @@ type Summarizer interface {
 // Summarize counts the sessions of all that o keeps, as Summarizer does:
 // the summary of a store that lists by reading every header.
 func Summarize(all []Session, o ListOptions) Summary {
-	o.Status, o.Cursor = "", ""
+	o.Status, o.Cursor = StatusNone, ""
 	var sum Summary
 	agents := map[string]struct{}{}
 	for _, s := range all {
@@ -263,7 +263,7 @@ func (sum *Summary) Count(s Session) {
 // keeps reports whether s passes every filter of o; the cursor, which
 // pages rather than filters, is ListPage's.
 func (o ListOptions) keeps(s Session) bool {
-	return (o.Status == "" || s.Status == o.Status) &&
+	return (o.Status == StatusNone || s.Status == o.Status) &&
 		(o.AgentID == "" || s.Agent.ID == o.AgentID) &&
 		(len(o.Agents) == 0 || slices.Contains(o.Agents, s.Agent.ID)) &&
 		(len(o.Owners) == 0 || slices.Contains(o.Owners, s.Initiator.Subject)) &&
@@ -314,18 +314,28 @@ func trees(all []Session) []Session {
 
 // Archive sets s's archived_at to at, or clears it for nil, and reports
 // whether that changed anything; an archived session keeps the time it
-// was first archived.
-func Archive(s *Session, at *time.Time) bool {
-	switch {
-	case at == nil && s.ArchivedAt == nil, at != nil && s.ArchivedAt != nil:
-		return false
-	case at == nil:
-		s.ArchivedAt = nil
-	default:
-		t := at.UTC()
-		s.ArchivedAt = &t
+// was first archived. A step ArchiveTable lacks is an error.
+func Archive(s *Session, at *time.Time) (bool, error) {
+	from, to := ArchiveActive, ArchiveActive
+	if s.ArchivedAt != nil {
+		from = ArchiveArchived
 	}
-	return true
+	if at != nil {
+		to = ArchiveArchived
+	}
+	if from == to {
+		return false, nil
+	}
+	if err := ArchiveTable.Check(from, to); err != nil {
+		return false, fmt.Errorf("archive session %s: %w", s.ID, err)
+	}
+	if to == ArchiveActive {
+		s.ArchivedAt = nil
+		return true, nil
+	}
+	t := at.UTC()
+	s.ArchivedAt = &t
+	return true, nil
 }
 
 // DefaultListLimit is the page size of a List with no limit.
@@ -634,7 +644,7 @@ func ApplyBatch(s *Session, events []Event) {
 			continue
 		}
 		var p SessionStatus
-		if e.Decode(&p) == nil && p.Status != "" {
+		if e.Decode(&p) == nil && p.Status != StatusNone {
 			s.Status = p.Status
 			s.StopReason = p.StopReason
 			if p.Outcome != "" && !s.Copied(e) {

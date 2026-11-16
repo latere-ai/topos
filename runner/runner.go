@@ -245,8 +245,12 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	if err != nil {
 		return harness.Outcome{}, err
 	}
-	if s.Status == session.StatusEnded {
-		return harness.Outcome{}, fmt.Errorf("%w: %s", ErrEnded, id)
+	// A claim moves an idle session to running and repeats a running one's
+	// status; a session that ended has no step to running.
+	if s.Status != session.StatusRunning {
+		if err := session.StatusTable.Check(s.Status, session.StatusRunning); err != nil {
+			return harness.Outcome{}, fmt.Errorf("%w: %s: %w", ErrEnded, id, err)
+		}
 	}
 	log := NewLog(st, id, s.LastSeq)
 	log.lost = fence

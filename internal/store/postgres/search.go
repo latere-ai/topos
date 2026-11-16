@@ -29,7 +29,7 @@ func arg(args *[]any, v any) string {
 // filter o leaves unset adds no condition.
 func filters(alias string, o session.ListOptions, args *[]any) string {
 	conds := []string{"TRUE"}
-	if o.Status != "" {
+	if o.Status != session.StatusNone {
 		conds = append(conds, alias+"status = "+arg(args, string(o.Status)))
 	}
 	if o.AgentID != "" {

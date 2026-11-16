@@ -102,7 +102,7 @@ func (l *Log) claim(ctx context.Context, batch []session.Event) error {
 // ends reports whether e is a session.status that ended its session.
 func ends(e session.Event) bool {
 	var st session.SessionStatus
-	return e.Type == session.TypeSessionStatus && !e.Redacted() && e.Decode(&st) == nil && st.Status == session.StatusEnded
+	return e.Type == session.TypeSessionStatus && !e.Redacted() && e.Decode(&st) == nil && session.StatusTable.Terminal(st.Status)
 }
 
 // append is Append's work under l.mu. A refuse that answers an error for

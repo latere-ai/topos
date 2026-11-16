@@ -55,6 +55,20 @@ type Waiting struct {
 	CutForIt bool
 }
 
+// settle moves a waiting message to read or withdrawn, and records the
+// sequence of the messages.read that read it when readAt is not zero. A
+// message that is not waiting stays as it is: MessageTable has no step out
+// of read or withdrawn.
+func (w *Waiting) settle(to MessageState, readAt uint64) {
+	if MessageTable.Check(w.State, to) != nil {
+		return
+	}
+	w.State = to
+	if readAt != 0 {
+		w.ReadAt = readAt
+	}
+}
+
 // Person reports whether a person sent the message.
 func (w Waiting) Person() bool { return w.Message.Sender.Kind == SenderPerson }
 
@@ -125,8 +139,8 @@ func WaitingMessages(events []Event) []Waiting {
 			if e.Redacted() || e.Decode(&p) != nil {
 				continue
 			}
-			if i, ok := at[p.EventID]; ok && out[i].State == MessageWaiting {
-				out[i].State = MessageWithdrawn
+			if i, ok := at[p.EventID]; ok {
+				out[i].settle(MessageWithdrawn, 0)
 			}
 		case TypeMessagesRead:
 			var p MessagesRead
@@ -134,8 +148,8 @@ func WaitingMessages(events []Event) []Waiting {
 				continue
 			}
 			for _, id := range p.EventIDs {
-				if i, ok := at[id]; ok && out[i].State == MessageWaiting {
-					out[i].State, out[i].ReadAt = MessageRead, e.Seq
+				if i, ok := at[id]; ok {
+					out[i].settle(MessageRead, e.Seq)
 				}
 			}
 		case TypeModelRequest:
@@ -144,8 +158,8 @@ func WaitingMessages(events []Event) []Waiting {
 				continue
 			}
 			for i := range out {
-				if out[i].State == MessageWaiting && out[i].Event.Seq <= p.FoldSeq {
-					out[i].State = MessageRead
+				if out[i].Event.Seq <= p.FoldSeq {
+					out[i].settle(MessageRead, 0)
 				}
 			}
 		}

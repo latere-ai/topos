@@ -862,7 +862,7 @@ func (c *call) listSessions() error {
 	if err != nil {
 		return err
 	}
-	o, none, err := c.sessionScope(session.Status(c.r.URL.Query().Get("status")))
+	o, none, err := c.sessionScope(c.r.URL.Query().Get("status"))
 	if err != nil {
 		return err
 	}
@@ -918,7 +918,7 @@ func summarize(ctx context.Context, st session.Store, o session.ListOptions) (se
 	if s, ok := st.(session.Summarizer); ok {
 		return s.Summarize(ctx, o)
 	}
-	o.Status, o.Limit, o.Cursor = "", summarizePage, ""
+	o.Status, o.Limit, o.Cursor = session.StatusNone, summarizePage, ""
 	var sum session.Summary
 	agents := map[string]struct{}{}
 	for {
@@ -945,9 +945,9 @@ func summarize(ctx context.Context, st session.Store, o session.ListOptions) (se
 // counts. status is the list's status filter, empty for a summary. none
 // reports an agent name the caller holds no agent of, whose list is
 // empty.
-func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, error) {
+func (c *call) sessionScope(status string) (session.ListOptions, bool, error) {
 	q := c.r.URL.Query()
-	o := session.ListOptions{Status: status, Runner: q.Get("runner")}
+	o := session.ListOptions{Runner: q.Get("runner")}
 	switch a := q.Get("archived"); a {
 	case "", "false":
 		o.Archived = session.ArchivedExclude
@@ -971,11 +971,11 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 		}
 		o.Rollout = r
 	}
-	switch o.Status {
-	case "", session.StatusIdle, session.StatusRunning, session.StatusEnded:
-	default:
-		return o, false, refuse(CodeInvalidRequest, "status is %q, not idle, running or ended", o.Status)
+	st, ok := session.ParseStatus(status)
+	if !ok {
+		return o, false, refuse(CodeInvalidRequest, "status is %q, not idle, running or ended", status)
 	}
+	o.Status = st
 	if o.Runner != "" && o.Runner != session.RunnerHosted && o.Runner != session.RunnerExternal {
 		return o, false, refuse(CodeInvalidRequest, "runner is %q, not hosted or external", o.Runner)
 	}
@@ -1166,10 +1166,10 @@ func (c *call) endSession() error {
 // endable refuses an end of a session that has ended, or that is
 // running and is interrupted first.
 func endable(s session.Session) error {
-	switch s.Status {
-	case session.StatusEnded:
+	if session.StatusTable.Terminal(s.Status) {
 		return refuse(CodeConflict, "the session ended %s", s.StopReason)
-	case session.StatusRunning:
+	}
+	if s.Status == session.StatusRunning {
 		return refuse(CodeConflict, "the session is running; interrupt it first")
 	}
 	return nil
