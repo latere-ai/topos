@@ -61,10 +61,10 @@ var IdempotencyTable = statemachine.Must(statemachine.New("Idempotency", []Idemp
 	IdempotencyRemoved:  nil,
 }))
 
-// FiringState is where a trigger's firing stands, in the lower-case spelling
-// a table state takes. The stored outcome is a firing's Outcome, the empty
-// string while a firing is claimed and not yet recorded; FiringStateOf and
-// Outcome convert.
+// FiringState is where a trigger's firing stands. It is its own type because
+// the stored outcome is a plain string that is empty while a firing is
+// claimed and not yet recorded, and the empty string cannot be a table
+// state; FiringStateOf and Outcome convert.
 type FiringState string
 
 // The states of a firing: claimed, and one for each stored outcome.
