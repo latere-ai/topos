@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.72.0 - 2026-11-16
+
 ### Changed
 
 - **Records refuse steps their lifecycle does not have.** A session's status, a session's archive, a waiting message, an agent, an idempotency record, a trigger's firing and a trigger's run each follow a written table of states. Every store checks its writers against the table: an append that would take an ended session along a step the table lacks, or a second answer written over a stored one, changes nothing and is refused. Tests drive each writer through every pair of states and every pair of racing writers, on every store that has one and on Postgres. The tables are rendered into Lean proofs and TLA+ models that the quality gate checks, together with models of the session lease and the trigger lease.
