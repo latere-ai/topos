@@ -230,3 +230,18 @@ e2e:
     test: {tags: [postgres], packages: [./internal/store/postgres/...], race: true}
     services: [postgres]
     env: {DATABASE_URL: "${postgres.url}"}
+
+# Every status type, so a switch over one lists every state. The tables over
+# them are in session/lifecycle.go and internal/store/lifecycles.go.
+enums:
+  go:
+    types:
+      - session.Status
+      - session.ArchiveState
+      - session.MessageState
+      - internal/store.AgentState
+      - internal/store.IdempotencyState
+      - internal/store.FiringState
+      - internal/store.RunState
+    parsers:
+      session.ParseStatus: Reads a session status written as text outside the store, such as a list's status query, and reports whether the session package has it.
