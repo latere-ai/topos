@@ -15,7 +15,7 @@ require (
 	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
 	latere.ai/x/cella v0.22.6
-	latere.ai/x/pkg v0.116.0
+	latere.ai/x/pkg v0.117.0
 	latere.ai/x/sdk-go v0.33.0
 )
 
