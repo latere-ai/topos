@@ -56,7 +56,7 @@ func testStatusLifecycle(t *testing.T, st session.Store) {
 				noErr(t, step(s.ID, session.StatusRunning))
 			case session.StatusEnded:
 				noErr(t, step(s.ID, session.StatusEnded))
-			case session.StatusIdle, session.StatusNone:
+			case session.StatusIdle:
 			}
 			return s.ID
 		},

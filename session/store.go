@@ -231,7 +231,7 @@ type Summarizer interface {
 // Summarize counts the sessions of all that o keeps, as Summarizer does:
 // the summary of a store that lists by reading every header.
 func Summarize(all []Session, o ListOptions) Summary {
-	o.Status, o.Cursor = StatusNone, ""
+	o.Status, o.Cursor = NoStatus(), ""
 	var sum Summary
 	agents := map[string]struct{}{}
 	for _, s := range all {
@@ -263,7 +263,7 @@ func (sum *Summary) Count(s Session) {
 // keeps reports whether s passes every filter of o; the cursor, which
 // pages rather than filters, is ListPage's.
 func (o ListOptions) keeps(s Session) bool {
-	return (o.Status == StatusNone || s.Status == o.Status) &&
+	return (o.Status.Empty() || s.Status == o.Status) &&
 		(o.AgentID == "" || s.Agent.ID == o.AgentID) &&
 		(len(o.Agents) == 0 || slices.Contains(o.Agents, s.Agent.ID)) &&
 		(len(o.Owners) == 0 || slices.Contains(o.Owners, s.Initiator.Subject)) &&
@@ -644,7 +644,7 @@ func ApplyBatch(s *Session, events []Event) {
 			continue
 		}
 		var p SessionStatus
-		if e.Decode(&p) == nil && p.Status != StatusNone {
+		if e.Decode(&p) == nil && !p.Status.Empty() {
 			s.Status = p.Status
 			s.StopReason = p.StopReason
 			if p.Outcome != "" && !s.Copied(e) {

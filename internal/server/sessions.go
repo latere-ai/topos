@@ -918,7 +918,7 @@ func summarize(ctx context.Context, st session.Store, o session.ListOptions) (se
 	if s, ok := st.(session.Summarizer); ok {
 		return s.Summarize(ctx, o)
 	}
-	o.Status, o.Limit, o.Cursor = session.StatusNone, summarizePage, ""
+	o.Status, o.Limit, o.Cursor = session.NoStatus(), summarizePage, ""
 	var sum session.Summary
 	agents := map[string]struct{}{}
 	for {

@@ -178,7 +178,7 @@ func (q *Queue) hasWork(ctx context.Context, id string) (bool, error) {
 		q.mu.Lock()
 		q.quiet[id] = s.LastSeq
 		q.mu.Unlock()
-	case session.StatusEnded, session.StatusNone:
+	case session.StatusEnded:
 		// An ended session has no work.
 	}
 	return false, nil

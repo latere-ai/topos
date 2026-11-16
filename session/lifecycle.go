@@ -34,7 +34,7 @@ func CheckStatuses(cur Status, events []Event) error {
 			continue
 		}
 		var p SessionStatus
-		if e.Decode(&p) != nil || p.Status == StatusNone || p.Status == cur {
+		if e.Decode(&p) != nil || p.Status.Empty() || p.Status == cur {
 			continue
 		}
 		if err := StatusTable.Check(cur, p.Status); err != nil {

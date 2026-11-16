@@ -410,7 +410,7 @@ func (b *TriggerBook) RecordFiring(_ context.Context, f Firing, from string) err
 		return fmt.Errorf("%w: firing %s is not %q: %w", ErrConflict, f.ID, from, statemachine.ErrIllegalTransition)
 	}
 	if err := CheckOutcomeStep(from, f.Outcome); err != nil {
-		return fmt.Errorf("firing %s: %w", f.ID, err)
+		return fmt.Errorf("%w: firing %s: %w", ErrConflict, f.ID, err)
 	}
 	held.Outcome, held.Reason, held.Key, held.SessionID, held.Open = f.Outcome, f.Reason, f.Key, f.SessionID, f.Open
 	Record(&t, held, from, b.now())

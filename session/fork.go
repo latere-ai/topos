@@ -101,7 +101,7 @@ func boundaries(evs []Event) []bool {
 			marks[i] = true
 		case StatusEnded:
 			marks[i] = p.StopReason == StopCompleted && prev == StatusRunning
-		case StatusRunning, StatusNone:
+		case StatusRunning:
 			// A running status marks no turn's end.
 		}
 		prev = p.Status

@@ -24,19 +24,26 @@ const (
 	StatusIdle    Status = "idle"
 	StatusRunning Status = "running"
 	StatusEnded   Status = "ended"
-	// StatusNone is the empty status: a list that narrows by none, and a
-	// status event that names none.
-	StatusNone Status = ""
 )
+
+// NoStatus is the empty status: a list that narrows by none, and a status
+// event that names none. It is no state of a session.
+func NoStatus() Status {
+	var none Status
+	return none
+}
+
+// Empty reports whether s is the empty status.
+func (s Status) Empty() bool { return s == NoStatus() }
 
 // ParseStatus reads a status written as text outside the store, such as a
 // list's status query, and reports whether it is one of the three, or empty.
 func ParseStatus(s string) (Status, bool) {
 	switch st := Status(s); st {
-	case StatusIdle, StatusRunning, StatusEnded, StatusNone:
+	case StatusIdle, StatusRunning, StatusEnded, NoStatus():
 		return st, true
 	default:
-		return StatusNone, false
+		return NoStatus(), false
 	}
 }
 

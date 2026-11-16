@@ -342,7 +342,7 @@ func (s *Store) claimFiring(ctx context.Context, f store.Firing) (out store.Firi
 // trigger's counts with it, in one transaction.
 func (s *Store) RecordFiring(ctx context.Context, f store.Firing, from string) error {
 	if err := store.CheckOutcomeStep(from, f.Outcome); err != nil {
-		return fmt.Errorf("firing %s: %w", f.ID, err)
+		return fmt.Errorf("%w: firing %s: %w", store.ErrConflict, f.ID, err)
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE trigger_firings SET outcome = $4, reason = $5, key = $6, session_id = $7, session_open = $8

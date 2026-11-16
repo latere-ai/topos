@@ -440,7 +440,7 @@ func (s *Store) listTrees(ctx context.Context, o session.ListOptions, limit int)
 // Summarize counts in one query over the columns List filters on, so no
 // session's body is read.
 func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.Summary, error) {
-	o.Status = session.StatusNone
+	o.Status = session.NoStatus()
 	var args []any
 	where := filters("", o, &args)
 	running, idle := arg(&args, string(session.StatusRunning)), arg(&args, string(session.StatusIdle))
