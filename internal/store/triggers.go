@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"latere.ai/x/pkg/statemachine"
+
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
@@ -198,6 +200,18 @@ func (c RunCost) Matches(r Run) bool {
 	return c.FiringID == r.FiringID && (c.SessionID == "" || c.SessionID == r.SessionID)
 }
 
+// CheckRunStart holds a run a store is handed to RunTable's start states.
+func CheckRunStart(r Run) error {
+	state := RunOpen
+	if r.Ended {
+		state = RunEnded
+	}
+	if err := RunTable.CheckStart(state); err != nil {
+		return fmt.Errorf("run of %s: %w", r.FiringID, err)
+	}
+	return nil
+}
+
 // IsRun reports whether a firing of outcome is a run (spec 088).
 func IsRun(outcome string) bool {
 	switch outcome {
@@ -222,7 +236,7 @@ func CheckRun(r Run) error {
 	case r.Scope != "" && !trigger.ValidScope(r.Scope):
 		return fmt.Errorf("%w: %q is not a run's scope", session.ErrInvalid, r.Scope)
 	}
-	return nil
+	return CheckRunStart(r)
 }
 
 // Costed is the run with cost written over it: a run already ended keeps
@@ -433,11 +447,28 @@ func DecodeTrigger(doc []byte) (*v1.Trigger, error) {
 // allowance, which runs once the spend allows it, and a refused one when
 // the claim asks, a one-shot's that waits for its limit to reset.
 func Retaken(held, claim Firing) bool {
-	switch held.Outcome {
-	case "", OutcomeFailed, OutcomeSkippedBudget:
+	state, ok := FiringStateOf(held.Outcome)
+	switch {
+	case !ok:
+		return false
+	case state == FiringClaimed:
+		// A firing never recorded is claimed again as it stands.
 		return true
-	case OutcomeRefused:
-		return claim.RetakeRefused
+	case state == FiringRefused:
+		return claim.RetakeRefused && FiringTable.Can(state, FiringClaimed)
+	default:
+		return FiringTable.Can(state, FiringClaimed)
 	}
-	return false
+}
+
+// CheckOutcomeStep holds the move of a firing's stored outcome from one to
+// another to FiringTable. An outcome no state names is refused as the
+// illegal step it is.
+func CheckOutcomeStep(from, to string) error {
+	f, okFrom := FiringStateOf(from)
+	t, okTo := FiringStateOf(to)
+	if !okFrom || !okTo {
+		return fmt.Errorf("%w: outcome %q to %q: %w", session.ErrInvalid, from, to, statemachine.ErrIllegalTransition)
+	}
+	return FiringTable.Check(f, t)
 }

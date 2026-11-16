@@ -40,6 +40,10 @@ var migrations embed.FS
 // channel is the notification channel appends signal on.
 const channel = "topos_events"
 
+// DefaultLeaseTTL is how long a session's lease holds without a renew when
+// Options.LeaseTTL names none; a holder renews every quarter of it.
+const DefaultLeaseTTL = 60 * time.Second
+
 // Options tune a store; the zero value is spec 014's.
 type Options struct {
 	// PoolDSN serves queries through a transaction-pooling proxy when
@@ -48,7 +52,7 @@ type Options struct {
 	// Poll is how often a watcher looks for events a lost notification
 	// did not announce: 2 s by default.
 	Poll time.Duration
-	// LeaseTTL is how long a lease holds without a renew: 60 s by
+	// LeaseTTL is how long a lease holds without a renew: DefaultLeaseTTL by
 	// default, renewed every quarter of it.
 	LeaseTTL time.Duration
 	// Now is the clock idempotency records expire on: time.Now by
@@ -154,7 +158,7 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 		s.poll = 2 * time.Second
 	}
 	if s.ttl <= 0 {
-		s.ttl = 60 * time.Second
+		s.ttl = DefaultLeaseTTL
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -436,7 +440,7 @@ func (s *Store) listTrees(ctx context.Context, o session.ListOptions, limit int)
 // Summarize counts in one query over the columns List filters on, so no
 // session's body is read.
 func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.Summary, error) {
-	o.Status = ""
+	o.Status = session.StatusNone
 	var args []any
 	where := filters("", o, &args)
 	running, idle := arg(&args, string(session.StatusRunning)), arg(&args, string(session.StatusIdle))
@@ -501,18 +505,26 @@ func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 // SetArchived sets or clears a session's archived_at, in its body and its
 // filter column, under the row lock; the log is untouched.
 func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (session.Session, error) {
+	out, _, err := s.setArchived(ctx, id, at)
+	return out, err
+}
+
+// setArchived is SetArchived and reports whether it changed the archive.
+func (s *Store) setArchived(ctx context.Context, id string, at *time.Time) (session.Session, bool, error) {
 	if err := session.CheckID(session.PrefixSession, id); err != nil {
-		return session.Session{}, err
+		return session.Session{}, false, err
 	}
 	var out session.Session
+	var changed bool
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		sess, err := locked(ctx, tx, id)
 		if err != nil {
 			return err
 		}
 		out = sess
-		if !session.Archive(&out, at) {
-			return nil
+		changed, err = session.Archive(&out, at)
+		if err != nil || !changed {
+			return err
 		}
 		body, err := encode(out)
 		if err != nil {
@@ -524,9 +536,9 @@ func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (sess
 		return nil
 	})
 	if err != nil {
-		return session.Session{}, err
+		return session.Session{}, false, err
 	}
-	return out, nil
+	return out, changed, nil
 }
 
 // SetMetadata merges a change into a session's metadata, in its body and
@@ -688,6 +700,9 @@ func (s *Store) append(ctx context.Context, id string, afterSeq uint64, events [
 			return queryEvents(ctx, tx, id, from, len(events))
 		})
 		if err != nil || retried {
+			return err
+		}
+		if err := session.CheckStatuses(sess.Status, events); err != nil {
 			return err
 		}
 		if err := insertEvents(ctx, tx, events); err != nil {

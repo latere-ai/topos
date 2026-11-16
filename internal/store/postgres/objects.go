@@ -215,7 +215,7 @@ func (s *Store) Archive(ctx context.Context, id string, at time.Time) error {
 	if _, err := s.Agent(ctx, id); err != nil {
 		return err
 	}
-	return fmt.Errorf("%w: agent %s is archived", store.ErrConflict, id)
+	return fmt.Errorf("%w: agent %s is archived: %w", store.ErrConflict, id, store.AgentTable.Check(store.AgentArchived, store.AgentArchived))
 }
 
 // DeleteAgent removes the agent's versions and then its row in one
@@ -230,7 +230,7 @@ func (s *Store) DeleteAgent(ctx context.Context, id string) error {
 			return fmt.Errorf("postgres: delete agent %s: %w", id, err)
 		}
 		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
+			return fmt.Errorf("%w: agent %s: %w", store.ErrNotFound, id, store.AgentTable.Check(store.AgentDeleted, store.AgentDeleted))
 		}
 		return nil
 	})
@@ -256,6 +256,9 @@ const reserveAttempts = 3
 // lock, replaced when it has expired. Replicas that race on one key
 // reserve it once.
 func (s *Store) Begin(ctx context.Context, r store.Idempotency) (store.Idempotency, bool, error) {
+	if err := store.IdempotencyTable.CheckStart(store.IdempotencyReserved); err != nil {
+		return store.Idempotency{}, false, err
+	}
 	r.Done = false
 	var out store.Idempotency
 	var fresh bool
@@ -301,22 +304,39 @@ func (s *Store) Begin(ctx context.Context, r store.Idempotency) (store.Idempoten
 
 func (s *Store) Finish(ctx context.Context, r store.Idempotency) error {
 	tag, err := s.pool.Exec(ctx, `UPDATE idempotency_keys SET route = $3, body_hash = $4, done = true, status = $5,
-		content_type = $6, body = $7, expires_at = $8 WHERE subject = $1 AND key = $2`,
+		content_type = $6, body = $7, expires_at = $8 WHERE subject = $1 AND key = $2 AND NOT done`,
 		r.Subject, r.Key, r.Route, r.BodyHash, r.Status, r.ContentType, r.Body, r.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("postgres: finish an idempotency record: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: no reserved record for the key", store.ErrNotFound)
+	if tag.RowsAffected() == 1 {
+		return nil
 	}
-	return nil
+	var done bool
+	err = s.pool.QueryRow(ctx, `SELECT done FROM idempotency_keys WHERE subject = $1 AND key = $2`, r.Subject, r.Key).Scan(&done)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return fmt.Errorf("%w: no reserved record for the key", store.ErrNotFound)
+	case err != nil:
+		return fmt.Errorf("postgres: read an idempotency record: %w", err)
+	}
+	return fmt.Errorf("the record already holds its answer: %w", store.IdempotencyTable.Check(store.IdempotencyDone, store.IdempotencyDone))
 }
 
+// Abandon removes the record, which is idempotent: a key that holds none is
+// as it should be.
 func (s *Store) Abandon(ctx context.Context, subject, key string) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE subject = $1 AND key = $2`, subject, key); err != nil {
-		return fmt.Errorf("postgres: abandon an idempotency record: %w", err)
+	_, err := s.abandon(ctx, subject, key)
+	return err
+}
+
+// abandon is Abandon and reports whether it removed a record.
+func (s *Store) abandon(ctx context.Context, subject, key string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE subject = $1 AND key = $2`, subject, key)
+	if err != nil {
+		return false, fmt.Errorf("postgres: abandon an idempotency record: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() == 1, nil
 }
 
 var _ store.Store = (*Store)(nil)

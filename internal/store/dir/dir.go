@@ -377,7 +377,7 @@ func (s *Store) Archive(_ context.Context, id string, at time.Time) error {
 	case !ok:
 		return fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
 	case a.ArchivedAt != nil:
-		return fmt.Errorf("%w: agent %s is archived", store.ErrConflict, id)
+		return fmt.Errorf("%w: agent %s is archived: %w", store.ErrConflict, id, store.AgentTable.Check(store.AgentArchived, store.AgentArchived))
 	}
 	at = at.UTC()
 	a.ArchivedAt = &at
@@ -397,7 +397,7 @@ func (s *Store) DeleteAgent(_ context.Context, id string) error {
 	defer s.mu.Unlock()
 	a, ok := s.agents[id]
 	if !ok {
-		return fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
+		return fmt.Errorf("%w: agent %s: %w", store.ErrNotFound, id, store.AgentTable.Check(store.AgentDeleted, store.AgentDeleted))
 	}
 	if err := os.Remove(s.agentPath(id)); err != nil {
 		return fmt.Errorf("dir: delete agent %s: %w", id, err)
@@ -414,6 +414,9 @@ func (s *Store) DeleteAgent(_ context.Context, id string) error {
 }
 
 func (s *Store) Begin(_ context.Context, r store.Idempotency) (store.Idempotency, bool, error) {
+	if err := store.IdempotencyTable.CheckStart(store.IdempotencyReserved); err != nil {
+		return store.Idempotency{}, false, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	held, ok, err := s.readIdempotency(r.Subject, r.Key)
@@ -433,12 +436,15 @@ func (s *Store) Begin(_ context.Context, r store.Idempotency) (store.Idempotency
 func (s *Store) Finish(_ context.Context, r store.Idempotency) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok, err := s.readIdempotency(r.Subject, r.Key)
+	held, ok, err := s.readIdempotency(r.Subject, r.Key)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return fmt.Errorf("%w: no reserved record for the key", store.ErrNotFound)
+	}
+	if held.Done {
+		return fmt.Errorf("the record already holds its answer: %w", store.IdempotencyTable.Check(store.IdempotencyDone, store.IdempotencyDone))
 	}
 	r.Done = true
 	return s.writeIdempotency(r)

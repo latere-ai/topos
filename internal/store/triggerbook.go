@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"latere.ai/x/pkg/statemachine"
+
 	v1 "latere.ai/x/topos/manifest/v1"
 )
 
@@ -405,7 +407,10 @@ func (b *TriggerBook) RecordFiring(_ context.Context, f Firing, from string) err
 	}
 	held, ok := b.firingsOf(f.TriggerID)[f.Dedupe]
 	if !ok || held.ID != f.ID || held.Outcome != from {
-		return fmt.Errorf("%w: firing %s is not %q", ErrConflict, f.ID, from)
+		return fmt.Errorf("%w: firing %s is not %q: %w", ErrConflict, f.ID, from, statemachine.ErrIllegalTransition)
+	}
+	if err := CheckOutcomeStep(from, f.Outcome); err != nil {
+		return fmt.Errorf("firing %s: %w", f.ID, err)
 	}
 	held.Outcome, held.Reason, held.Key, held.SessionID, held.Open = f.Outcome, f.Reason, f.Key, f.SessionID, f.Open
 	Record(&t, held, from, b.now())

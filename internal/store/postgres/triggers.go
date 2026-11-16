@@ -12,6 +12,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"latere.ai/x/pkg/statemachine"
+
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
@@ -276,13 +278,19 @@ func addCount(ctx context.Context, tx pgx.Tx, id string, apply func(t *store.Tri
 // firing is held, then a read of the held row under its lock, taken
 // again when its outcome is failed or unrecorded.
 func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, bool, error) {
+	out, fresh, _, err := s.claimFiring(ctx, f)
+	return out, fresh, err
+}
+
+// claimFiring is ClaimFiring and reports whether it took a firing that had
+// a recorded outcome back to claimed, the one step of the firing's
+// lifecycle a claim makes.
+func (s *Store) claimFiring(ctx context.Context, f store.Firing) (out store.Firing, fresh, retaken bool, err error) {
 	if err := store.CheckFiring(f); err != nil {
-		return store.Firing{}, false, err
+		return store.Firing{}, false, false, err
 	}
 	f.Outcome, f.Reason, f.SessionID, f.Open = "", "", "", false
-	var out store.Firing
-	var fresh bool
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `INSERT INTO trigger_firings (`+firingColumns+`) VALUES ($1, $2, $3, $4, $5, $6, '', '', '', false, $7, $8, $9, $10)
 			ON CONFLICT (trigger_id, dedupe) DO NOTHING`,
 			f.ID, f.TriggerID, f.Dedupe, f.Origin, string(f.Envelope), f.Key, f.Replica, f.Time.UTC(), f.ReceivedAt.UTC(), string(f.FiredBy))
@@ -304,6 +312,7 @@ func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, 
 			out = held
 			return nil
 		}
+		retaken = held.Outcome != ""
 		if held.Outcome != "" {
 			if err := addCount(ctx, tx, f.TriggerID, func(t *store.Trigger) { store.Count(&t.Counts, held.Outcome, -1) }); err != nil {
 				return err
@@ -324,14 +333,17 @@ func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, 
 		return nil
 	})
 	if err != nil {
-		return store.Firing{}, false, err
+		return store.Firing{}, false, false, err
 	}
-	return out, fresh, nil
+	return out, fresh, retaken, nil
 }
 
 // RecordFiring moves the firing's outcome only from the one named and the
 // trigger's counts with it, in one transaction.
 func (s *Store) RecordFiring(ctx context.Context, f store.Firing, from string) error {
+	if err := store.CheckOutcomeStep(from, f.Outcome); err != nil {
+		return fmt.Errorf("firing %s: %w", f.ID, err)
+	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE trigger_firings SET outcome = $4, reason = $5, key = $6, session_id = $7, session_open = $8
 			WHERE trigger_id = $1 AND dedupe = $2 AND id = $3 AND outcome = $9`,
@@ -340,7 +352,7 @@ func (s *Store) RecordFiring(ctx context.Context, f store.Firing, from string) e
 			return fmt.Errorf("postgres: record firing %s: %w", f.ID, err)
 		}
 		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("%w: firing %s is not %q", store.ErrConflict, f.ID, from)
+			return fmt.Errorf("%w: firing %s is not %q: %w", store.ErrConflict, f.ID, from, statemachine.ErrIllegalTransition)
 		}
 		now := s.now()
 		return addCount(ctx, tx, f.TriggerID, func(t *store.Trigger) { store.Record(t, f, from, now) })
@@ -524,19 +536,27 @@ func (s *Store) PutRun(ctx context.Context, r store.Run) error {
 // SetRunCosts writes every cost in one statement, to the runs it matches
 // that have not ended, as store.RunCost.Matches and store.Run.Costed do.
 func (s *Store) SetRunCosts(ctx context.Context, costs []store.RunCost) error {
+	_, err := s.setRunCosts(ctx, costs)
+	return err
+}
+
+// setRunCosts is SetRunCosts and reports how many runs it wrote. The write
+// binds the runs that have not ended, the one source of the step to ended.
+func (s *Store) setRunCosts(ctx context.Context, costs []store.RunCost) (int64, error) {
 	if len(costs) == 0 {
-		return nil
+		return 0, nil
 	}
 	ids, sessions, cost, ended := make([]string, len(costs)), make([]string, len(costs)), make([]int64, len(costs)), make([]bool, len(costs))
 	for i, c := range costs {
 		ids[i], sessions[i], cost[i], ended[i] = c.FiringID, c.SessionID, c.CostUSDMicro, c.Ended
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE trigger_runs AS r SET cost_usd_micro = c.cost, ended = c.ended
+	tag, err := s.pool.Exec(ctx, `UPDATE trigger_runs AS r SET cost_usd_micro = c.cost, ended = c.ended
 		FROM unnest($1::text[], $2::text[], $3::bigint[], $4::boolean[]) AS c(firing_id, session_id, cost, ended)
-		WHERE r.firing_id = c.firing_id AND (c.session_id = '' OR r.session_id = c.session_id) AND NOT r.ended`, ids, sessions, cost, ended); err != nil {
-		return fmt.Errorf("postgres: set the cost of %d runs: %w", len(costs), err)
+		WHERE r.firing_id = c.firing_id AND (c.session_id = '' OR r.session_id = c.session_id) AND NOT r.ended`, ids, sessions, cost, ended)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: set the cost of %d runs: %w", len(costs), err)
 	}
-	return nil
+	return tag.RowsAffected(), nil
 }
 
 func (s *Store) Runs(ctx context.Context, owner string, since time.Time) ([]store.Run, error) {

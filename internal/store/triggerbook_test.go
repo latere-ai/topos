@@ -127,6 +127,10 @@ func TestATriggerBookWritesBeforeItChanges(t *testing.T) {
 		t.Fatalf("writes: %+v", sv)
 	}
 
+	claimed := bookFiring(tr.ID, "d5")
+	if _, _, err := b.ClaimFiring(ctx, claimed); err != nil {
+		t.Fatal(err)
+	}
 	sv.fail = true
 	at := time.Now()
 	next := tr
@@ -137,7 +141,7 @@ func TestATriggerBookWritesBeforeItChanges(t *testing.T) {
 		"next":     func() error { return b.SetNextFire(ctx, tr.ID, &at) },
 		"claim":    func() error { _, _, err := b.ClaimFiring(ctx, bookFiring(tr.ID, "d3")); return err },
 		"re-claim": func() error { _, _, err := b.ClaimFiring(ctx, bookFiring(tr.ID, "d2")); return err },
-		"record":   func() error { f := fr; f.Outcome = OutcomeRefused; return b.RecordFiring(ctx, f, OutcomeStarted) },
+		"record":   func() error { f := claimed; f.Outcome = OutcomeRefused; return b.RecordFiring(ctx, f, "") },
 		"filtered": func() error { return b.CountFiltered(ctx, tr.ID) },
 		"close":    func() error { return b.CloseSession(ctx, tr.ID, "ses_1") },
 		"key":      func() error { return b.SetTriggerSession(ctx, tr.ID, "k2", "ses_2") },

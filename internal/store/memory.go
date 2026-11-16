@@ -148,7 +148,7 @@ func (m *Memory) DeleteAgent(_ context.Context, id string) error {
 	defer m.mu.Unlock()
 	a, ok := m.agents[id]
 	if !ok {
-		return fmt.Errorf("%w: agent %s", ErrNotFound, id)
+		return fmt.Errorf("%w: agent %s: %w", ErrNotFound, id, AgentTable.Check(AgentDeleted, AgentDeleted))
 	}
 	delete(m.names, ownedName{a.Owner, a.Name})
 	delete(m.versions, id)
@@ -164,7 +164,7 @@ func (m *Memory) Archive(_ context.Context, id string, at time.Time) error {
 	case !ok:
 		return fmt.Errorf("%w: agent %s", ErrNotFound, id)
 	case a.ArchivedAt != nil:
-		return fmt.Errorf("%w: agent %s is archived", ErrConflict, id)
+		return fmt.Errorf("%w: agent %s is archived: %w", ErrConflict, id, AgentTable.Check(AgentArchived, AgentArchived))
 	}
 	at = at.UTC()
 	a.ArchivedAt = &at
@@ -173,6 +173,9 @@ func (m *Memory) Archive(_ context.Context, id string, at time.Time) error {
 }
 
 func (m *Memory) Begin(_ context.Context, r Idempotency) (Idempotency, bool, error) {
+	if err := IdempotencyTable.CheckStart(IdempotencyReserved); err != nil {
+		return Idempotency{}, false, err
+	}
 	k := [2]string{r.Subject, r.Key}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -188,8 +191,12 @@ func (m *Memory) Finish(_ context.Context, r Idempotency) error {
 	k := [2]string{r.Subject, r.Key}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.idem[k]; !ok {
+	held, ok := m.idem[k]
+	if !ok {
 		return fmt.Errorf("%w: no reserved record for the key", ErrNotFound)
+	}
+	if held.Done {
+		return fmt.Errorf("the record already holds its answer: %w", IdempotencyTable.Check(IdempotencyDone, IdempotencyDone))
 	}
 	r.Done = true
 	m.idem[k] = r
@@ -214,6 +221,16 @@ func CheckVersion(a Agent, v AgentVersion) error {
 	}
 	if v.Version == 1 && a.OwnerType != "" && a.OwnerType != OwnerUser && a.OwnerType != OwnerOrganization {
 		return fmt.Errorf("%w: owner type %q is neither %s nor %s", session.ErrInvalid, a.OwnerType, OwnerUser, OwnerOrganization)
+	}
+	if v.Version == 1 {
+		// An agent starts active.
+		start := AgentActive
+		if a.ArchivedAt != nil {
+			start = AgentArchived
+		}
+		if err := AgentTable.CheckStart(start); err != nil {
+			return fmt.Errorf("create agent %s: %w", a.Name, err)
+		}
 	}
 	return nil
 }
